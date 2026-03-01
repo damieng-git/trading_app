@@ -1,0 +1,142 @@
+{
+  "Communication Services": {
+    "combo_3": [
+      "cRSI",
+      "Stoch_MTM",
+      "Ichimoku"
+    ],
+    "combo_4": [
+      "cRSI",
+      "Stoch_MTM",
+      "CM_Ult_MacD_MFT",
+      "Ichimoku"
+    ],
+    "combo_5": [
+      "Nadaraya-Watson Smoother",
+      "cRSI",
+      "Stoch_MTM",
+      "CM_Ult_MacD_MFT",
+      "Ichimoku"
+    ]
+  },
+  "Consumer Cyclical": {
+    "combo_3": [
+      "Nadaraya-Watson Smoother",
+      "cRSI",
+      "SR Breaks"
+    ],
+    "combo_4": [
+      "Nadaraya-Watson Smoother",
+      "cRSI",
+      "SR Breaks",
+      "DEMA"
+    ],
+    "combo_5": [
+      "Nadaraya-Watson Smoother",
+      "cRSI",
+      "SR Breaks",
+      "CM_Ult_MacD_MFT",
+      "DEMA"
+    ]
+  },
+  "Consumer Defensive": {
+    "combo_3": [
+      "cRSI",
+      "SR Breaks",
+      "Madrid Ribbon"
+    ],
+    "combo_4": [
+      "Nadaraya-Watson Smoother",
+      "cRSI",
+      "SR Breaks",
+      "Madrid Ribbon"
+    ],
+    "combo_5": [
+      "Nadaraya-Watson Smoother",
+      "cRSI",
+      "SR Breaks",
+      "Stoch_MTM",
+      "Madrid Ribbon"
+    ]
+  },
+  "Financial Services": {
+    "combo_3": [
+      "Nadaraya-Watson Smoother",
+      "SR Breaks",
+      "SQZMOM_LB"
+    ],
+    "combo_4": [
+      "Nadaraya-Watson Smoother",
+      "SR Breaks",
+      "SQZMOM_LB",
+      "Ichimoku"
+    ],
+    "combo_5": [
+      "Nadaraya-Watson Smoother",
+      "SR Breaks",
+      "SQZMOM_LB",
+      "Ichimoku",
+      "Madrid Ribbon"
+    ]
+  },
+  "Healthcare": {
+    "combo_3": [
+      "Stoch_MTM",
+      "Madrid Ribbon",
+      "Donchian Ribbon"
+    ],
+    "combo_4": [
+      "Nadaraya-Watson Smoother",
+      "Stoch_MTM",
+      "Madrid Ribbon",
+      "Donchian Ribbon"
+    ],
+    "combo_5": [
+      "Nadaraya-Watson Smoother",
+      "Stoch_MTM",
+      "ADX & DI",
+      "Madrid Ribbon",
+      "Donchian Ribbon"
+    ]
+  },
+  "Industrials": {
+    "combo_3": [
+      "Nadaraya-Watson Smoother",
+      "cRSI",
+      "SR Breaks"
+    ],
+    "combo_4": [
+      "Nadaraya-Watson Smoother",
+      "cRSI",
+      "SR Breaks",
+      "CM_P-SAR"
+    ],
+    "combo_5": [
+      "Nadaraya-Watson Smoother",
+      "cRSI",
+      "SR Breaks",
+      "CM_P-SAR",
+      "CM_Ult_MacD_MFT"
+    ]
+  },
+  "Technology": {
+    "combo_3": [
+      "Nadaraya-Watson Smoother",
+      "SR Breaks",
+      "CM_P-SAR"
+    ],
+    "combo_4": [
+      "Nadaraya-Watson Smoother",
+      "SR Breaks",
+      "CM_P-SAR",
+      "DEMA"
+    ],
+    "combo_5": [
+      "Nadaraya-Watson Smoother",
+      "SR Breaks",
+      "CM_P-SAR",
+      "WT_LB",
+      "DEMA"
+    ]
+  }
+}

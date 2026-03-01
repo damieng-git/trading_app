@@ -1,0 +1,301 @@
+yfinance_ticker,company,region,country,sector,cap_tier
+AAPL,Apple,US,US,Technology,large
+MSFT,Microsoft,US,US,Technology,large
+NVDA,NVIDIA,US,US,Technology,large
+AVGO,Broadcom,US,US,Technology,large
+ORCL,Oracle,US,US,Technology,large
+CRM,Salesforce,US,US,Technology,large
+AMD,AMD,US,US,Technology,large
+ADBE,Adobe,US,US,Technology,large
+INTC,Intel,US,US,Technology,large
+TXN,Texas Instruments,US,US,Technology,large
+QCOM,Qualcomm,US,US,Technology,large
+NOW,ServiceNow,US,US,Technology,large
+AMAT,Applied Materials,US,US,Technology,large
+MU,Micron Technology,US,US,Technology,large
+KLAC,KLA Corp,US,US,Technology,large
+MCHP,Microchip Technology,US,US,Technology,large
+LRCX,Lam Research,US,US,Technology,large
+CDNS,Cadence Design Systems,US,US,Technology,large
+SNPS,Synopsys,US,US,Technology,large
+FTNT,Fortinet,US,US,Technology,large
+JNJ,Johnson & Johnson,US,US,Healthcare,large
+UNH,UnitedHealth Group,US,US,Healthcare,large
+LLY,Eli Lilly,US,US,Healthcare,large
+PFE,Pfizer,US,US,Healthcare,large
+ABBV,AbbVie,US,US,Healthcare,large
+TMO,Thermo Fisher Scientific,US,US,Healthcare,large
+MRK,Merck,US,US,Healthcare,large
+ABT,Abbott Laboratories,US,US,Healthcare,large
+AMGN,Amgen,US,US,Healthcare,large
+GILD,Gilead Sciences,US,US,Healthcare,large
+ISRG,Intuitive Surgical,US,US,Healthcare,large
+MDT,Medtronic,US,US,Healthcare,large
+DXCM,Dexcom,US,US,Healthcare,large
+BSX,Boston Scientific,US,US,Healthcare,large
+SYK,Stryker,US,US,Healthcare,large
+JPM,JPMorgan Chase,US,US,Financials,large
+BRK-B,Berkshire Hathaway,US,US,Financials,large
+V,Visa,US,US,Financials,large
+MA,Mastercard,US,US,Financials,large
+BAC,Bank of America,US,US,Financials,large
+WFC,Wells Fargo,US,US,Financials,large
+GS,Goldman Sachs,US,US,Financials,large
+MS,Morgan Stanley,US,US,Financials,large
+BLK,BlackRock,US,US,Financials,large
+SCHW,Charles Schwab,US,US,Financials,large
+CB,Chubb,US,US,Financials,large
+AIG,American International Group,US,US,Financials,large
+MET,MetLife,US,US,Financials,large
+AMZN,Amazon,US,US,Consumer Discretionary,large
+TSLA,Tesla,US,US,Consumer Discretionary,large
+HD,Home Depot,US,US,Consumer Discretionary,large
+MCD,McDonalds,US,US,Consumer Discretionary,large
+NKE,Nike,US,US,Consumer Discretionary,large
+LOW,Lowes,US,US,Consumer Discretionary,large
+BKNG,Booking Holdings,US,US,Consumer Discretionary,large
+TJX,TJX Companies,US,US,Consumer Discretionary,large
+SBUX,Starbucks,US,US,Consumer Discretionary,large
+CMG,Chipotle Mexican Grill,US,US,Consumer Discretionary,large
+CAT,Caterpillar,US,US,Industrials,large
+HON,Honeywell,US,US,Industrials,large
+UPS,United Parcel Service,US,US,Industrials,large
+RTX,RTX Corp,US,US,Industrials,large
+GE,GE Aerospace,US,US,Industrials,large
+DE,Deere & Company,US,US,Industrials,large
+LMT,Lockheed Martin,US,US,Industrials,large
+UNP,Union Pacific,US,US,Industrials,large
+WM,Waste Management,US,US,Industrials,large
+ETN,Eaton,US,US,Industrials,large
+GOOGL,Alphabet,US,US,Communication Services,large
+META,Meta Platforms,US,US,Communication Services,large
+DIS,Walt Disney,US,US,Communication Services,large
+CMCSA,Comcast,US,US,Communication Services,large
+NFLX,Netflix,US,US,Communication Services,large
+T,AT&T,US,US,Communication Services,large
+PG,Procter & Gamble,US,US,Consumer Staples,large
+KO,Coca-Cola,US,US,Consumer Staples,large
+PEP,PepsiCo,US,US,Consumer Staples,large
+COST,Costco,US,US,Consumer Staples,large
+WMT,Walmart,US,US,Consumer Staples,large
+PM,Philip Morris International,US,US,Consumer Staples,large
+XOM,Exxon Mobil,US,US,Energy,large
+CVX,Chevron,US,US,Energy,large
+COP,ConocoPhillips,US,US,Energy,large
+SLB,Schlumberger,US,US,Energy,large
+EOG,EOG Resources,US,US,Energy,large
+MPC,Marathon Petroleum,US,US,Energy,large
+NEE,NextEra Energy,US,US,Utilities,large
+DUK,Duke Energy,US,US,Utilities,large
+SO,Southern Company,US,US,Utilities,large
+D,Dominion Energy,US,US,Utilities,large
+PLD,Prologis,US,US,Real Estate,large
+AMT,American Tower,US,US,Real Estate,large
+EQIX,Equinix,US,US,Real Estate,large
+SPG,Simon Property Group,US,US,Real Estate,large
+LIN,Linde,US,US,Materials,large
+APD,Air Products,US,US,Materials,large
+SHW,Sherwin-Williams,US,US,Materials,large
+ON,ON Semiconductor,US,US,Technology,mid
+SWKS,Skyworks Solutions,US,US,Technology,mid
+CDW,CDW Corp,US,US,Technology,mid
+PTC,PTC Inc,US,US,Technology,mid
+MPWR,Monolithic Power Systems,US,US,Technology,mid
+FFIV,F5 Inc,US,US,Technology,mid
+PEGA,Pegasystems,US,US,Technology,mid
+MANH,Manhattan Associates,US,US,Technology,mid
+ENPH,Enphase Energy,US,US,Technology,mid
+SMCI,Super Micro Computer,US,US,Technology,mid
+VEEV,Veeva Systems,US,US,Healthcare,mid
+ALGN,Align Technology,US,US,Healthcare,mid
+HOLX,Hologic,US,US,Healthcare,mid
+CRL,Charles River Laboratories,US,US,Healthcare,mid
+MEDP,Medpace Holdings,US,US,Healthcare,mid
+EXAS,Exact Sciences,US,US,Healthcare,mid
+INSP,Inspire Medical Systems,US,US,Healthcare,mid
+PODD,Insulet Corp,US,US,Healthcare,mid
+IBKR,Interactive Brokers,US,US,Financials,mid
+RJF,Raymond James Financial,US,US,Financials,mid
+EWBC,East West Bancorp,US,US,Financials,mid
+FNF,Fidelity National Financial,US,US,Financials,mid
+HBAN,Huntington Bancshares,US,US,Financials,mid
+CFG,Citizens Financial Group,US,US,Financials,mid
+FITB,Fifth Third Bancorp,US,US,Financials,mid
+RF,Regions Financial,US,US,Financials,mid
+POOL,Pool Corp,US,US,Consumer Discretionary,mid
+DECK,Deckers Outdoor,US,US,Consumer Discretionary,mid
+WSM,Williams-Sonoma,US,US,Consumer Discretionary,mid
+DPZ,Dominos Pizza,US,US,Consumer Discretionary,mid
+SKX,Skechers,US,US,Consumer Discretionary,mid
+DKS,Dicks Sporting Goods,US,US,Consumer Discretionary,mid
+TXRH,Texas Roadhouse,US,US,Consumer Discretionary,mid
+AXON,Axon Enterprise,US,US,Industrials,mid
+SNA,Snap-on,US,US,Industrials,mid
+GNRC,Generac Holdings,US,US,Industrials,mid
+ALLE,Allegion,US,US,Industrials,mid
+EME,EMCOR Group,US,US,Industrials,mid
+HUBB,Hubbell,US,US,Industrials,mid
+WSO,Watsco,US,US,Industrials,mid
+TTWO,Take-Two Interactive,US,US,Communication Services,mid
+MTCH,Match Group,US,US,Communication Services,mid
+EA,Electronic Arts,US,US,Communication Services,mid
+WBD,Warner Bros Discovery,US,US,Communication Services,mid
+CASY,Caseys General Stores,US,US,Consumer Staples,mid
+POST,Post Holdings,US,US,Consumer Staples,mid
+ELF,e.l.f. Beauty,US,US,Consumer Staples,mid
+CHD,Church & Dwight,US,US,Consumer Staples,mid
+CTRA,Coterra Energy,US,US,Energy,mid
+OVV,Ovintiv,US,US,Energy,mid
+AR,Antero Resources,US,US,Energy,mid
+TRGP,Targa Resources,US,US,Energy,mid
+ATO,Atmos Energy,US,US,Utilities,mid
+NRG,NRG Energy,US,US,Utilities,mid
+PNW,Pinnacle West Capital,US,US,Utilities,mid
+HST,Host Hotels & Resorts,US,US,Real Estate,mid
+REG,Regency Centers,US,US,Real Estate,mid
+CBRE,CBRE Group,US,US,Real Estate,mid
+CLF,Cleveland-Cliffs,US,US,Materials,mid
+ATI,ATI Inc,US,US,Materials,mid
+CRUS,Cirrus Logic,US,US,Technology,small
+CALX,Calix,US,US,Technology,small
+NOVT,Novanta,US,US,Technology,small
+LFUS,Littelfuse,US,US,Technology,small
+POWI,Power Integrations,US,US,Technology,small
+DIOD,Diodes Inc,US,US,Technology,small
+HALO,Halozyme Therapeutics,US,US,Healthcare,small
+ENSG,Ensign Group,US,US,Healthcare,small
+OMCL,Omnicell,US,US,Healthcare,small
+PRGO,Perrigo,US,US,Healthcare,small
+LNTH,Lantheus Holdings,US,US,Healthcare,small
+ITCI,Intra-Cellular Therapies,US,US,Healthcare,small
+SBCF,Seacoast Banking Corp,US,US,Financials,small
+UMBF,UMB Financial,US,US,Financials,small
+GBCI,Glacier Bancorp,US,US,Financials,small
+CADE,Cadence Bank,US,US,Financials,small
+ABCB,Ameris Bancorp,US,US,Financials,small
+BOOT,Boot Barn Holdings,US,US,Consumer Discretionary,small
+GNTX,Gentex,US,US,Consumer Discretionary,small
+SIG,Signet Jewelers,US,US,Consumer Discretionary,small
+FOXF,Fox Factory Holding,US,US,Consumer Discretionary,small
+RBC,Regal Rexnord,US,US,Industrials,small
+BWXT,BWX Technologies,US,US,Industrials,small
+ESE,ESCO Technologies,US,US,Industrials,small
+EXPO,Exponent,US,US,Industrials,small
+GGG,Graco,US,US,Industrials,small
+CARG,CarGurus,US,US,Communication Services,small
+YELP,Yelp,US,US,Communication Services,small
+SFM,Sprouts Farmers Market,US,US,Consumer Staples,small
+SMPL,Simply Good Foods,US,US,Consumer Staples,small
+FRPT,Freshpet,US,US,Consumer Staples,small
+SM,SM Energy,US,US,Energy,small
+RRC,Range Resources,US,US,Energy,small
+MTDR,Matador Resources,US,US,Energy,small
+MGEE,MGE Energy,US,US,Utilities,small
+NWE,NorthWestern Energy,US,US,Utilities,small
+IRT,Independence Realty Trust,US,US,Real Estate,small
+TROX,Tronox Holdings,US,US,Materials,small
+SHEL.L,Shell,Europe,UK,Energy,large
+AZN.L,AstraZeneca,Europe,UK,Healthcare,large
+HSBA.L,HSBC Holdings,Europe,UK,Financials,large
+ULVR.L,Unilever,Europe,UK,Consumer Staples,large
+GSK.L,GSK,Europe,UK,Healthcare,large
+BP.L,BP,Europe,UK,Energy,large
+RIO.L,Rio Tinto,Europe,UK,Materials,large
+LSEG.L,London Stock Exchange Group,Europe,UK,Financials,large
+DGE.L,Diageo,Europe,UK,Consumer Staples,large
+BARC.L,Barclays,Europe,UK,Financials,large
+REL.L,RELX,Europe,UK,Industrials,large
+NG.L,National Grid,Europe,UK,Utilities,large
+SAP.DE,SAP,Europe,DE,Technology,large
+SIE.DE,Siemens,Europe,DE,Industrials,large
+ALV.DE,Allianz,Europe,DE,Financials,large
+DTE.DE,Deutsche Telekom,Europe,DE,Communication Services,large
+MBG.DE,Mercedes-Benz Group,Europe,DE,Consumer Discretionary,large
+BAS.DE,BASF,Europe,DE,Materials,large
+BAYN.DE,Bayer,Europe,DE,Healthcare,large
+MUV2.DE,Munich Re,Europe,DE,Financials,large
+MC.PA,LVMH,Europe,FR,Consumer Discretionary,large
+TTE.PA,TotalEnergies,Europe,FR,Energy,large
+SAN.PA,Sanofi,Europe,FR,Healthcare,large
+AIR.PA,Airbus,Europe,FR,Industrials,large
+OR.PA,LOreal,Europe,FR,Consumer Staples,large
+BNP.PA,BNP Paribas,Europe,FR,Financials,large
+SU.PA,Schneider Electric,Europe,FR,Industrials,large
+AI.PA,Air Liquide,Europe,FR,Materials,large
+NESN.SW,Nestle,Europe,CH,Consumer Staples,large
+ROG.SW,Roche Holding,Europe,CH,Healthcare,large
+NOVN.SW,Novartis,Europe,CH,Healthcare,large
+UBSG.SW,UBS Group,Europe,CH,Financials,large
+ABBN.SW,ABB,Europe,CH,Industrials,large
+ASML.AS,ASML Holding,Europe,NL,Technology,large
+INGA.AS,ING Group,Europe,NL,Financials,large
+AD.AS,Ahold Delhaize,Europe,NL,Consumer Staples,large
+PHIA.AS,Koninklijke Philips,Europe,NL,Healthcare,large
+WKL.AS,Wolters Kluwer,Europe,NL,Industrials,large
+SAN.MC,Banco Santander,Europe,ES,Financials,large
+IBE.MC,Iberdrola,Europe,ES,Utilities,large
+ITX.MC,Inditex,Europe,ES,Consumer Discretionary,large
+ENI.MI,ENI,Europe,IT,Energy,large
+ISP.MI,Intesa Sanpaolo,Europe,IT,Financials,large
+ENEL.MI,Enel,Europe,IT,Utilities,large
+ERIC-B.ST,Ericsson,Europe,SE,Technology,large
+ATCO-A.ST,Atlas Copco,Europe,SE,Industrials,large
+INVE-B.ST,Investor AB,Europe,SE,Financials,large
+NOVO-B.CO,Novo Nordisk,Europe,DK,Healthcare,large
+CARL-B.CO,Carlsberg,Europe,DK,Consumer Staples,large
+EQNR.OL,Equinor,Europe,NO,Energy,large
+BDEV.L,Barratt Developments,Europe,UK,Consumer Discretionary,mid
+WTB.L,Whitbread,Europe,UK,Consumer Discretionary,mid
+AUTO.L,Auto Trader Group,Europe,UK,Technology,mid
+RTO.L,Rentokil Initial,Europe,UK,Industrials,mid
+IMI.L,IMI plc,Europe,UK,Industrials,mid
+BNZL.L,Bunzl,Europe,UK,Industrials,mid
+MNG.L,M&G,Europe,UK,Financials,mid
+RHM.DE,Rheinmetall,Europe,DE,Industrials,mid
+PUM.DE,Puma,Europe,DE,Consumer Discretionary,mid
+FRE.DE,Fresenius,Europe,DE,Healthcare,mid
+LEG.DE,LEG Immobilien,Europe,DE,Real Estate,mid
+HEN3.DE,Henkel,Europe,DE,Consumer Staples,mid
+CAP.PA,Capgemini,Europe,FR,Technology,mid
+RI.PA,Pernod Ricard,Europe,FR,Consumer Staples,mid
+PUB.PA,Publicis Groupe,Europe,FR,Communication Services,mid
+VIE.PA,Veolia Environnement,Europe,FR,Utilities,mid
+ACA.PA,Credit Agricole,Europe,FR,Financials,mid
+SIKA.SW,Sika,Europe,CH,Materials,mid
+GIVN.SW,Givaudan,Europe,CH,Materials,mid
+SCMN.SW,Swisscom,Europe,CH,Communication Services,mid
+KPN.AS,KPN,Europe,NL,Communication Services,mid
+UMG.AS,Universal Music Group,Europe,NL,Communication Services,mid
+RAND.AS,Randstad,Europe,NL,Industrials,mid
+ACS.MC,ACS,Europe,ES,Industrials,mid
+FER.MC,Ferrovial,Europe,ES,Industrials,mid
+LDO.MI,Leonardo,Europe,IT,Industrials,mid
+NEXI.MI,Nexi,Europe,IT,Technology,mid
+VOLV-B.ST,Volvo,Europe,SE,Industrials,mid
+SAND.ST,Sandvik,Europe,SE,Industrials,mid
+SKF-B.ST,SKF,Europe,SE,Industrials,mid
+DSV.CO,DSV,Europe,DK,Industrials,mid
+COLO-B.CO,Coloplast,Europe,DK,Healthcare,mid
+MOWI.OL,Mowi,Europe,NO,Consumer Staples,mid
+TEL.OL,Telenor,Europe,NO,Communication Services,mid
+FORTUM.HE,Fortum,Europe,FI,Utilities,mid
+DCC.L,DCC,Europe,UK,Industrials,small
+SGE.L,Sage Group,Europe,UK,Technology,small
+TW.L,Taylor Wimpey,Europe,UK,Consumer Discretionary,small
+HLMA.L,Halma,Europe,UK,Technology,small
+1COV.DE,Covestro,Europe,DE,Materials,small
+SRT3.DE,Sartorius,Europe,DE,Healthcare,small
+GXI.DE,Gerresheimer,Europe,DE,Healthcare,small
+SOI.PA,Soitec,Europe,FR,Technology,small
+IPN.PA,Ipsen,Europe,FR,Healthcare,small
+BVI.PA,Bureau Veritas,Europe,FR,Industrials,small
+LIGHT.AS,Signify,Europe,NL,Industrials,small
+UCB.BR,UCB,Europe,BE,Healthcare,small
+SOLB.BR,Solvay,Europe,BE,Materials,small
+ESSITY-B.ST,Essity,Europe,SE,Consumer Staples,small
+ALFA.ST,Alfa Laval,Europe,SE,Industrials,small
+ORNBV.HE,Orion Corp,Europe,FI,Healthcare,small
+TYRES.HE,Nokian Tyres,Europe,FI,Consumer Discretionary,small
+AKER.OL,Aker,Europe,NO,Energy,small
+GALP.LS,Galp Energia,Europe,PT,Energy,small
+VOE.VI,voestalpine,Europe,AT,Materials,small

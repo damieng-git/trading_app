@@ -1,0 +1,173 @@
+{
+  "symbols": [],
+  "timeframes": [
+    "4H",
+    "1D",
+    "1W",
+    "2W",
+    "1M"
+  ],
+  "max_plot_bars_per_tf": {
+    "4H": 5000,
+    "1D": 600,
+    "1W": 140,
+    "2W": 70,
+    "1M": 36
+  },
+  "plot_lookback_months": 24,
+  "stoch_mtm_thresholds": {
+    "overbought": 40.0,
+    "oversold": -40.0,
+    "long_threshold": -35.0,
+    "short_threshold": 35.0
+  },
+  "dashboard_mode": "lazy_static",
+  "cache_ttl_hours": 168,
+  "dataset_name": "dashboard",
+  "kpi_weights": {
+    "Nadaraya-Watson Smoother": 3.0,
+    "BB 30": 2.0,
+    "SR Breaks": 1.5,
+    "cRSI": 1.5,
+    "Stoch_MTM": 1.2,
+    "CM_P-SAR": 1.2,
+    "Mansfield RS": 1.2,
+    "Ichimoku": 1.0,
+    "DEMA": 1.0,
+    "WT_LB": 1.0,
+    "CM_Ult_MacD_MFT": 1.0,
+    "UT Bot Alert": 1.0,
+    "SuperTrend": 1.0,
+    "SQZMOM_LB": 1.0,
+    "ADX & DI": 1.0,
+    "RSI Strength & Consolidation Zones (Zeiierman)": 1.0,
+    "Nadaraya-Watson Envelop (MAE)": 1.0,
+    "Nadaraya-Watson Envelop (STD)": 1.0,
+    "GK Trend Ribbon": 0.8,
+    "Impulse Trend": 0.8,
+    "Madrid Ribbon": 0.8,
+    "Donchian Ribbon": 0.8,
+    "MA Ribbon": 0.8,
+    "TuTCI": 0.8,
+    "GMMA": 0.8
+  },
+  "combo_3_kpis": [
+    "Nadaraya-Watson Smoother",
+    "Madrid Ribbon",
+    "Volume + MA20"
+  ],
+  "combo_4_kpis": [
+    "Nadaraya-Watson Smoother",
+    "Madrid Ribbon",
+    "GK Trend Ribbon",
+    "cRSI"
+  ],
+  "combo_kpis_by_tf": {
+    "4H": {
+      "combo_3": [
+        "Nadaraya-Watson Smoother",
+        "DEMA",
+        "Stoch_MTM"
+      ],
+      "combo_4": [
+        "Nadaraya-Watson Smoother",
+        "Madrid Ribbon",
+        "GK Trend Ribbon",
+        "cRSI"
+      ]
+    },
+    "1D": {
+      "combo_3": [
+        "Nadaraya-Watson Smoother",
+        "Madrid Ribbon",
+        "Volume + MA20"
+      ],
+      "combo_4": [
+        "Nadaraya-Watson Smoother",
+        "Madrid Ribbon",
+        "GK Trend Ribbon",
+        "cRSI"
+      ]
+    },
+    "1W": {
+      "combo_3": [
+        "Nadaraya-Watson Smoother",
+        "DEMA",
+        "cRSI"
+      ],
+      "combo_4": [
+        "Nadaraya-Watson Smoother",
+        "Stoch_MTM",
+        "cRSI",
+        "Volume + MA20"
+      ]
+    },
+    "2W": {
+      "combo_3": [
+        "Nadaraya-Watson Smoother",
+        "DEMA",
+        "cRSI"
+      ],
+      "combo_4": [
+        "Nadaraya-Watson Smoother",
+        "Stoch_MTM",
+        "cRSI",
+        "Volume + MA20"
+      ]
+    },
+    "1M": {
+      "combo_3": [
+        "Nadaraya-Watson Smoother",
+        "DEMA",
+        "cRSI"
+      ],
+      "combo_4": [
+        "Nadaraya-Watson Smoother",
+        "Stoch_MTM",
+        "cRSI",
+        "Volume + MA20"
+      ]
+    }
+  },
+  "research": {
+    "horizons_bars": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "time_slices": 4,
+    "allow_repainting_indicators": true,
+    "combo_max_k": 8,
+    "combo_candidate_kpis": 0,
+    "combo_max_per_k": 300,
+    "combo_min_occurrences": 80
+  },
+  "exit_params": {
+    "4H": {
+      "T": 4,
+      "M": 48,
+      "K": 4.0
+    },
+    "1D": {
+      "T": 4,
+      "M": 40,
+      "K": 4.0
+    },
+    "1W": {
+      "T": 2,
+      "M": 20,
+      "K": 4.0
+    },
+    "2W": {
+      "T": 2,
+      "M": 10,
+      "K": 4.0
+    },
+    "1M": {
+      "T": 1,
+      "M": 6,
+      "K": 4.0
+    }
+  }
+}

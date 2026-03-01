@@ -1,0 +1,293 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © AlgoAlpha
+
+//@version=6
+indicator("Breakout Targets [AlgoAlpha]", "AlgoAlpha - Breakout Targets", overlay = true, behind_chart = false, max_boxes_count = 500)
+
+len = input.int(99, "Range Detection Period", group = "Main Settings", tooltip = "The period used to calculate the range for breakout detection.")
+overlap = not input.bool(true, "Prevent Overlap", group = "Main Settings", tooltip = "If enabled, prevents new boxes from overlapping with existing ones.")
+
+// Target Settings
+shw_TP1 = input.bool(true, title="Show Take Profit Levels", group="Targets", tooltip = "Toggle visibility of take profit target levels.")
+atr_period = input.int(14, title="Volatility (ATR) period", minval=1, group="Targets", tooltip = "Period for Average True Range (ATR) calculation used for volatility.")
+sl_multiplier = input.float(5, title="Stop Loss ATR Multiplier", minval=0.1, step=0.1, group="Targets", tooltip = "Multiplier for ATR to calculate Stop Loss distance.")
+tp1_multiplier = input.float(0.5, title="TP1 Multiplier", minval=0.1, step=0.1, group="Targets", tooltip = "Multiplier for risk distance to calculate Take Profit 1.")
+tp2_multiplier = input.float(1.0, title="TP2 Multiplier", minval=0.1, step=0.1, group="Targets", tooltip = "Multiplier for risk distance to calculate Take Profit 2.")
+tp3_multiplier = input.float(1.5, title="TP3 Multiplier", minval=0.1, step=0.1, group="Targets", tooltip = "Multiplier for risk distance to calculate Take Profit 3.")
+
+green = input.color(#00ffbb, title = "Bullish Colour", group = "Appearance", tooltip = "Color used for bullish visuals and positive sentiment texts.")
+red   = input.color(#ff1100, title = "Bearish Colour", group = "Appearance", tooltip = "Color used for bearish visuals and negative sentiment texts.")
+
+
+len_ = int(len/2)
+pivh = ta.pivothigh(len_, len_)
+pivl = ta.pivotlow(len_, len_)
+
+v1 = ta.wma(math.abs(close-open), len)
+v2 = ta.ema(math.abs(close-open), len)
+
+// ============================================================================
+// VARIABLES & ARRAYS
+// ============================================================================
+
+var boxes       = array.new_box()
+var boxes_u     = array.new_box()
+var boxes_l     = array.new_box()
+var centerLines = array.new_line()
+
+volatility = ta.atr(atr_period)
+
+var line entry_line = na
+var line sl_line = na
+var line tp1_line = na
+var line tp2_line = na
+var line tp3_line = na 
+var label entry_label = na
+var label sl_label = na
+var label tp1_label = na
+var label tp2_label = na
+var label tp3_label = na
+var linefill lf1 = na
+var linefill lf2 = na
+var int trade_dir = 0
+var bool tp3_hit = false
+
+// ============================================================================
+// LOGIC
+// ============================================================================
+
+// Get most recent pivots (occurrence 0)
+pivh_lvl_0 = ta.valuewhen(not na(pivh), high[len_], 0)
+pivh_index_0 = ta.valuewhen(not na(pivh), bar_index[len_], 0)
+
+pivl_lvl_0 = ta.valuewhen(not na(pivl), low[len_], 0)
+pivl_index_0 = ta.valuewhen(not na(pivl), bar_index[len_], 0)
+
+vola = ta.atr(len)/2
+
+var wede = 0
+
+if boxes.size() > 0
+    wede := boxes.first().get_right()
+
+ada = 0
+
+if ta.crossunder(v1, v2)
+    float h = na
+    float l = na
+    int start_idx = na
+    
+    // Determine closest pivot
+    if pivh_index_0 > pivl_index_0
+        // High is closer
+        h := pivh_lvl_0
+        start_idx := pivh_index_0
+        // Find lowest low since the pivot high
+        // Length must be at least 1
+        int dist = bar_index - start_idx
+        if dist > 0
+            float min_val = high
+            for i = 0 to dist - 1
+                min_val := math.min(min_val, low[i])
+            l := min_val
+    else
+        // Low is closer
+        l := pivl_lvl_0
+        start_idx := pivl_index_0
+        // Find highest high since the pivot low
+        int dist = bar_index - start_idx
+        if dist > 0
+            float max_val = low
+            for i = 0 to dist - 1
+                max_val := math.max(max_val, high[i])
+            h := max_val
+    ada := start_idx
+
+    if (not na(h)) and (not na(l)) and (close <= h and close >= l) and (overlap or start_idx > wede)
+        // Create Channel
+        boxes.unshift(box.new(start_idx, h, bar_index, l, bgcolor = color.new(chart.fg_color, 90), border_color = na))
+        
+        boxes_u.unshift(box.new(start_idx, h, bar_index, h - 
+        vola, bgcolor = color.new(red, 70), border_color = na))
+        boxes_l.unshift(box.new(start_idx, l + vola, bar_index, l, bgcolor = color.new(green, 70), border_color = na))
+        
+        float centerY = (h + l) / 2
+        centerLines.unshift(line.new(start_idx, centerY, bar_index, centerY, color = color.new(chart.fg_color, 50), width = 1, style = line.style_dashed))
+
+upbreak = 0.0
+downbreak = 0.0
+bool new_breakout = false
+
+// Manage existing boxes
+if boxes.size() > 0
+    for i = boxes.size()-1 to 0
+        box b = boxes.get(i)
+        float top = b.get_top()
+        float bot = b.get_bottom()
+        
+        if close > top
+            // Bullish Breakout
+            upbreak := bot
+            boxes.remove(i)
+            boxes_u.remove(i)
+            boxes_l.remove(i)
+            centerLines.remove(i)
+            
+            if shw_TP1
+                new_breakout := true
+                trade_dir := 1
+                tp3_hit := false
+                float SL = low - volatility * sl_multiplier
+                float TP1_lvl = close + math.abs(close - SL) * tp1_multiplier
+                float TP2_lvl = close + math.abs(close - SL) * tp2_multiplier
+                float TP3_lvl = close + math.abs(close - SL) * tp3_multiplier
+                
+                line.delete(entry_line)
+                label.delete(entry_label)
+                line.delete(sl_line)
+                label.delete(sl_label)
+                line.delete(tp1_line)
+                label.delete(tp1_label)
+                line.delete(tp2_line)
+                label.delete(tp2_label)
+                line.delete(tp3_line)
+                label.delete(tp3_label)
+                
+                entry_line := line.new(bar_index, close, bar_index, close, color = green, width = 3)
+                entry_label := label.new(bar_index, close, text = "Entry ▸ " + str.tostring(close, format.mintick), style = label.style_label_left, color = green, textcolor = color.white)
+
+                sl_line := line.new(bar_index, SL, bar_index, SL, color = color.new(red, 80), width = 3)
+                sl_label := label.new(bar_index, SL, text = "✘ SL ▸ " + str.tostring(SL, format.mintick), style = label.style_label_left, color = color.new(red, 80), textcolor = color.white)
+
+                tp1_line := line.new(bar_index, TP1_lvl, bar_index, TP1_lvl, color = color.new(green, 80), width = 3)
+                tp1_label := label.new(bar_index, TP1_lvl, text = " ✔ TP1 ▸ " + str.tostring(TP1_lvl, format.mintick), style = label.style_label_left, color = color.new(green, 80), textcolor = color.white)
+
+                tp2_line := line.new(bar_index, TP2_lvl, bar_index, TP2_lvl, color = color.new(green, 80), width = 3)
+                tp2_label := label.new(bar_index, TP2_lvl, text = " ✔ TP2 ▸ " + str.tostring(TP2_lvl, format.mintick), style = label.style_label_left, color = color.new(green, 80), textcolor = color.white)
+
+                tp3_line := line.new(bar_index, TP3_lvl, bar_index, TP3_lvl, color = color.new(green, 80), width = 3)
+                tp3_label := label.new(bar_index, TP3_lvl, text = " ✔ TP3 ▸ " + str.tostring(TP3_lvl, format.mintick), style = label.style_label_left, color = color.new(green, 80), textcolor = color.white)
+                
+                linefill.delete(lf1)
+                linefill.delete(lf2)
+                lf1 := linefill.new(entry_line, sl_line, color.new(red, 95))
+                lf2 := linefill.new(entry_line, tp3_line, color.new(green, 95))
+
+        else if close < bot
+            // Bearish Breakout
+            downbreak := top
+            boxes.remove(i)
+            boxes_u.remove(i)
+            boxes_l.remove(i)
+            centerLines.remove(i)
+            
+            if shw_TP1
+                new_breakout := true
+                trade_dir := -1
+                tp3_hit := false
+                float SL = high + volatility * sl_multiplier
+                float TP1_lvl = close - math.abs(close - SL) * tp1_multiplier
+                float TP2_lvl = close - math.abs(close - SL) * tp2_multiplier
+                float TP3_lvl = close - math.abs(close - SL) * tp3_multiplier
+                
+                line.delete(entry_line)
+                label.delete(entry_label)
+                line.delete(sl_line)
+                label.delete(sl_label)
+                line.delete(tp1_line)
+                label.delete(tp1_label)
+                line.delete(tp2_line)
+                label.delete(tp2_label)
+                line.delete(tp3_line)
+                label.delete(tp3_label)
+                
+                entry_line := line.new(bar_index, close, bar_index, close, color = red, width = 3)
+                entry_label := label.new(bar_index, close, text = "Entry ▸ " + str.tostring(close, format.mintick), style = label.style_label_left, color = red, textcolor = color.white)
+
+                sl_line := line.new(bar_index, SL, bar_index, SL, color = color.new(red, 80), width = 3)
+                sl_label := label.new(bar_index, SL, text = "✘ SL ▸ " + str.tostring(SL, format.mintick), style = label.style_label_left, color = color.new(red, 80), textcolor = color.white)
+
+                tp1_line := line.new(bar_index, TP1_lvl, bar_index, TP1_lvl, color = color.new(green, 80), width = 3)
+                tp1_label := label.new(bar_index, TP1_lvl, text = " ✔ TP1 ▸ " + str.tostring(TP1_lvl, format.mintick), style = label.style_label_left, color = color.new(green, 80), textcolor = color.white)
+
+                tp2_line := line.new(bar_index, TP2_lvl, bar_index, TP2_lvl, color = color.new(green, 80), width = 3)
+                tp2_label := label.new(bar_index, TP2_lvl, text = " ✔ TP2 ▸ " + str.tostring(TP2_lvl, format.mintick), style = label.style_label_left, color = color.new(green, 80), textcolor = color.white)
+
+                tp3_line := line.new(bar_index, TP3_lvl, bar_index, TP3_lvl, color = color.new(green, 80), width = 3)
+                tp3_label := label.new(bar_index, TP3_lvl, text = " ✔ TP3 ▸ " + str.tostring(TP3_lvl, format.mintick), style = label.style_label_left, color = color.new(green, 80), textcolor = color.white)
+                
+                linefill.delete(lf1)
+                linefill.delete(lf2)
+                lf1 := linefill.new(entry_line, sl_line, color.new(red, 95))
+                lf2 := linefill.new(entry_line, tp3_line, color.new(green, 95))
+
+        else
+            // Extend
+            b.set_right(bar_index)
+            boxes_u.get(i).set_right(bar_index)
+            boxes_l.get(i).set_right(bar_index)
+            centerLines.get(i).set_x2(bar_index)
+
+if not new_breakout and not tp3_hit
+    line.set_x2(entry_line, bar_index)
+    label.set_x(entry_label, bar_index)
+    line.set_x2(sl_line, bar_index)
+    label.set_x(sl_label, bar_index)
+    line.set_x2(tp1_line, bar_index)
+    label.set_x(tp1_label, bar_index)
+    line.set_x2(tp2_line, bar_index)
+    label.set_x(tp2_label, bar_index)
+    line.set_x2(tp3_line, bar_index)
+    label.set_x(tp3_label, bar_index)
+
+    float tp3_level = line.get_y1(tp3_line)
+    if not na(tp3_level)
+        if trade_dir == 1 and high >= tp3_level
+            tp3_hit := true
+        else if trade_dir == -1 and low <= tp3_level
+            tp3_hit := true
+
+plotshape(upbreak != 0 ? upbreak : na, "Bullish Breakout Signal", shape.labelup, location.absolute, green, text = "▲", textcolor = chart.fg_color)
+plotshape(downbreak != 0 ? downbreak : na, "Bearish Breakout Signal", shape.labeldown, location.absolute, red, text = "▼", textcolor = chart.fg_color)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+alertcondition(upbreak != 0, "Bullish Breakout", "Bullish Breakout Detected")
+alertcondition(downbreak != 0, "Bearish Breakout", "Bearish Breakout Detected")
+
+float tp1_val = line.get_y1(tp1_line)
+float tp2_val = line.get_y1(tp2_line)
+float tp3_val = line.get_y1(tp3_line)
+float sl_val = line.get_y1(sl_line)
+ 
+bool tp1_hit_cond = false
+bool tp2_hit_cond = false
+bool tp3_hit_cond_alert = false
+bool sl_hit_cond = false
+
+if not na(tp1_val)
+    if trade_dir == 1
+        if high >= tp1_val and high[1] < tp1_val
+            tp1_hit_cond := true
+        if high >= tp2_val and high[1] < tp2_val
+            tp2_hit_cond := true
+        if high >= tp3_val and high[1] < tp3_val
+            tp3_hit_cond_alert := true
+        if low <= sl_val and low[1] > sl_val
+            sl_hit_cond := true
+    else if trade_dir == -1
+        if low <= tp1_val and low[1] > tp1_val
+            tp1_hit_cond := true
+        if low <= tp2_val and low[1] > tp2_val
+            tp2_hit_cond := true
+        if low <= tp3_val and low[1] > tp3_val
+            tp3_hit_cond_alert := true
+        if high >= sl_val and high[1] < sl_val
+            sl_hit_cond := true
+
+alertcondition(tp1_hit_cond, "TP1 Hit", "Take Profit 1 Hit")
+alertcondition(tp2_hit_cond, "TP2 Hit", "Take Profit 2 Hit")
+alertcondition(tp3_hit_cond_alert, "TP3 Hit", "Take Profit 3 Hit")
+alertcondition(sl_hit_cond, "SL Hit", "Stop Loss Hit")

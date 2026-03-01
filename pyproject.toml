@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trading-dashboard"
+version = "0.1.0"
+description = "Multi-timeframe trading dashboard with KPI-based strategy engine"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.1",
+    "numpy>=1.26",
+    "plotly>=5.18",
+    "yfinance>=0.2.31",
+    "matplotlib>=3.8",
+    "reportlab>=4.0",
+    "requests>=2.31",
+    "pyarrow>=14.0",
+    "numba>=0.59",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+
+[project.scripts]
+trading-dashboard = "trading_dashboard.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["trading_dashboard*", "apps*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,0 +1,20 @@
+{
+  "input": {
+    "stock_data_dir": "data/stock_data",
+    "run_metadata_copy": "data/run_metadata.json",
+    "indicator_config_json": "apps/dashboard/configs/indicator_config.json",
+    "notes": "Demo config: run harness directly on the dashboard enriched data store."
+  },
+  "timeframes": ["1W"],
+  "symbols": [],
+  "research": {
+    "horizons_bars": [1, 2, 4, 8],
+    "time_slices": 4,
+    "allow_repainting_indicators": false,
+    "combo_max_k": 3,
+    "combo_candidate_kpis": 0,
+    "combo_max_per_k": 120,
+    "combo_min_occurrences": 20
+  }
+}
+

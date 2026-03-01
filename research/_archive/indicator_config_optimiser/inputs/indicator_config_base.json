@@ -1,0 +1,27 @@
+{
+  "WT_LB": { "params": { "n1": 10, "n2": 21 } },
+  "DEMA": { "params": { "length": 9 } },
+  "PSAR": { "params": { "start": 0.02, "increment": 0.02, "maximum": 0.2 } },
+  "ATR": { "params": { "length": 14, "smoothing": "RMA", "mult": 1.5 } },
+  "BB": { "params": { "length": 20, "mult": 2.0, "ma_type": "SMA" } },
+  "SuperTrend": { "params": { "periods": 12, "multiplier": 3.0, "change_atr_method": true } },
+  "UT_Bot": { "params": { "a": 1.0, "c": 10 } },
+  "TuTCI": { "params": { "length": 20, "exit_length": 10 } },
+  "NWE_Envelope_MAE": { "params": { "bandwidth": 8.0, "window": 500, "mult": 3.0, "repaint": false } },
+  "NWE_Envelope_STD": { "params": { "bandwidth": 8.0, "window": 500, "mult": 3.0, "repaint": false } },
+  "NWE_Envelope_RP": { "params": { "bandwidth": 8.0, "window": 500, "mult": 3.0, "repaint": true } },
+  "NW_LuxAlgo": { "params": { "bandwidth": 8.0, "window": 500 } },
+  "ADX_DI": { "params": { "length": 14 } },
+  "DonchianRibbon": { "params": { "dlen": 20, "depth": 10 } },
+  "MadridRibbon": { "params": { "exponential": true } },
+  "OBVOSC": { "params": { "length": 20 } },
+  "SQZMOM_LB": { "params": { "length": 20, "mult": 2.0, "length_kc": 20, "mult_kc": 1.5, "use_true_range": true } },
+  "SMI": { "params": { "a": 10, "b": 3, "c": 10, "smooth_period": 5 } },
+  "MACD": { "params": { "fast": 12, "slow": 26, "signal": 9 } },
+  "VOL_MA": { "params": { "length": 20 } },
+  "cRSI": { "params": { "domcycle": 20, "vibration": 10, "leveling": 10.0 } },
+  "RSI Strength & Consolidation Zones (Zeiierman)": {
+    "params": { "rsi_length": 14, "dmi_length": 14, "adx_smoothing": 14, "filter_strength": 0.1 }
+  }
+}
+

@@ -1,0 +1,9 @@
+pandas
+numpy
+plotly
+yfinance
+matplotlib
+reportlab
+requests
+pyarrow
+

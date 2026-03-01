@@ -1,0 +1,17 @@
+{
+  "telegram": {
+    "enabled": false,
+    "bot_token": "YOUR_BOT_TOKEN_HERE",
+    "chat_id": "YOUR_CHAT_ID_HERE"
+  },
+  "email": {
+    "enabled": false,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "username": "your_email@gmail.com",
+    "password": "your_app_password",
+    "from_addr": "your_email@gmail.com",
+    "to_addrs": ["recipient@example.com"]
+  },
+  "min_combo_level": "C3"
+}

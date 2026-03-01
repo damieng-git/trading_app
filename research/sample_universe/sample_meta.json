@@ -1,0 +1,70 @@
+{
+  "n": 300,
+  "scope": "US + Europe only",
+  "output_dir": "research/data/feature_store/enriched/sample_300",
+  "design": {
+    "allocation": {
+      "US": 195,
+      "Europe": 105,
+      "rationale": "Roughly 65/35 split. Close to market-cap proportional (~75/25) but gives Europe enough representation for cross-regional analysis."
+    },
+    "cap_tiers": {
+      "large": 147,
+      "mid": 95,
+      "small": 58,
+      "rationale": "Approximately 49/32/19 split. Large-cap dominant (reflects reality) but with meaningful mid/small-cap representation to avoid large-cap-only bias."
+    },
+    "sector_weights_pct": {
+      "Technology": 15.0,
+      "Healthcare": 14.7,
+      "Industrials": 15.0,
+      "Financials": 13.0,
+      "Consumer Discretionary": 9.7,
+      "Consumer Staples": 7.7,
+      "Energy": 6.7,
+      "Communication Services": 6.0,
+      "Utilities": 4.7,
+      "Materials": 4.7,
+      "Real Estate": 3.0,
+      "rationale": "All 11 GICS sectors represented. Industrials slightly over-weighted vs MSCI World due to natural EU market composition. Tech slightly under-weighted vs US-only benchmarks but realistic for a US+EU combined universe."
+    },
+    "european_countries": {
+      "UK": 23,
+      "DE": 16,
+      "FR": 16,
+      "NL": 9,
+      "CH": 8,
+      "SE": 8,
+      "ES": 5,
+      "IT": 5,
+      "DK": 4,
+      "NO": 4,
+      "FI": 3,
+      "BE": 2,
+      "PT": 1,
+      "AT": 1,
+      "rationale": "14 European countries. Weighted by market size: UK, Germany, France dominate; smaller markets still represented for geographic diversity."
+    }
+  },
+  "biases_addressed": [
+    "Geographic: covers 14 EU countries + US (original sample_100 missed Japan, China, Korea, Brazil, Scandinavia — now scoped to US+EU by design)",
+    "Market-cap tiers: includes large/mid/small (original was large-cap-only from flagship indices)",
+    "Sector balance: all 11 GICS sectors represented (original had no sector awareness)",
+    "Index-weight: allocation loosely proportional to market cap rather than equal-weight-per-index"
+  ],
+  "biases_remaining": [
+    "Survivorship: tickers reflect current constituents, not point-in-time. Stocks that were delisted, acquired, or dropped from indices since 2018 are excluded. This inflates apparent backtest returns.",
+    "Liquidity: no explicit liquidity filter applied. Some small-caps may have thin volume on certain days.",
+    "Currency: European stocks trade in local currencies (GBP, EUR, CHF, SEK, DKK, NOK, PLN). FX effects are embedded in returns unless hedged.",
+    "Static list: this is a fixed list, not dynamically rebalanced. Index composition changes over time are not reflected."
+  ],
+  "validation_note": "All tickers should be validated against yfinance before use. Run a quick download check to confirm data availability for the desired date range and timeframes.",
+  "sources": {
+    "US_large": "S&P 500 constituents",
+    "US_mid": "S&P MidCap 400 / Russell Midcap constituents",
+    "US_small": "S&P SmallCap 600 / Russell 2000 constituents",
+    "EU_large": "STOXX Europe 50 / national flagship indices (FTSE 100, DAX 40, CAC 40, SMI, AEX, IBEX 35, FTSE MIB, OMX Stockholm 30, OMX Copenhagen 25, OBX)",
+    "EU_mid": "STOXX Europe Mid 200 / FTSE 250 / MDAX / SBF 120",
+    "EU_small": "STOXX Europe Small 200 / national small-cap indices"
+  }
+}

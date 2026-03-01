@@ -1,0 +1,174 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © BOSWaves
+
+//@version=6
+indicator("Impulse Trend Levels [BOSWaves]", overlay=true)
+
+// ┌────────────────────────────── BOSWaves ─ Constants ──────────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+const string g1 = "Core Engine"
+const string g2 = "Adaptive Bands"
+const string g3 = "Signals & Display"
+
+color BULL = #00FFD5
+color BEAR = #FF0066
+
+// ┌────────────────────────────── BOSWaves ─ Tooltips ───────────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+const string tt_len       = "Baseline smoothing length. Higher = smoother trend, fewer signals."
+const string tt_impulse   = "Lookback for impulse detection. Lower = more reactive to sudden moves."
+const string tt_decay     = "How fast impulse freshness fades. Higher = impulses stay fresh longer."
+const string tt_mad_len   = "Lookback for Mean Absolute Deviation calculation. Higher = smoother bands."
+const string tt_band_min  = "Minimum band multiplier when impulse is fresh (tight bands = confidence)."
+const string tt_band_max  = "Maximum band multiplier when impulse is stale (wide bands = caution)."
+const string tt_cloud     = "Display the adaptive trend cloud around price."
+const string tt_bars      = "Color candles based on current trend direction."
+const string tt_signals   = "Show Buy/Sell labels when trend switches direction."
+const string tt_bands     = "Show the adaptive upper and lower bands."
+const string tt_colors    = "Colors for bullish and bearish trend states."
+const string tt_signal_buffer = "Bars to wait after Buy/Sell signal before drawing retest lines."
+
+// ┌────────────────────────────── BOSWaves ─ Inputs ─────────────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+
+// ─────────────────── Core Engine ───────────────────
+int   len        = input.int(19, "Trend Length", minval=5, group=g1, tooltip=tt_len)
+int   impulseLen = input.int(5, "Impulse Lookback", minval=1, group=g1, tooltip=tt_impulse)
+float decayRate  = input.float(0.99, "Decay Rate", minval=0.8, maxval=0.99, step=0.01, group=g1, tooltip=tt_decay)
+
+// ─────────────────── Adaptive Bands ───────────────────
+int   madLen   = input.int(20, "MAD Length", minval=5, group=g2, tooltip=tt_mad_len)
+float bandMin  = input.float(1.5, "Band Min (Fresh)", minval=0.5, step=0.1, group=g2, tooltip=tt_band_min)
+float bandMax  = input.float(1.9, "Band Max (Stale)", minval=1.0, step=0.1, group=g2, tooltip=tt_band_max)
+bool  showBands = input.bool(true, "Show Bands", group=g2, tooltip=tt_bands)
+
+// ─────────────────── Signals & Display ───────────────────
+bool  showCloud   = input.bool(true, "Show Trend Cloud", group=g3, tooltip=tt_cloud)
+bool  paintBars   = input.bool(true, "Color Bars", group=g3, tooltip=tt_bars)
+bool  showSignals = input.bool(true, "Show Buy/Sell Signals", group=g3, tooltip=tt_signals)
+color bullCol     = input.color(BULL, "Bullish", inline="col", group=g3, tooltip=tt_colors)
+color bearCol     = input.color(BEAR, "Bearish", inline="col", group=g3)
+int   rtW         = input.int(6, "Retest Line Width", group=g3)
+int   signalBuffer = input.int(10, "Signal Buffer Period", minval=1, maxval=30, group=g3, tooltip=tt_signal_buffer)
+
+// ┌────────────────────────────── BOSWaves ─ State ──────────────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+var float impulse    = 0.0
+var int   impulseDir = 0
+var int   lastSignal = 0
+var int   lastBullDot = na
+var int   lastBearDot = na
+
+// ┌────────────────────────────── BOSWaves ─ Core Calculations ──────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+float basisO = ta.ema(open, len)
+float basisC = ta.ema(close, len)
+float basis  = basisC
+
+// ┌────────────────────────────── BOSWaves ─ Mean Absolute Deviation ────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+float mean = ta.sma(close, madLen)
+float mad  = ta.sma(math.abs(close - mean), madLen)
+
+// ┌────────────────────────────── BOSWaves ─ Impulse Detection ──────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+float rawImpulse    = mad > 0 ? (close - close[impulseLen]) / mad : 0
+float impulseThresh = 1.0
+float absRaw        = math.abs(rawImpulse)
+
+if absRaw > impulseThresh
+    impulse    := absRaw
+    impulseDir := rawImpulse > 0 ? 1 : -1
+else
+    impulse := impulse * decayRate
+
+float freshness = math.min(impulse / 2.0, 1.0)
+
+// ┌────────────────────────────── BOSWaves ─ Adaptive Bands ─────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+float bandMult = bandMax - (bandMax - bandMin) * freshness
+float upper    = basis + mad * bandMult
+float lower    = basis - mad * bandMult
+
+// ┌────────────────────────────── BOSWaves ─ Signal Logic ───────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+bool longCond  = ta.crossover(close, upper)
+bool shortCond = ta.crossunder(close, lower)
+
+int prevSignal = lastSignal
+lastSignal := longCond ? 1 : shortCond ? -1 : lastSignal
+
+bool  switchUp   = lastSignal == 1 and prevSignal == -1
+bool  switchDown = lastSignal == -1 and prevSignal == 1
+color trendCol   = lastSignal == 1 ? bullCol : bearCol
+
+// ┌────────────────────────────── BOSWaves ─ Candles ────────────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+plotcandle(open, high, low, close, "Candles", 
+     trendCol, trendCol, 
+     bordercolor=trendCol,
+     display=paintBars ? display.all : display.none)
+
+// ┌────────────────────────────── BOSWaves ─ Trend Cloud ────────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+float bandThickness = mad * 0.5
+float bandOuter     = lastSignal == 1 ? lower : upper
+float bandInner     = lastSignal == 1 ? lower + bandThickness : upper - bandThickness
+
+pOuter = plot(showCloud ? bandOuter : na, "Band Outer", color=trendCol, linewidth=2)
+pInner = plot(showCloud ? bandInner : na, "Band Inner", color=color.new(trendCol, 70), linewidth=1)
+
+fill(pOuter, pInner, bandOuter, bandInner, 
+     lastSignal == 1 ? color.new(bullCol, 30) : color.new(bearCol, 80),
+     lastSignal == 1 ? color.new(bullCol, 80) : color.new(bearCol, 30))
+
+// ┌────────────────────────────── BOSWaves ─ Retest Detection ───────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+
+var int lastSignalBar = 0
+if switchUp or switchDown
+    lastSignalBar := bar_index
+
+bool farEnoughFromSignal = bar_index - lastSignalBar >= signalBuffer
+
+bool bullRetest = lastSignal == 1 and low < bandInner and farEnoughFromSignal
+bool bearRetest = lastSignal == -1 and high > bandInner and farEnoughFromSignal
+
+bool bullDotOk = bullRetest and (na(lastBullDot) or bar_index - lastBullDot >= 55)
+bool bearDotOk = bearRetest and (na(lastBearDot) or bar_index - lastBearDot >= 55)
+
+int duration = 50
+
+if bullDotOk
+    lastBullDot := bar_index
+    line.new(bar_index, low, bar_index + duration, low, color=color.new(bullCol, 50), style=line.style_solid, width=rtW)
+
+if bearDotOk
+    lastBearDot := bar_index
+    line.new(bar_index, high, bar_index + duration, high, color=color.new(bearCol, 50), style=line.style_solid, width=rtW)
+
+// ┌────────────────────────────── BOSWaves ─ Signals ────────────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+if showSignals and switchUp
+    label.new(bar_index, low - mad * 1.5, "▲", 
+         style=label.style_label_up, 
+         size=size.normal, 
+         color=bullCol, 
+         textcolor=color.white)
+
+if showSignals and switchDown
+    label.new(bar_index, high + mad * 1.5, "▼", 
+         style=label.style_label_down, 
+         size=size.normal, 
+         color=bearCol, 
+         textcolor=color.white)
+
+plotchar(bullDotOk ? low : na, "Bull Retest", "✦", location.absolute, bullCol, size=size.small)
+plotchar(bearDotOk ? high : na, "Bear Retest", "✦", location.absolute, bearCol, size=size.small)
+
+// ┌────────────────────────────── BOSWaves ─ Alerts ─────────────────────────────────┐
+// └──────────────────────────────────────────────────────────────────────────────────┘
+alertcondition(switchUp, "Impulse Long", "Impulse Engine LONG {{ticker}} {{interval}}")
+alertcondition(switchDown, "Impulse Short", "Impulse Engine SHORT {{ticker}} {{interval}}")
+alertcondition(bullDotOk or bearDotOk, "Impulse Retest", "Impulse Engine Retest {{ticker}} {{interval}}")
+alertcondition(freshness[1] > 0.5 and freshness <= 0.5, "Impulse Fading", "Impulse fading below 50% {{ticker}} {{interval}}")

@@ -1,0 +1,27 @@
+{
+  "input": {
+    "stock_data_dir": "data/feature_store/enriched/sample_100/stock_data",
+    "run_metadata_copy": "data/feature_store/enriched/sample_100/run_metadata.json",
+    "indicator_config_json": "research/indicator_config_optimiser/configs/indicator_config_optimised_H4_bull.json"
+  },
+  "timeframes": [
+    "4H",
+    "1D",
+    "1W"
+  ],
+  "symbols": [],
+  "research": {
+    "horizons_bars": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "time_slices": 4,
+    "allow_repainting_indicators": false,
+    "combo_max_k": 3,
+    "combo_candidate_kpis": 10,
+    "combo_max_per_k": 120,
+    "combo_min_occurrences": 120
+  }
+}

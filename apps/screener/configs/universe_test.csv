@@ -1,0 +1,11 @@
+ticker,source_index,geo
+AAPL,sp500,US
+MSFT,sp500,US
+NVDA,sp500,US
+META,sp500,US
+AMZN,sp500,US
+SAP.DE,dax,EU
+ALV.DE,dax,EU
+ASML.AS,aex,EU
+SHEL.L,ftse100,EU
+AZN.L,ftse100,EU
