@@ -15,7 +15,9 @@ This file documents how each PineScript indicator was translated to Python.
 |---|---|---|
 | 000001.SS | 000001.SS | 000001.SS |
 | 3BRL.L | 3BRL.L | 3BRL.L |
+| AAPL | AAPL | AAPL |
 | ACA.PA | ACA.PA | ACA.PA |
+| ACHC | ACHC | ACHC |
 | AIR.PA | AIR.PA | AIR.PA |
 | ALREW.PA | ALREW.PA | ALREW.PA |
 | ALV.DE | ALV.DE | ALV.DE |
@@ -28,11 +30,13 @@ This file documents how each PineScript indicator was translated to Python.
 | BNP.PA | BNP.PA | BNP.PA |
 | BPE.MI | BPE.MI | BPE.MI |
 | CAC.PA | CAC.PA | CAC.PA |
+| CE | CE | CE |
 | CLDD.DE | CLDD.DE | CLDD.DE |
 | CLDX | CLDX | CLDX |
 | CNI | CNI | CNI |
 | COCO.L | COCO.L | COCO.L |
 | COTN.SW | COTN.SW | COTN.SW |
+| CRM | CRM | CRM |
 | CSPX.AS | CSPX.AS | CSPX.AS |
 | CVGI | CVGI | CVGI |
 | CW8.PA | CW8.PA | CW8.PA |
@@ -45,7 +49,6 @@ This file documents how each PineScript indicator was translated to Python.
 | EGLN.L | EGLN.L | EGLN.L |
 | EIDO | EIDO | EIDO |
 | ENGI.PA | ENGI.PA | ENGI.PA |
-| EPR | EPR | EPR |
 | ERA.PA | ERA.PA | ERA.PA |
 | EXSD.DE | EXSD.DE | EXSD.DE |
 | EXV5.DE | EXV5.DE | EXV5.DE |
@@ -54,6 +57,8 @@ This file documents how each PineScript indicator was translated to Python.
 | FINX | FINX | FINX |
 | FTSEMIB.MI | FTSEMIB.MI | FTSEMIB.MI |
 | GDX | GDX | GDX |
+| GFT.F | GFT.F | GFT.F |
+| GOOG | GOOG | GOOG |
 | HLT.PA | HLT.PA | HLT.PA |
 | HWDN.L | HWDN.L | HWDN.L |
 | IBB | IBB | IBB |
@@ -80,6 +85,7 @@ This file documents how each PineScript indicator was translated to Python.
 | LPL | LPL | LPL |
 | LULU | LULU | LULU |
 | LYP6.DE | LYP6.DE | LYP6.DE |
+| LYV | LYV | LYV |
 | MBUU | MBUU | MBUU |
 | MEI | MEI | MEI |
 | MGPI | MGPI | MGPI |
@@ -112,6 +118,8 @@ This file documents how each PineScript indicator was translated to Python.
 | THRM | THRM | THRM |
 | TNO.PA | TNO.PA | TNO.PA |
 | TRGP | TRGP | TRGP |
+| TSLA | TSLA | TSLA |
+| UNH | UNH | UNH |
 | VEGI | VEGI | VEGI |
 | VRT | VRT | VRT |
 | W3B3.DE | W3B3.DE | W3B3.DE |

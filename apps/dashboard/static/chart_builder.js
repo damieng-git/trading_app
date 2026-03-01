@@ -638,6 +638,14 @@
     const trend = kpiSlice(kpisTrend);
     const brk = kpiSlice(kpisBreakout);
 
+    // Strategy-aware: build Stoof KPI slice
+    const strategyKpis = data.strategy_kpis || {};
+    const _activeStrat = (typeof currentStrategy !== "undefined") ? currentStrategy : "v6";
+    const stoofKpiNames = strategyKpis["stoof"] || [];
+    const stoofSlice = kpiSlice(stoofKpiNames);
+    const v6KpiNames = strategyKpis["v6"] || [];
+    const v6Slice = v6KpiNames.length ? kpiSlice(v6KpiNames) : trend;
+
     const combo3kpis = data.combo_3_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "Volume + MA20"];
     const combo4kpis = data.combo_4_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "GK Trend Ribbon", "cRSI"];
 
@@ -684,41 +692,59 @@
       });
     }
 
-    // TrendScore (row 4)
+    // TrendScore / StoofScore (row 4)
     let tsPad = 1;
-    if (trend.kk.length && trend.zz.length) {
+    const isStoof = _activeStrat === "stoof";
+    const scoreSlice = isStoof ? stoofSlice : (_activeStrat === "v6" ? v6Slice : trend);
+    const scoreLabel = isStoof ? "StoofScore" : "TrendScore";
+
+    if (scoreSlice.kk.length && scoreSlice.zz.length) {
       const tsValues = new Array(n).fill(0);
-      trend.kk.forEach((k, i) => {
-        const w = kpiWeights[k] != null ? kpiWeights[k] : 1;
-        const row = trend.zz[i];
+      scoreSlice.kk.forEach((k, i) => {
+        const w = isStoof ? 1 : (kpiWeights[k] != null ? kpiWeights[k] : 1);
+        const row = scoreSlice.zz[i];
         for (let ci = 0; ci < n; ci++) {
           const v = row[ci];
-          if (v === 1 || v === -1) tsValues[ci] += v * w;
+          if (v === 1) tsValues[ci] += w;
+          else if (v === -1) tsValues[ci] -= w;
         }
       });
       const tsColors = tsValues.map(v => v > 0 ? "rgba(34,197,94,0.8)" : (v < 0 ? "rgba(239,68,68,0.8)" : "rgba(148,163,184,0.5)"));
       traces.push(mkTrace({
         type: "bar", x: x, y: tsValues, marker: { color: tsColors },
-        hovertemplate: "<b>TrendScore</b>: %{y:.1f}<br>%{x}<extra></extra>",
+        hovertemplate: "<b>" + scoreLabel + "</b>: %{y:.1f}<br>%{x}<extra></extra>",
       }, 4, "TrendScore", true));
-      const tsMax = Math.max(...tsValues.map(Math.abs), 1);
-      tsPad = Math.max(tsMax * 1.1, 1);
 
-      // Combo detection
-      c3Active = comboBool(combo3kpis);
-      c4Active = comboBool(combo4kpis);
+      if (isStoof) {
+        // Threshold line at 7 (the "7/10 rule")
+        traces.push(mkTrace({
+          type: "scatter", x: [x[0], x[n-1]], y: [7, 7],
+          mode: "lines", line: { color: "rgba(59,130,246,0.6)", width: 1.5, dash: "dash" },
+          hoverinfo: "skip",
+        }, 4, "TrendScore", true));
+      }
+
+      const tsMax = Math.max(...tsValues.map(Math.abs), 1);
+      tsPad = isStoof ? 11 : Math.max(tsMax * 1.1, 1);
+
+      // Combo detection (only for v6)
+      if (!isStoof) {
+        c3Active = comboBool(combo3kpis);
+        c4Active = comboBool(combo4kpis);
+      }
     }
 
-    // KPI Trend Heatmap (row 6)
+    // KPI Trend Heatmap (row 6) — uses scoreSlice when strategy is active
+    const heatmapSlice = isStoof ? stoofSlice : (_activeStrat === "v6" ? v6Slice : trend);
     const trLabels = [];
-    if (trend.kk.length) {
-      trend.kk.forEach(k => trLabels.push(shortLabel(k)));
-      const grouped_kpi_names = trend.kk.map(k => constant(n, k));
+    if (heatmapSlice.kk.length) {
+      heatmapSlice.kk.forEach(k => trLabels.push(shortLabel(k)));
+      const grouped_kpi_names = heatmapSlice.kk.map(k => constant(n, k));
       traces.push(mkTrace({
-        type: "heatmap", x: x, y: trLabels, z: trend.zz,
+        type: "heatmap", x: x, y: trLabels, z: heatmapSlice.zz,
         zmin: -3, zmax: 1, colorscale: colorscale, zsmooth: false,
         showscale: false, xgap: 0, ygap: 3,
-        customdata: grouped_kpi_names, text: trend.cc,
+        customdata: grouped_kpi_names, text: heatmapSlice.cc,
         hovertemplate: "<b>%{customdata}</b><br>%{x}<br>%{text}<extra></extra>",
       }, 6, "KPI Trend", true));
     }

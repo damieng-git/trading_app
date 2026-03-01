@@ -50,6 +50,7 @@
     let selectedIndicators = new Set(Array.isArray(_st0.indicators) ? _st0.indicators : []);
     let _upperShapesStrategy = [];
     let _upperShapesCharts = [];
+    let currentStrategy = (typeof _st0.strategy === "string") ? _st0.strategy : "v6";
 
     function _debounce(fn, ms) {
       let t;
@@ -514,6 +515,13 @@
         const axNum = parseInt((xa.replace("x", "") || "1"), 10);
         if (axNum === 1 || axNum === 3) plottableKeys.add(k);
       });
+
+      // Strategy filter: if a strategy is active, restrict to its KPI set
+      const stratKpis = (typeof _getStrategyKpis === "function") ? _getStrategyKpis() : null;
+      if (stratKpis) {
+        const allowed = new Set(stratKpis);
+        plottableKeys.forEach(k => { if (!allowed.has(k)) plottableKeys.delete(k); });
+      }
 
       const keys = new Set(plottableKeys);
       indicatorKeys = Array.from(keys);
@@ -1774,18 +1782,17 @@
       const table = document.createElement("table");
       const thead = document.createElement("thead");
       const hdr = [
-        ["symbol","Name","11%"],
+        ["symbol","Name","10%"],
         ["_ticker","Ticker","5%"],
         ["market_cap","Mkt Cap","5%"],
-        ["_price","Price","5.5%"],
+        ["_price","Price","5%"],
         ["_recommendation","Analysts","4%"],
-        ["_conv10","TrendScore","8%"],
-        ["_confluence","Traffic Light","8%"],
-        ["_action_tf","Action TF","11%"],
-        ["_vs_sector","TS vs Sector","5%"],
-        ["_vs_market","TS vs Market","5%"],
-        ["pe_vs_sector","P/E vs Sec","5.5%"],
-        ["_move_group","Group","5.5%"],
+        ["_conv10","TrendScore","9%"],
+        ["_confluence","Traffic Light","9%"],
+        ["_action_tf","Action","11%"],
+        ["_vs_bench","TrendScore vs Bench","9%"],
+        ["pe_vs_sector","P/E vs Sec","5%"],
+        ["_move_group","Group","5%"],
         ["_delete","","3%"],
       ];
       const colgroup = document.createElement("colgroup");
@@ -1798,9 +1805,11 @@
       const _sortable = new Set(["symbol","_ticker","market_cap","_price",
         "_action_tf","_recommendation","pe_vs_sector"]);
       const trh = document.createElement("tr");
+      const _centered = new Set(["_conv10","_confluence","_action_tf","_vs_bench","pe_vs_sector","_recommendation"]);
       hdr.forEach(([k, label]) => {
         const th = document.createElement("th");
         th.textContent = label;
+        if (_centered.has(k)) th.style.textAlign = "center";
         if (_sortable.has(k)) {
           const sortK = k.startsWith("_") ? k : k;
           th.addEventListener("click", () => {
@@ -1825,6 +1834,7 @@
         const tr = document.createElement("tr");
         hdr.forEach(([k, _]) => {
           const td = document.createElement("td");
+          if (_centered.has(k)) td.style.textAlign = "center";
           if (k === "symbol") {
             td.style.maxWidth = "140px";
             td.style.overflow = "hidden";
@@ -1850,54 +1860,60 @@
             td.style.letterSpacing = "0.3px";
             const secParts = [r.sector, r.industry].filter(Boolean);
             td.title = secParts.length ? secParts.join(" — ") : "";
-          } else if (k === "_vs_sector") {
-            const delta = r.sector_ts_delta;
-            const bench = r.sector_etf || "";
-            if (delta != null && bench) {
-              const val = parseFloat(delta);
-              const span = document.createElement("span");
-              span.style.fontWeight = "600";
-              span.style.fontSize = "11px";
-              if (val > 0) {
-                span.textContent = "+" + val.toFixed(1);
-                span.style.color = "var(--candle-up)";
-              } else if (val < 0) {
-                span.textContent = val.toFixed(1);
-                span.style.color = "var(--candle-down)";
-              } else {
-                span.textContent = "0";
-                span.style.color = "var(--muted)";
-              }
-              td.appendChild(span);
-              const benchName = (SYMBOL_DISPLAY && SYMBOL_DISPLAY[bench]) || bench;
-              td.title = r.sector + (r.industry ? " | " + r.industry : "") + "\nvs " + benchName;
+          } else if (k === "_vs_bench") {
+            const wrap = document.createElement("div");
+            wrap.style.display = "flex";
+            wrap.style.gap = "6px";
+            wrap.style.justifyContent = "center";
+            wrap.style.fontSize = "11px";
+            wrap.style.fontWeight = "600";
+            const tooltipParts = [];
+            const sDelta = r.sector_ts_delta;
+            const sBench = r.sector_etf || "";
+            if (sDelta != null && sBench) {
+              const sVal = parseFloat(sDelta);
+              const sSpan = document.createElement("span");
+              sSpan.textContent = (sVal > 0 ? "+" : "") + sVal.toFixed(1);
+              sSpan.style.color = sVal > 0 ? "var(--candle-up)" : sVal < 0 ? "var(--candle-down)" : "var(--muted)";
+              const sLabel = document.createElement("span");
+              sLabel.textContent = "S";
+              sLabel.style.color = "var(--muted)";
+              sLabel.style.fontSize = "9px";
+              sLabel.style.marginRight = "1px";
+              const sGroup = document.createElement("span");
+              sGroup.appendChild(sLabel);
+              sGroup.appendChild(sSpan);
+              wrap.appendChild(sGroup);
+              const benchName = (SYMBOL_DISPLAY && SYMBOL_DISPLAY[sBench]) || sBench;
+              tooltipParts.push("Sector: " + (sVal > 0 ? "+" : "") + sVal.toFixed(1) + " vs " + benchName);
             }
-          } else if (k === "_vs_market") {
             const mDelta = r.market_ts_delta;
             const mIdx = r.market_index || "";
             if (mDelta != null && mIdx) {
               const mVal = parseFloat(mDelta);
               const mSpan = document.createElement("span");
-              mSpan.style.fontWeight = "600";
-              mSpan.style.fontSize = "11px";
-              if (mVal > 0) {
-                mSpan.textContent = "+" + mVal.toFixed(1);
-                mSpan.style.color = "var(--candle-up)";
-              } else if (mVal < 0) {
-                mSpan.textContent = mVal.toFixed(1);
-                mSpan.style.color = "var(--candle-down)";
-              } else {
-                mSpan.textContent = "0";
-                mSpan.style.color = "var(--muted)";
-              }
-              td.appendChild(mSpan);
+              mSpan.textContent = (mVal > 0 ? "+" : "") + mVal.toFixed(1);
+              mSpan.style.color = mVal > 0 ? "var(--candle-up)" : mVal < 0 ? "var(--candle-down)" : "var(--muted)";
+              const mLabel = document.createElement("span");
+              mLabel.textContent = "M";
+              mLabel.style.color = "var(--muted)";
+              mLabel.style.fontSize = "9px";
+              mLabel.style.marginRight = "1px";
+              const mGroup = document.createElement("span");
+              mGroup.appendChild(mLabel);
+              mGroup.appendChild(mSpan);
+              wrap.appendChild(mGroup);
               const mIdxName = (SYMBOL_DISPLAY && SYMBOL_DISPLAY[mIdx]) || mIdx;
-              td.title = "vs " + mIdxName;
+              tooltipParts.push("Market: " + (mVal > 0 ? "+" : "") + mVal.toFixed(1) + " vs " + mIdxName);
+            }
+            if (wrap.childNodes.length) {
+              td.appendChild(wrap);
+              td.title = tooltipParts.join("\n");
             }
           } else if (k === "_conv10") {
             const vals = r.conv10 || [];
             const wrap10 = document.createElement("div");
-            wrap10.style.display = "flex"; wrap10.style.alignItems = "center"; wrap10.style.gap = "4px";
+            wrap10.style.display = "flex"; wrap10.style.alignItems = "center"; wrap10.style.justifyContent = "center"; wrap10.style.gap = "4px";
             if (vals.length) {
               const w = 70, h = 22, bw = Math.max(2, Math.floor(w / vals.length) - 1);
               const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -1945,7 +1961,7 @@
           } else if (k === "_action_tf") {
             const sym = String(r.symbol || "").toUpperCase();
             const atWrap = document.createElement("div");
-            atWrap.style.display = "flex"; atWrap.style.gap = "3px"; atWrap.style.alignItems = "center";
+            atWrap.style.display = "flex"; atWrap.style.gap = "3px"; atWrap.style.alignItems = "center"; atWrap.style.justifyContent = "center";
             const allTFs = TIMEFRAMES || [];
             allTFs.forEach(tfk => {
               const rec = (SCREENER && SCREENER.by_symbol && SCREENER.by_symbol[sym] && SCREENER.by_symbol[sym][tfk]) ? SCREENER.by_symbol[sym][tfk] : null;
@@ -2637,6 +2653,52 @@
     }
     // Indicator strip + symbol list are always visible.
 
+    // ── Strategy dropdown ──────────────────────────────────────────────
+    (function initStrategyDropdown() {
+      const trigger = document.getElementById("strategyTrigger");
+      const menu = document.getElementById("strategyMenu");
+      if (!trigger || !menu) return;
+      const setups = (typeof STRATEGY_SETUPS !== "undefined") ? STRATEGY_SETUPS : {};
+      const setupDefs = setups.setups || {};
+      const kpisByStrategy = setups.kpis_by_strategy || {};
+
+      function _build() {
+        menu.innerHTML = "";
+        const entries = [["all", "All Indicators"]];
+        Object.keys(setupDefs).forEach(k => entries.push([k, setupDefs[k].label || k]));
+        entries.forEach(([key, label]) => {
+          const item = document.createElement("div");
+          item.className = "strategy-menu-item" + (key === currentStrategy ? " active" : "");
+          item.textContent = label;
+          item.addEventListener("click", () => {
+            currentStrategy = key;
+            saveState({ strategy: currentStrategy });
+            trigger.innerHTML = label + " &#9662;";
+            menu.classList.remove("open");
+            _build();
+            renderChart();
+          });
+          menu.appendChild(item);
+        });
+      }
+      _build();
+      const initLabel = currentStrategy === "all" ? "All Indicators" : ((setupDefs[currentStrategy] || {}).label || currentStrategy);
+      trigger.innerHTML = initLabel + " &#9662;";
+
+      trigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menu.classList.toggle("open");
+      });
+      document.addEventListener("click", () => menu.classList.remove("open"));
+    })();
+
+    function _getStrategyKpis() {
+      const setups = (typeof STRATEGY_SETUPS !== "undefined") ? STRATEGY_SETUPS : {};
+      const kpisByStrategy = setups.kpis_by_strategy || {};
+      if (currentStrategy === "all") return null;
+      return kpisByStrategy[currentStrategy] || null;
+    }
+
     function _selectTF(tf) {
       currentTF = tf;
       saveState({ tf: currentTF });
@@ -3009,20 +3071,27 @@
           }
 
           if (changed) {
+            figCache = {};
+            _pnlApiData = null;
+            _pnlCacheGroup = null;
             buildGroupTabs();
-            var entryKey = Object.keys(SYMBOL_GROUPS).find(function(k) { return k.toLowerCase().replace(/[_ ]/g, "") === "entrystocks"; });
-            if (entryKey) { _selectGroup(entryKey); }
+            if (_activeAction === "Scan") {
+              var entryKey = Object.keys(SYMBOL_GROUPS).find(function(k) { return k.toLowerCase().replace(/[_ ]/g, "") === "entrystocks"; });
+              if (entryKey) { _selectGroup(entryKey); }
+            }
             ensureCurrentSymbolAllowed();
             buildSymbolList();
             buildScreener();
-            if (currentTab !== "screener") {
-              figCache = {};
-              if (currentSymbol) loadFig(currentSymbol, currentTF);
+            if (currentTab === "pnl") {
+              buildPnlTab();
+            } else if (currentTab !== "screener" && currentSymbol) {
+              loadFig(currentSymbol, currentTF);
             }
           }
         }).catch(function(err) { console.warn("Live data reload failed:", err); });
       }
 
+      window._connectSSE = _connectSSE;
       function _connectSSE(endpoint, actionName) {
         if (evtSource) return;
         if (location.protocol === "file:") {
@@ -3235,6 +3304,8 @@
         var q = (input.value || "").trim();
         if (!q) return;
         resultsDiv.innerHTML = "";
+        searchBtn.classList.add("searching");
+        searchBtn.textContent = "Searching\u2026";
         statusDiv.textContent = "Searching\u2026";
         statusDiv.className = "modal-status loading";
         fetch("/api/resolve-ticker", {
@@ -3244,6 +3315,8 @@
         })
           .then(function(r) { return r.json(); })
           .then(function(d) {
+            searchBtn.classList.remove("searching");
+            searchBtn.textContent = "Search";
             statusDiv.textContent = ""; statusDiv.className = "modal-status";
             var results = d.results || [];
             if (!results.length) {
@@ -3251,32 +3324,47 @@
               statusDiv.className = "modal-status err";
               return;
             }
+            var existingSyms = (typeof SYMBOLS !== "undefined" && Array.isArray(SYMBOLS)) ? SYMBOLS : [];
             results.forEach(function(r) {
               var item = document.createElement("div");
               item.className = "modal-result-item";
+              var alreadyInWatchlist = existingSyms.indexOf(r.ticker) >= 0;
+              var alreadyStaged = staged.indexOf(r.ticker) >= 0;
               var info = document.createElement("div");
               info.className = "modal-result-info";
-              info.innerHTML = "<strong>" + r.ticker + "</strong> " + (r.name || "") +
-                "<br><small>" + [r.sector, r.industry, r.exchange, r.currency, r.quoteType].filter(Boolean).join(" \u2022 ") +
-                (r.price ? " \u2022 " + r.price.toFixed(2) : "") + "</small>";
+              if (alreadyInWatchlist) {
+                item.style.opacity = "0.45";
+                item.style.pointerEvents = "none";
+                info.innerHTML = "<strong style='color:var(--muted);'>" + (r.name || r.ticker) + "</strong>" +
+                  "<br><span style='font-size:11px;color:var(--muted);font-weight:600;'>" + r.ticker + "</span>" +
+                  "<br><small style='color:var(--muted);'>Already in watchlist</small>";
+              } else {
+                info.innerHTML = "<strong>" + (r.name || r.ticker) + "</strong>" +
+                  "<br><span style='font-size:11px;color:var(--muted);font-weight:600;'>" + r.ticker + "</span>" +
+                  "<br><small>" + [r.sector, r.industry, r.exchange, r.currency, r.quoteType].filter(Boolean).join(" \u2022 ") +
+                  (r.price ? " \u2022 " + r.price.toFixed(2) : "") + "</small>";
+              }
               item.appendChild(info);
-              var btn = document.createElement("button");
-              btn.className = "modal-result-btn";
-              var alreadyStaged = staged.indexOf(r.ticker) >= 0;
-              btn.textContent = alreadyStaged ? "\u2713 Queued" : "+ Add";
-              if (alreadyStaged) btn.disabled = true;
-              btn.addEventListener("click", function() {
-                if (staged.indexOf(r.ticker) < 0) {
-                  staged.push(r.ticker);
-                  _renderStaging();
-                  btn.textContent = "\u2713 Queued"; btn.disabled = true;
-                }
-              });
-              item.appendChild(btn);
+              if (!alreadyInWatchlist) {
+                var btn = document.createElement("button");
+                btn.className = "modal-result-btn";
+                btn.textContent = alreadyStaged ? "\u2713 Queued" : "Add to watchlist";
+                if (alreadyStaged) btn.disabled = true;
+                btn.addEventListener("click", function() {
+                  if (staged.indexOf(r.ticker) < 0) {
+                    staged.push(r.ticker);
+                    _renderStaging();
+                    btn.textContent = "\u2713 Queued"; btn.disabled = true;
+                  }
+                });
+                item.appendChild(btn);
+              }
               resultsDiv.appendChild(item);
             });
           })
           .catch(function(err) {
+            searchBtn.classList.remove("searching");
+            searchBtn.textContent = "Search";
             statusDiv.textContent = "Error: " + err;
             statusDiv.className = "modal-status err";
           });
@@ -3299,13 +3387,18 @@
           .then(function(r) { return r.json(); })
           .then(function(d) {
             if (!d.ok && d.error) {
+              if (d.error.indexOf("already running") >= 0) {
+                hide();
+                window._connectSSE("/api/enrich", "Enrich");
+                return;
+              }
               statusDiv.textContent = d.error;
               statusDiv.className = "modal-status err";
               confirmBtn.disabled = false;
               return;
             }
             hide();
-            _connectSSE("/api/enrich", "Enrich");
+            window._connectSSE("/api/enrich", "Enrich");
           })
           .catch(function(err) {
             statusDiv.textContent = "Error: " + err;

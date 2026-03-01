@@ -379,5 +379,129 @@ def compute_kpi_state_map(df: pd.DataFrame, *, stoch_mtm_thresholds: dict | None
         if name not in state:
             state[name] = pd.Series(STATE_NA, index=idx, dtype=int)
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # Stoof (Band Light) KPI states
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # BL1: MACD — green when hist >= 0 and MACD not in dead zone, red when hist < 0 and not in dead zone
+    if all(c in df.columns for c in ["MACD_BL", "MACD_BL_hist"]):
+        macd_bl = pd.to_numeric(df["MACD_BL"], errors="coerce")
+        hist_bl = pd.to_numeric(df["MACD_BL_hist"], errors="coerce")
+        macd_max = macd_bl.rolling(50, min_periods=1).max()
+        macd_min = macd_bl.rolling(50, min_periods=1).min()
+        dead_zone = (macd_max - macd_min) * 0.05
+        avail = macd_bl.notna() & hist_bl.notna()
+        near_zero = macd_bl.abs() <= dead_zone
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(hist_bl >= 0) & ~near_zero & avail] = STATE_BULL
+        out.loc[(hist_bl < 0) & ~near_zero & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["MACD_BL"] = out
+    else:
+        state["MACD_BL"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL2: WaveTrend — contrarian: green when oversold (WT <= -60), red when overbought (WT >= 60)
+    if "WT_LB_BL_wt1" in df.columns:
+        wt_bl = pd.to_numeric(df["WT_LB_BL_wt1"], errors="coerce")
+        avail = wt_bl.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(wt_bl <= -60.0) & avail] = STATE_BULL
+        out.loc[(wt_bl >= 60.0) & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["WT_LB_BL"] = out
+    else:
+        state["WT_LB_BL"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL3: OBV — contrarian: green when OBV osc < 0 (selling exhaustion), red when > 0
+    if "OBVOSC_BL_osc" in df.columns:
+        obv_bl = pd.to_numeric(df["OBVOSC_BL_osc"], errors="coerce")
+        avail = obv_bl.notna()
+        state["OBVOSC_BL"] = state_from_regime(idx, obv_bl < 0, avail)
+    else:
+        state["OBVOSC_BL"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL4: CCI+Chop+BB v1 — green when smoothed < 25, red when > 65
+    if "CCI_Chop_BB_v1_smooth" in df.columns:
+        ccb1 = pd.to_numeric(df["CCI_Chop_BB_v1_smooth"], errors="coerce")
+        avail = ccb1.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(ccb1 < 25.0) & avail] = STATE_BULL
+        out.loc[(ccb1 > 65.0) & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["CCI_Chop_BB_v1"] = out
+    else:
+        state["CCI_Chop_BB_v1"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL5: ADX+DI — green when ADX > 20 and DI+ > DI-, red when ADX > 20 and DI- > DI+
+    if all(c in df.columns for c in ["ADX_BL", "DI_plus_BL", "DI_minus_BL"]):
+        adx_bl = pd.to_numeric(df["ADX_BL"], errors="coerce")
+        dip_bl = pd.to_numeric(df["DI_plus_BL"], errors="coerce")
+        dim_bl = pd.to_numeric(df["DI_minus_BL"], errors="coerce")
+        avail = adx_bl.notna() & dip_bl.notna() & dim_bl.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        trending = adx_bl > 20.0
+        out.loc[trending & (dip_bl > dim_bl) & avail] = STATE_BULL
+        out.loc[trending & (dim_bl > dip_bl) & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["ADX_DI_BL"] = out
+    else:
+        state["ADX_DI_BL"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL6: LuxAlgo Normalized v1 — green when < 20, red when > 80
+    if "LuxAlgo_Norm_v1" in df.columns:
+        lux1 = pd.to_numeric(df["LuxAlgo_Norm_v1"], errors="coerce")
+        avail = lux1.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(lux1 < 20.0) & avail] = STATE_BULL
+        out.loc[(lux1 > 80.0) & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["LuxAlgo_Norm_v1"] = out
+    else:
+        state["LuxAlgo_Norm_v1"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL7: Risk Indicator — green when < 0.2 (low risk), red when > 0.8 (high risk)
+    if "Risk_Indicator" in df.columns:
+        risk = pd.to_numeric(df["Risk_Indicator"], errors="coerce")
+        avail = risk.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(risk < 0.2) & avail] = STATE_BULL
+        out.loc[(risk > 0.8) & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["Risk_Indicator"] = out
+    else:
+        state["Risk_Indicator"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL8: LuxAlgo Normalized v2 — same rules as v1
+    if "LuxAlgo_Norm_v2" in df.columns:
+        lux2 = pd.to_numeric(df["LuxAlgo_Norm_v2"], errors="coerce")
+        avail = lux2.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(lux2 < 20.0) & avail] = STATE_BULL
+        out.loc[(lux2 > 80.0) & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["LuxAlgo_Norm_v2"] = out
+    else:
+        state["LuxAlgo_Norm_v2"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL9: CCI+Chop+BB v2 — same rules as v1
+    if "CCI_Chop_BB_v2_smooth" in df.columns:
+        ccb2 = pd.to_numeric(df["CCI_Chop_BB_v2_smooth"], errors="coerce")
+        avail = ccb2.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(ccb2 < 25.0) & avail] = STATE_BULL
+        out.loc[(ccb2 > 65.0) & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["CCI_Chop_BB_v2"] = out
+    else:
+        state["CCI_Chop_BB_v2"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL10: PAI — binary: green when Z >= 0, red when Z < 0
+    if "PAI" in df.columns:
+        pai = pd.to_numeric(df["PAI"], errors="coerce")
+        avail = pai.notna()
+        state["PAI"] = state_from_regime(idx, pai >= 0, avail)
+    else:
+        state["PAI"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
     return state
 

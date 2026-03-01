@@ -392,18 +392,17 @@ Switching group or timeframe (on any tab) auto-invalidates the P&L cache and tri
 | 2 | `_ticker` | Ticker | Yes | Raw ticker symbol (hover shows sector + industry) |
 | 3 | `market_cap` | Mkt Cap | Yes | From fundamentals |
 | 4 | `_price` | Price | Yes | Last close + colored % delta for current TF underneath |
-| 5 | `_action_tf` | Action TF | Yes | Signal state per TF: E1.5 (gold), E1 (green), HLD (blue), EXT (red), — (flat). Hover shows bar count. |
+| 5 | `_recommendation` | Analysts | Yes | Analyst consensus (Buy/Hold/Sell) |
 | 6 | `_conv10` | TrendScore | No | 13-bar conviction mini bar chart + conviction % |
-| 7 | `_recommendation` | Analysts | Yes | Analyst consensus (Buy/Hold/Sell) |
-| 8 | `_confluence` | Traffic Light | No | Multi-timeframe trend dots |
-| 9 | `_vs_sector` | TS vs Sector | No | TrendScore delta vs sector ETF |
-| 10 | `_vs_market` | TS vs Market | No | TrendScore delta vs national index |
-| 11 | `pe_vs_sector` | P/E vs Sector | Yes | % premium/discount vs sector ETF P/E |
-| 12 | `_move_group` | Group | — | Dropdown to move ticker between groups + ✕ delete button |
+| 7 | `_confluence` | Traffic Light | No | Multi-timeframe trend dots |
+| 8 | `_action_tf` | Action | Yes | Signal state per TF: E1.5 (gold), E1 (green), HLD (blue), EXT (red), — (flat). Hover shows bar count. |
+| 9 | `_vs_bench` | TrendScore vs Bench | No | Combined: `S`+delta (sector) and `M`+delta (market). Hover shows benchmark names. |
+| 10 | `pe_vs_sector` | P/E vs Sec | Yes | % premium/discount vs sector ETF P/E |
+| 11 | `_move_group` | Group | — | Dropdown to move ticker between groups + ✕ delete button |
 
-### 6.2 Action TF Column — Signal Badges
+### 6.2 Action Column — Signal Badges
 
-Each badge in the Action TF column shows the signal state for one timeframe:
+Each badge in the Action column shows the signal state for one timeframe:
 
 | Badge | Color | Signal | Hover |
 |-------|-------|--------|-------|
@@ -415,7 +414,7 @@ Each badge in the Action TF column shows the signal state for one timeframe:
 
 **Price column** shows last close price with the delta percentage for the current timeframe underneath (green if positive, red if negative, e.g. "+1.2% D").
 
-**Action TF sort order** (descending, aggregated across all timeframes with TF weighting):
+**Action sort order** (descending, aggregated across all timeframes with TF weighting):
 
 | Priority | Signal per TF | Score per TF |
 |----------|---------------|--------------|
@@ -1077,24 +1076,28 @@ Pipeline run log: `data/dashboard_artifacts/alert_files/pipeline_runs.jsonl`
 
 ### 15.1 Overview
 
-Users can add new tickers to the watchlist directly from the screener toolbar via the **[+ Add]** button.
+Users can add new tickers to the watchlist directly from the screener toolbar via the **[+ Add]** button. The modal supports a **staging queue** — users can search for multiple tickers, add them to a queue, then confirm and enrich all at once.
 
 ### 15.2 Flow
 
 1. User clicks **[+ Add]** → modal opens
-2. User types ticker symbol or company name → clicks **Search**
-3. Server resolves via `yfinance` — tries the raw query plus common exchange suffixes (`.PA`, `.DE`, `.L`, etc.)
-4. Up to 5 results shown with name, sector, exchange, currency, and current price
-5. User clicks **[+ Add]** on the desired result
-6. Server adds ticker to `watchlist.csv` via `SymbolManager`
-7. User runs **Refresh** to download and enrich the new ticker's data
+2. User types ticker symbol, company name, or ETF name → clicks **Search**
+3. Server resolves via `yf.Search()` (fuzzy matching for stocks and ETFs across all global exchanges), with suffix brute-force fallback (`.PA`, `.DE`, `.L`, `.MI`, `.AS`, `.SW`, `.TO`, `.ST`, `.MC`, `.IR`, `.HE`, `.OL`, `.CO`, `.IS`, `.VI`, `.WA`, `.SA`, `.HK`, `.AX`, `.SI`, `.T`, `.KS`, `.KQ`, `.MX`, `.NS`, `.BO`)
+4. Up to 8 results shown with name, sector, exchange, currency, quoteType, and price
+5. User clicks **[+ Add]** on each desired result — tickers queue into a staging list (displayed as chips with ✕ remove)
+6. User can search again and add more tickers to the queue
+7. User clicks **Confirm & Enrich** → server writes all tickers to `watchlist.csv`, then runs `enrich_symbols()` in background
+8. SSE progress bar shows enrichment status ("Enriching 2/5…")
+9. On completion: screener JSON rebuilt, `_reloadLiveData()` fires, all new tickers appear in screener with full data
 
 ### 15.3 API
 
 | Method | Endpoint | Body | Response |
 |--------|----------|------|----------|
-| POST | `/api/resolve-ticker` | `{ "query": "AAPL" }` | `{ "results": [...] }` |
+| POST | `/api/resolve-ticker` | `{ "query": "MSCI World" }` | `{ "results": [...] }` |
 | POST | `/api/add-symbol` | `{ "ticker": "AAPL", "group": "watchlist" }` | `{ "ok": true }` |
+| POST | `/api/enrich-symbols` | `{ "tickers": ["AAPL","MSFT"], "group": "watchlist" }` | `{ "ok": true }` (starts SSE background task) |
+| GET | `/api/enrich` | — | SSE stream: progress/complete/failed events |
 
 ---
 
@@ -1109,6 +1112,8 @@ A toggle button **[Local / EUR]** in the top bar converts all screener prices to
 - **Build time**: `_fetch_fx_rates_and_currencies()` in `build_dashboard.py` downloads FX rates for all unique currencies via yfinance (`{CCY}EUR=X` pairs).
 - **Payload**: `FX_TO_EUR` dict (e.g. `{"USD": 0.92, "GBP": 1.17, ...}`) and `SYMBOL_CURRENCIES` dict (e.g. `{"AAPL": "USD", "MC.PA": "EUR", ...}`) embedded in HTML.
 - **Client-side**: JS `_toEur(price, symbol)` multiplies by FX rate. No backend re-enrichment — purely a display transformation.
+- **Screener**: Prices and deltas in the screener table are converted to EUR when toggle is active.
+- **Plotly charts**: When EUR toggle is active, OHLCV candlestick data and price-axis traces are scaled by the FX rate before rendering. Toggle click invalidates figure cache and re-renders.
 - **State**: Toggle persisted in `localStorage` (`showEur` key).
 - **GBp handling**: British pence (GBp) rate = GBP rate / 100.
 
@@ -1163,3 +1168,81 @@ Manual trade recording integrated into the P&L tab as sub-tabs: **[Backtest]** (
 - **Close Trade modal**: pre-fills current price from screener
 - **Stats bar**: Trades count, Win Rate, Total P&L, Expectancy, Avg Win, Avg Loss
 - **Equity Curve**: Plotly line chart of cumulative P&L % over closed trades
+
+---
+
+## 18. P&L Backtest (Server-Side Bulk Endpoint)
+
+### 18.1 Overview
+
+The P&L Backtest tab now loads via a single server-side API call instead of fetching individual figures per symbol. This reduces load time from ~30s to ~1-3s.
+
+### 18.2 API
+
+| Method | Endpoint | Query Params | Response |
+|--------|----------|-------------|----------|
+| GET | `/api/pnl-summary` | `group=stoof&tf=1D` | JSON with `portfolio`, `per_symbol`, `all_trades` |
+
+### 18.3 Response Shape
+
+```json
+{
+  "portfolio": {
+    "total_return": 4157.03,
+    "total_trades": 941,
+    "win_rate": 49.3,
+    "avg_gain": 12.5,
+    "avg_loss": -6.2,
+    "max_dd": -85.3,
+    "profit_factor": 2.1,
+    "sharpe": 3.2,
+    "best": 45.2,
+    "worst": -28.1,
+    "equity_curve": { "dates": [...], "values": [...] }
+  },
+  "per_symbol": [
+    { "symbol": "AAPL", "name": "Apple Inc.", "trades": 12, "return": 45.2, "hit_rate": 66.7, ... }
+  ],
+  "all_trades": [
+    { "symbol": "AAPL", "entry": "2024-01-15", "exit": "2024-03-20", "ret": 12.3, "hold": 45, "label": "C3", "reason": "ATR stop" }
+  ]
+}
+```
+
+### 18.4 Server-Side Computation
+
+- Uses `compute_position_events()` from `strategy.py` (same single source of truth as charts)
+- Loads enriched Parquet via `_Caches.load_df()` (disk-mtime caching)
+- Computes KPI state maps, runs position engine, aggregates portfolio stats
+- Supports group filtering and per-timeframe analysis
+- `all_trades` capped at 500 most recent for payload efficiency
+
+---
+
+## 19. Scan Optimization
+
+### 19.1 Before
+
+After the screener found combo hits, scan called `_build_main(["--mode", "all"])` to rebuild the entire dashboard (~130s).
+
+### 19.2 After
+
+1. Screener runs and finds C3/C4 hits
+2. `inject_screener_groups()` writes tickers to `entry_stocks.csv`
+3. **Diff**: scan checks which tickers already have enriched Parquet files
+4. **Batch enrich**: only truly new tickers go through `enrich_symbols()` (~5-10s per batch)
+5. Screener JSON is rebuilt incrementally
+6. Scan time drops from ~130s to ~40-70s
+
+### 19.3 Batch Enrichment Pipeline (`enrich_symbols()`)
+
+Located in `build_dashboard.py`. Steps:
+
+1. Resolve yfinance tickers
+2. Download daily + hourly OHLCV in batch
+3. Resample to all 5 TFs (4H, 1D, 1W, 2W, 1M)
+4. Compute indicators per TF
+5. Save enriched Parquet files
+6. Update `sector_map.json` with fundamentals
+7. Rebuild `screener_summary.json` (merges new + existing enriched data)
+8. Report progress via callback (used by SSE)

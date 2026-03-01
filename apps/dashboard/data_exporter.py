@@ -114,6 +114,15 @@ def export_symbol_data(
     except Exception:
         logger.warning("Could not compute KPI timeline matrix for %s/%s", symbol, timeframe)
 
+    # Build strategy→KPI mapping for front-end filtering
+    strategy_kpis: dict[str, list[str]] = {}
+    try:
+        from trading_dashboard.indicators.registry import get_kpi_trend_order, get_strategies
+        for strat in get_strategies():
+            strategy_kpis[strat] = get_kpi_trend_order(strat)
+    except Exception:
+        pass
+
     out: dict = {
         "symbol": symbol,
         "timeframe": timeframe,
@@ -125,6 +134,7 @@ def export_symbol_data(
         "combo_3_kpis": combo_3_kpis or [],
         "combo_4_kpis": combo_4_kpis or [],
         "kpi_weights": kpi_weights or {},
+        "strategy_kpis": strategy_kpis,
     }
     if sma200_ok is not None:
         out["sma200_ok"] = sma200_ok

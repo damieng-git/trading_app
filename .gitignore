@@ -19,7 +19,12 @@ Thumbs.db
 # Data (large / regenerable)
 data/feature_store/
 data/dashboard_artifacts/
+data/cache/
 *.parquet
+
+# Regenerable config caches
+apps/dashboard/configs/sector_map.json
+apps/dashboard/configs/ticker_cache.json
 
 # Research data + outputs (regenerable from scripts)
 research/data/
@@ -35,3 +40,6 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Logs
+*.log

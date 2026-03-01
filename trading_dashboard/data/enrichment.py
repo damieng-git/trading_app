@@ -22,12 +22,14 @@ from trading_dashboard.indicators import (
     atr_stop_loss_finder,
     bollinger_bands,
     breakout_targets,
+    cci_chop_bb,
     crsi,
     donchian_trend_ribbon,
     dema,
     gk_trend_ribbon,
     ichimoku,
     impulse_trend_levels,
+    luxalgo_normalized,
     madrid_ma_ribbon_state,
     gmma,
     macd,
@@ -39,7 +41,10 @@ from trading_dashboard.indicators import (
     nadaraya_watson_repainting,
     nwe_color_and_arrows,
     obv_oscillator,
+    obv_oscillator_dual_ema,
     parabolic_sar,
+    price_action_index,
+    risk_indicator,
     squeeze_momentum_lazybear,
     stoch_momentum_index,
     supertrend,
@@ -487,5 +492,74 @@ def translate_and_compute_indicators(
         except Exception as exc:
             logger.debug("Failed to add benchmark column to Mansfield RS output: %s", exc)
             pass
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Stoof (Band Light) indicators
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # BL1: MACD (15, 23, 5)
+    p = _p("MACD_BL")
+    bl_macd, bl_macd_sig, bl_macd_hist = macd(out["Close"], fast=int(p.get("fast", 15)), slow=int(p.get("slow", 23)), signal=int(p.get("signal", 5)))
+    out["MACD_BL"] = bl_macd
+    out["MACD_BL_signal"] = bl_macd_sig
+    out["MACD_BL_hist"] = bl_macd_hist
+    specs.append(IndicatorSpec(key="MACD_BL", title="MACD (15,23,5) [BL]", overlay=False, columns=["MACD_BL", "MACD_BL_signal", "MACD_BL_hist"]))
+
+    # BL2: WaveTrend (27, 21)
+    p = _p("WT_LB_BL")
+    bl_wt1, bl_wt2, bl_wt_hist = wavetrend_lazybear(out, n1=int(p.get("n1", 27)), n2=int(p.get("n2", 21)))
+    out["WT_LB_BL_wt1"] = bl_wt1
+    out["WT_LB_BL_wt2"] = bl_wt2
+    out["WT_LB_BL_hist"] = bl_wt_hist
+    specs.append(IndicatorSpec(key="WT_LB_BL", title="WaveTrend (27,21) [BL]", overlay=False, columns=["WT_LB_BL_wt1", "WT_LB_BL_wt2", "WT_LB_BL_hist"]))
+
+    # BL3: OBV Oscillator dual-EMA
+    if "Volume" in out.columns:
+        p = _p("OBVOSC_BL")
+        _obv_bl, _obv_bl_osc = obv_oscillator_dual_ema(out, short_length=int(p.get("short_length", 1)), long_length=int(p.get("long_length", 20)))
+        out["OBVOSC_BL_osc"] = _obv_bl_osc
+        specs.append(IndicatorSpec(key="OBVOSC_BL", title="OBV Osc Dual-EMA [BL]", overlay=False, columns=["OBVOSC_BL_osc"]))
+
+    # BL4: CCI+Chop+BB v1
+    p = _p("CCI_Chop_BB_v1")
+    _ccb1_raw, _ccb1_smooth = cci_chop_bb(out, cci_length=int(p.get("cci_length", 18)), chop_length=int(p.get("chop_length", 14)), bb_length=int(p.get("bb_length", 20)), bb_mult=float(p.get("bb_mult", 2.0)), smooth=int(p.get("smooth", 10)))
+    out["CCI_Chop_BB_v1_raw"] = _ccb1_raw
+    out["CCI_Chop_BB_v1_smooth"] = _ccb1_smooth
+    specs.append(IndicatorSpec(key="CCI_Chop_BB_v1", title="CCI+Chop+BB v1 [BL]", overlay=False, columns=["CCI_Chop_BB_v1_raw", "CCI_Chop_BB_v1_smooth"]))
+
+    # BL5: ADX & DI (14)
+    p = _p("ADX_DI_BL")
+    bl_adx, bl_dip, bl_dim = adx_di(out, length=int(p.get("length", 14)))
+    out["ADX_BL"] = bl_adx
+    out["DI_plus_BL"] = bl_dip
+    out["DI_minus_BL"] = bl_dim
+    specs.append(IndicatorSpec(key="ADX_DI_BL", title="ADX & DI (14) [BL]", overlay=False, columns=["ADX_BL", "DI_plus_BL", "DI_minus_BL"]))
+
+    # BL6: LuxAlgo Normalized v1
+    p = _p("LuxAlgo_Norm_v1")
+    out["LuxAlgo_Norm_v1"] = luxalgo_normalized(out["Close"], length=int(p.get("length", 14)), presmooth=int(p.get("presmooth", 10)), postsmooth=int(p.get("postsmooth", 10)))
+    specs.append(IndicatorSpec(key="LuxAlgo_Norm_v1", title="LuxAlgo Normalized v1 [BL]", overlay=False, columns=["LuxAlgo_Norm_v1"]))
+
+    # BL7: Risk Indicator
+    p = _p("Risk_Indicator")
+    out["Risk_Indicator"] = risk_indicator(out["Close"], sma_period=int(p.get("sma_period", 50)), power_factor=float(p.get("power_factor", 0.395)), initial_atl=float(p.get("initial_atl", 2.5)))
+    specs.append(IndicatorSpec(key="Risk_Indicator", title="Risk Indicator [BL]", overlay=False, columns=["Risk_Indicator"]))
+
+    # BL8: LuxAlgo Normalized v2
+    p = _p("LuxAlgo_Norm_v2")
+    out["LuxAlgo_Norm_v2"] = luxalgo_normalized(out["Close"], length=int(p.get("length", 14)), presmooth=int(p.get("presmooth", 10)), postsmooth=int(p.get("postsmooth", 10)))
+    specs.append(IndicatorSpec(key="LuxAlgo_Norm_v2", title="LuxAlgo Normalized v2 [BL]", overlay=False, columns=["LuxAlgo_Norm_v2"]))
+
+    # BL9: CCI+Chop+BB v2
+    p = _p("CCI_Chop_BB_v2")
+    _ccb2_raw, _ccb2_smooth = cci_chop_bb(out, cci_length=int(p.get("cci_length", 90)), chop_length=int(p.get("chop_length", 24)), bb_length=int(p.get("bb_length", 10)), bb_mult=float(p.get("bb_mult", 2.0)), smooth=int(p.get("smooth", 10)))
+    out["CCI_Chop_BB_v2_raw"] = _ccb2_raw
+    out["CCI_Chop_BB_v2_smooth"] = _ccb2_smooth
+    specs.append(IndicatorSpec(key="CCI_Chop_BB_v2", title="CCI+Chop+BB v2 [BL]", overlay=False, columns=["CCI_Chop_BB_v2_raw", "CCI_Chop_BB_v2_smooth"]))
+
+    # BL10: Price Action Index
+    p = _p("PAI")
+    out["PAI"] = price_action_index(out, stoch_length=int(p.get("stoch_length", 20)), smooth=int(p.get("smooth", 3)), dispersion_length=int(p.get("dispersion_length", 20)))
+    specs.append(IndicatorSpec(key="PAI", title="Price Action Index [BL]", overlay=False, columns=["PAI"]))
 
     return out, specs

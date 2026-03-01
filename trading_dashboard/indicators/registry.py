@@ -11,6 +11,7 @@ Each indicator is registered with:
 - columns: output DataFrame columns produced by this indicator
 - config_key: key used in indicator_config.json (often same as key)
 - config_defaults: default parameter dict
+- strategies: list of strategy setups this indicator belongs to (e.g. ["v6"], ["stoof"])
 
 New indicators register themselves by calling ``register()``.
 The pipeline iterates ``get_all()`` to compute indicators and build KPI state.
@@ -56,6 +57,7 @@ class IndicatorDef:
     columns: List[str] = field(default_factory=list)
     config_key: Optional[str] = None     # defaults to key
     config_defaults: Dict[str, Any] = field(default_factory=dict)
+    strategies: List[str] = field(default_factory=lambda: ["v6"])
 
     def __post_init__(self) -> None:
         if self.config_key is None:
@@ -89,18 +91,27 @@ def get_by_dimension(dimension: str) -> List[IndicatorDef]:
     return [d for d in _REGISTRY.values() if d.dimension == dimension]
 
 
-def get_kpi_trend_order() -> List[str]:
+def _strategy_match(defn: IndicatorDef, strategy: Optional[str]) -> bool:
+    """True if defn belongs to the given strategy (None = match all)."""
+    if strategy is None:
+        return True
+    return strategy in defn.strategies
+
+
+def get_kpi_trend_order(strategy: Optional[str] = None) -> List[str]:
     """KPI names for trend scoring, in registration order."""
-    return [d.kpi_name for d in _REGISTRY.values() if d.kpi_type == "trend" and d.kpi_name]
+    return [d.kpi_name for d in _REGISTRY.values()
+            if d.kpi_type == "trend" and d.kpi_name and _strategy_match(d, strategy)]
 
 
-def get_kpi_breakout_order() -> List[str]:
+def get_kpi_breakout_order(strategy: Optional[str] = None) -> List[str]:
     """KPI names for breakout scoring, in registration order."""
-    return [d.kpi_name for d in _REGISTRY.values() if d.kpi_type == "breakout" and d.kpi_name]
+    return [d.kpi_name for d in _REGISTRY.values()
+            if d.kpi_type == "breakout" and d.kpi_name and _strategy_match(d, strategy)]
 
 
-def get_kpi_order() -> List[str]:
-    return get_kpi_trend_order() + get_kpi_breakout_order()
+def get_kpi_order(strategy: Optional[str] = None) -> List[str]:
+    return get_kpi_trend_order(strategy) + get_kpi_breakout_order(strategy)
 
 
 def get_dimension_for_kpi(kpi_name: str) -> Optional[str]:
@@ -114,9 +125,24 @@ def get_dimension_label(dimension_key: str) -> str:
     return DIMENSIONS.get(dimension_key, dimension_key)
 
 
-def get_dimension_map() -> Dict[str, str]:
+def get_dimension_map(strategy: Optional[str] = None) -> Dict[str, str]:
     """Returns {kpi_name: dimension_key} for all registered KPIs."""
-    return {d.kpi_name: d.dimension for d in _REGISTRY.values() if d.kpi_name}
+    return {d.kpi_name: d.dimension for d in _REGISTRY.values()
+            if d.kpi_name and _strategy_match(d, strategy)}
+
+
+def get_by_strategy(strategy: str) -> List[IndicatorDef]:
+    """Return all indicators belonging to the given strategy."""
+    return [d for d in _REGISTRY.values() if strategy in d.strategies]
+
+
+def get_strategies() -> List[str]:
+    """Return all unique strategy names across the registry."""
+    seen: Dict[str, None] = {}
+    for d in _REGISTRY.values():
+        for s in d.strategies:
+            seen[s] = None
+    return list(seen.keys())
 
 
 # ── Register all existing indicators ────────────────────────────────────────
@@ -309,4 +335,79 @@ register(IndicatorDef(
     dimension="other", overlay=True,
     kpi_name=None, kpi_type=None,
     config_defaults={"length": 14, "smoothing": "RMA", "mult": 1.5},
+))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Stoof (Band Light) indicators — strategy "stoof"
+# ══════════════════════════════════════════════════════════════════════════════
+
+register(IndicatorDef(
+    key="MACD_BL", title="MACD (15, 23, 5) [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="MACD_BL", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"fast": 15, "slow": 23, "signal": 5, "close_to_zero_pct": 0.05},
+))
+register(IndicatorDef(
+    key="WT_LB_BL", title="WaveTrend (27, 21) [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="WT_LB_BL", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"n1": 27, "n2": 21, "ob_level": 60.0, "os_level": -60.0},
+))
+register(IndicatorDef(
+    key="OBVOSC_BL", title="OBV Oscillator Dual-EMA [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="OBVOSC_BL", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"short_length": 1, "long_length": 20},
+))
+register(IndicatorDef(
+    key="CCI_Chop_BB_v1", title="CCI+Chop+BB v1 [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="CCI_Chop_BB_v1", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"cci_length": 18, "chop_length": 14, "bb_length": 20, "bb_mult": 2.0, "smooth": 10, "upper_threshold": 65.0, "lower_threshold": 25.0},
+))
+register(IndicatorDef(
+    key="ADX_DI_BL", title="ADX & DI (14) [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="ADX_DI_BL", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"length": 14, "adx_threshold": 20.0},
+))
+register(IndicatorDef(
+    key="LuxAlgo_Norm_v1", title="LuxAlgo Normalized v1 [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="LuxAlgo_Norm_v1", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"length": 14, "presmooth": 10, "postsmooth": 10, "upper_bound": 80.0, "lower_bound": 20.0},
+))
+register(IndicatorDef(
+    key="Risk_Indicator", title="Risk Indicator [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="Risk_Indicator", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"sma_period": 50, "power_factor": 0.395, "initial_atl": 2.5, "upper_bound": 0.8, "lower_bound": 0.2},
+))
+register(IndicatorDef(
+    key="LuxAlgo_Norm_v2", title="LuxAlgo Normalized v2 [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="LuxAlgo_Norm_v2", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"length": 14, "presmooth": 10, "postsmooth": 10, "upper_bound": 80.0, "lower_bound": 20.0},
+))
+register(IndicatorDef(
+    key="CCI_Chop_BB_v2", title="CCI+Chop+BB v2 [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="CCI_Chop_BB_v2", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"cci_length": 90, "chop_length": 24, "bb_length": 10, "bb_mult": 2.0, "smooth": 10, "upper_threshold": 65.0, "lower_threshold": 25.0},
+))
+register(IndicatorDef(
+    key="PAI", title="Price Action Index [BL]",
+    dimension="momentum", overlay=False,
+    kpi_name="PAI", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={"stoch_length": 20, "smooth": 3, "dispersion_length": 20},
 ))

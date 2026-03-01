@@ -66,7 +66,7 @@ def run_pipeline(
     summary: dict = {"started": run_start.isoformat(), "signals": 0, "status": "ok"}
 
     try:
-        from apps.dashboard.config_loader import load_config
+        from apps.dashboard.alert_notifier import load_config
         cfg = load_config()
     except Exception as e:
         logger.error("Failed to load config: %s", e)

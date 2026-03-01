@@ -169,5 +169,19 @@
       "M": 6,
       "K": 4.0
     }
+  },
+  "strategy_setups": {
+    "v6": {
+      "label": "Strategy v6",
+      "entry_type": "combo",
+      "description": "C3/C4 combo-based entry with onset gates"
+    },
+    "stoof": {
+      "label": "Stoof",
+      "entry_type": "threshold",
+      "threshold": 7,
+      "total": 10,
+      "description": "Band Light 7/10 rule — 7 of 10 indicators must agree"
+    }
   }
 }

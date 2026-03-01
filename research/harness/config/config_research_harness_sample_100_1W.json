@@ -2,7 +2,7 @@
   "input": {
     "stock_data_dir": "data/feature_store/enriched/sample_100/stock_data",
     "run_metadata_copy": "data/feature_store/enriched/sample_100/run_metadata.json",
-    "indicator_config_json": "research/indicator_config_optimiser/configs/indicator_config_optimised_H4_bull.json",
+    "indicator_config_json": "research/_archive/indicator_config_optimiser/configs/indicator_config_optimised_H4_bull.json",
     "notes": "Research harness reads enriched CSVs only; indicator_config is recorded for traceability and must be applied during export."
   },
   "timeframes": ["1W"],

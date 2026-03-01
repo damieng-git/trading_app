@@ -30,7 +30,11 @@ from trading_dashboard.indicators.macd import macd
 from trading_dashboard.indicators.bollinger import bollinger_bands
 from trading_dashboard.indicators.adx import adx_di
 from trading_dashboard.indicators.supertrend import supertrend
-from trading_dashboard.indicators.obv import obv_oscillator
+from trading_dashboard.indicators.obv import obv_oscillator, obv_oscillator_dual_ema
+from trading_dashboard.indicators.cci_chop_bb import cci_chop_bb
+from trading_dashboard.indicators.luxalgo_normalized import luxalgo_normalized
+from trading_dashboard.indicators.risk_indicator import risk_indicator
+from trading_dashboard.indicators.price_action_index import price_action_index
 from trading_dashboard.indicators.squeeze import squeeze_momentum_lazybear
 from trading_dashboard.indicators.smi import stoch_momentum_index
 from trading_dashboard.indicators.ut_bot import ut_bot_alert

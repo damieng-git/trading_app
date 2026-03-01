@@ -24,5 +24,16 @@
     "params": { "rsi_length": 14, "dmi_length": 14, "adx_smoothing": 14, "filter_strength": 0.1 }
   },
   "Ichimoku": { "params": { "tenkan": 9, "kijun": 26, "senkou_b": 52, "offset": 26 } },
-  "Mansfield_RS": { "params": { "ma_len": 52, "benchmark": "SPY" } }
+  "Mansfield_RS": { "params": { "ma_len": 52, "benchmark": "SPY" } },
+
+  "MACD_BL": { "params": { "fast": 15, "slow": 23, "signal": 5, "close_to_zero_pct": 0.05 } },
+  "WT_LB_BL": { "params": { "n1": 27, "n2": 21, "ob_level": 60.0, "os_level": -60.0 } },
+  "OBVOSC_BL": { "params": { "short_length": 1, "long_length": 20 } },
+  "CCI_Chop_BB_v1": { "params": { "cci_length": 18, "chop_length": 14, "bb_length": 20, "bb_mult": 2.0, "smooth": 10, "upper_threshold": 65.0, "lower_threshold": 25.0 } },
+  "ADX_DI_BL": { "params": { "length": 14, "adx_threshold": 20.0 } },
+  "LuxAlgo_Norm_v1": { "params": { "length": 14, "presmooth": 10, "postsmooth": 10, "upper_bound": 80.0, "lower_bound": 20.0 } },
+  "Risk_Indicator": { "params": { "sma_period": 50, "power_factor": 0.395, "initial_atl": 2.5, "upper_bound": 0.8, "lower_bound": 0.2 } },
+  "LuxAlgo_Norm_v2": { "params": { "length": 14, "presmooth": 10, "postsmooth": 10, "upper_bound": 80.0, "lower_bound": 20.0 } },
+  "CCI_Chop_BB_v2": { "params": { "cci_length": 90, "chop_length": 24, "bb_length": 10, "bb_mult": 2.0, "smooth": 10, "upper_threshold": 65.0, "lower_threshold": 25.0 } },
+  "PAI": { "params": { "stoch_length": 20, "smooth": 3, "dispersion_length": 20 } }
 }

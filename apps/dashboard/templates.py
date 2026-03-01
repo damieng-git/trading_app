@@ -14,6 +14,8 @@ from trading_dashboard.indicators.registry import (
     get_dimension_map,
     get_dimension_label,
     get_all as _get_all_indicators,
+    get_strategies as _get_strategies,
+    get_kpi_trend_order as _get_kpi_trend_order,
 )
 
 _CONFIGS_DIR = Path(__file__).resolve().parent / "configs"
@@ -106,6 +108,19 @@ def write_lazy_dashboard_shell_html(
     except Exception:
         kpi_keys_payload = "[]"
 
+    # Strategy setups: {strategy_name: {label, kpis: [kpi_names]}}
+    _strategy_setups_raw = _load_config_field("strategy_setups", {})
+    _strategy_kpis_map: dict = {}
+    try:
+        for strat in _get_strategies():
+            _strategy_kpis_map[strat] = _get_kpi_trend_order(strat)
+    except Exception:
+        pass
+    strategy_setups_payload = json.dumps({
+        "setups": _strategy_setups_raw,
+        "kpis_by_strategy": _strategy_kpis_map,
+    }, allow_nan=False, separators=(",", ":"))
+
     def _build_dimension_map_payload() -> str:
         """Build JSON mapping {indicator_label: "Dimension Label"} for the JS UI.
 
@@ -192,6 +207,11 @@ def write_lazy_dashboard_shell_html(
         </div>
         <div class="tab-tf-selector" data-scope="chart">
           {''.join(f'<div class="tab-tf-btn" data-tf="{tf}">{"D" if tf=="1D" else "W" if tf=="1W" else tf}</div>' for tf in timeframes)}
+        </div>
+        <span class="filter-sep"></span>
+        <div id="strategyDropdown" class="strategy-dropdown">
+          <div id="strategyTrigger" class="strategy-trigger">Strategy v6 &#9662;</div>
+          <div id="strategyMenu" class="strategy-menu"></div>
         </div>
       </div>
       <div id="stockTitle"></div>
@@ -727,7 +747,7 @@ def write_lazy_dashboard_shell_html(
           <label>Search ticker or company name</label>
           <div style="display:flex;gap:8px;">
             <input id="addTickerInput" type="text" placeholder="e.g. AAPL, Microsoft, IWDA, BNP.PA" style="flex:1;" />
-            <button id="addTickerSearch" class="btn">Search</button>
+            <button id="addTickerSearch" class="btn btn-search">Search</button>
           </div>
         </div>
         <div id="addTickerResults" class="modal-results"></div>
@@ -846,6 +866,7 @@ def write_lazy_dashboard_shell_html(
     const DEFAULT_TF = {json.dumps(default_tf)};
     const FX_TO_EUR = {fx_rates_payload};
     const SYMBOL_CURRENCIES = {sym_currencies_payload};
+    const STRATEGY_SETUPS = {strategy_setups_payload};
 
   </script>
   <script>

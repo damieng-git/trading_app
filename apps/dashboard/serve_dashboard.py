@@ -494,7 +494,7 @@ class _EnrichState:
             return self._running
 
     def start(self, tickers: list[str], group: str = "watchlist") -> bool:
-        if _is_any_task_running():
+        if _is_any_task_running("enrich"):
             return False
         with self._lock:
             if self._running:
