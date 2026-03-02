@@ -14,11 +14,15 @@ This file documents how each PineScript indicator was translated to Python.
 | Display symbol | yfinance ticker used | Attempts |
 |---|---|---|
 | 000001.SS | 000001.SS | 000001.SS |
+| 0JDK.L | 0JDK.L | 0JDK.L |
 | 3BRL.L | 3BRL.L | 3BRL.L |
 | AAPL | AAPL | AAPL |
 | ACA.PA | ACA.PA | ACA.PA |
 | ACHC | ACHC | ACHC |
+| ADBE | ADBE | ADBE |
+| AGX | AGX | AGX |
 | AIR.PA | AIR.PA | AIR.PA |
+| ALGN | ALGN | ALGN |
 | ALREW.PA | ALREW.PA | ALREW.PA |
 | ALV.DE | ALV.DE | ALV.DE |
 | AMN | AMN | AMN |
@@ -29,14 +33,18 @@ This file documents how each PineScript indicator was translated to Python.
 | BNK.PA | BNK.PA | BNK.PA |
 | BNP.PA | BNP.PA | BNP.PA |
 | BPE.MI | BPE.MI | BPE.MI |
+| BRZE | BRZE | BRZE |
 | CAC.PA | CAC.PA | CAC.PA |
+| CBBHF | CBBHF | CBBHF |
 | CE | CE | CE |
 | CLDD.DE | CLDD.DE | CLDD.DE |
 | CLDX | CLDX | CLDX |
+| CMCSA | CMCSA | CMCSA |
 | CNI | CNI | CNI |
 | COCO.L | COCO.L | COCO.L |
 | COTN.SW | COTN.SW | COTN.SW |
 | CRM | CRM | CRM |
+| CS.PA | CS.PA | CS.PA |
 | CSPX.AS | CSPX.AS | CSPX.AS |
 | CVGI | CVGI | CVGI |
 | CW8.PA | CW8.PA | CW8.PA |
@@ -46,20 +54,26 @@ This file documents how each PineScript indicator was translated to Python.
 | DPGA.DE | DPGA.DE | DPGA.DE |
 | DSY.PA | DSY.PA | DSY.PA |
 | DX-Y.NYB | DX-Y.NYB | DX-Y.NYB |
+| EGHT | EGHT | EGHT |
 | EGLN.L | EGLN.L | EGLN.L |
 | EIDO | EIDO | EIDO |
 | ENGI.PA | ENGI.PA | ENGI.PA |
 | ERA.PA | ERA.PA | ERA.PA |
+| EXH3D.XD | EXH3D.XD | EXH3D.XD |
 | EXSD.DE | EXSD.DE | EXSD.DE |
 | EXV5.DE | EXV5.DE | EXV5.DE |
 | EXV7.DE | EXV7.DE | EXV7.DE |
 | FDJ.PA | FDJ.PA | FDJ.PA |
 | FINX | FINX | FINX |
+| FORR | FORR | FORR |
 | FTSEMIB.MI | FTSEMIB.MI | FTSEMIB.MI |
 | GDX | GDX | GDX |
 | GFT.F | GFT.F | GFT.F |
 | GOOG | GOOG | GOOG |
+| GPRE | GPRE | GPRE |
+| HAIN | HAIN | HAIN |
 | HLT.PA | HLT.PA | HLT.PA |
+| HUM | HUM | HUM |
 | HWDN.L | HWDN.L | HWDN.L |
 | IBB | IBB | IBB |
 | IGV | IGV | IGV |
@@ -75,13 +89,16 @@ This file documents how each PineScript indicator was translated to Python.
 | IUFS.L | IUFS.L | IUFS.L |
 | IUIS.L | IUIS.L | IUIS.L |
 | IUSB | IUSB | IUSB |
+| IUSB.MU | IUSB.MU | IUSB.MU |
 | IUSS.DE | IUSS.DE | IUSS.DE |
 | IUUS.L | IUUS.L | IUUS.L |
 | JACK | JACK | JACK |
 | KBE | KBE | KBE |
 | KFTK.DE | KFTK.DE | KFTK.DE |
 | KGRN | KGRN | KGRN |
+| KLAR | KLAR | KLAR |
 | KNIN.SW | KNIN.SW | KNIN.SW |
+| LI | LI | LI |
 | LPL | LPL | LPL |
 | LULU | LULU | LULU |
 | LYP6.DE | LYP6.DE | LYP6.DE |
@@ -94,6 +111,7 @@ This file documents how each PineScript indicator was translated to Python.
 | MSFT | MSFT | MSFT |
 | MTU.PA | MTU.PA | MTU.PA |
 | NATO.L | NATO.L | NATO.L |
+| NBTK.MU | NBTK.MU | NBTK.MU |
 | NEOG | NEOG | NEOG |
 | NKE | NKE | NKE |
 | OFLX | OFLX | OFLX |
@@ -104,26 +122,35 @@ This file documents how each PineScript indicator was translated to Python.
 | PUM.DE | PUM.DE | PUM.DE |
 | QDV5.DE | QDV5.DE | QDV5.DE |
 | QFIN | QFIN | QFIN |
+| QSV.F | QSV.F | QSV.F |
 | RCO.PA | RCO.PA | RCO.PA |
 | RI.PA | RI.PA | RI.PA |
 | RIZF.DE | RIZF.DE | RIZF.DE |
+| RMAX | RMAX | RMAX |
 | ROG | ROG | ROG |
+| SB=F | SB=F | SB=F |
 | SC06.DE | SC06.DE | SC06.DE |
 | SMH | SMH | SMH |
 | SMIN | SMIN | SMIN |
+| SNBR | SNBR | SNBR |
+| STLAP.PA | STLAP.PA | STLAP.PA |
 | STZ | STZ | STZ |
 | SUGA.L | SUGA.L | SUGA.L |
 | SWBI | SWBI | SWBI |
 | TGT | TGT | TGT |
 | THRM | THRM | THRM |
+| TNDM | TNDM | TNDM |
 | TNO.PA | TNO.PA | TNO.PA |
 | TRGP | TRGP | TRGP |
 | TSLA | TSLA | TSLA |
 | UNH | UNH | UNH |
 | VEGI | VEGI | VEGI |
 | VRT | VRT | VRT |
+| W1TB.MU | W1TB.MU | W1TB.MU |
+| W1TBD.XD | W1TBD.XD | W1TBD.XD |
 | W3B3.DE | W3B3.DE | W3B3.DE |
 | WIG20.WA | WIG20.WA | WIG20.WA |
+| WIRUS.FGI | WIRUS.FGI | WIRUS.FGI |
 | XLB | XLB | XLB |
 | XLC | XLC | XLC |
 | XLE | XLE | XLE |
@@ -154,6 +181,7 @@ This file documents how each PineScript indicator was translated to Python.
 | ^GSPTSE | ^GSPTSE | ^GSPTSE |
 | ^HSI | ^HSI | ^HSI |
 | ^IBEX | ^IBEX | ^IBEX |
+| ^IUSB | ^IUSB | ^IUSB |
 | ^IXIC | ^IXIC | ^IXIC |
 | ^KS11 | ^KS11 | ^KS11 |
 | ^MXX | ^MXX | ^MXX |
@@ -203,3 +231,23 @@ Implemented indicators (computed on each selected timeframe):
 - **Parabolic SAR** (`PSAR`, Risk / Exit) — KPI: CM_P-SAR (trend)
 - **Volume + MA20** (`VOL_MA`, Momentum) — KPI: Volume + MA20 (trend)
 - **ATR Stop Loss Finder** (`ATR`, Other)
+- **MACD (15, 23, 5) [BL]** (`MACD_BL`, Momentum) — KPI: MACD_BL (trend)
+  - Columns: `MACD_BL`, `MACD_BL_hist`, `MACD_BL_signal`
+- **WaveTrend (27, 21) [BL]** (`WT_LB_BL`, Momentum) — KPI: WT_LB_BL (trend)
+  - Columns: `WT_LB_BL_wt1`, `WT_LB_BL_wt2`
+- **OBV Oscillator Dual-EMA [BL]** (`OBVOSC_BL`, Momentum) — KPI: OBVOSC_BL (trend)
+  - Columns: `OBVOSC_BL_osc`
+- **CCI+Chop+BB v1 [BL]** (`CCI_Chop_BB_v1`, Momentum) — KPI: CCI_Chop_BB_v1 (trend)
+  - Columns: `CCI_Chop_BB_v1_smooth`
+- **ADX & DI (14) [BL]** (`ADX_DI_BL`, Trend) — KPI: ADX_DI_BL (trend)
+  - Columns: `ADX_BL`, `DI_plus_BL`, `DI_minus_BL`
+- **LuxAlgo Normalized v1 [BL]** (`LuxAlgo_Norm_v1`, Momentum) — KPI: LuxAlgo_Norm_v1 (trend)
+  - Columns: `LuxAlgo_Norm_v1`
+- **Risk Indicator [BL]** (`Risk_Indicator`, Risk / Exit) — KPI: Risk_Indicator (trend)
+  - Columns: `Risk_Indicator`
+- **LuxAlgo Normalized v2 [BL]** (`LuxAlgo_Norm_v2`, Momentum) — KPI: LuxAlgo_Norm_v2 (trend)
+  - Columns: `LuxAlgo_Norm_v2`
+- **CCI+Chop+BB v2 [BL]** (`CCI_Chop_BB_v2`, Momentum) — KPI: CCI_Chop_BB_v2 (trend)
+  - Columns: `CCI_Chop_BB_v2_smooth`
+- **Price Action Index [BL]** (`PAI`, Momentum) — KPI: PAI (trend)
+  - Columns: `PAI`

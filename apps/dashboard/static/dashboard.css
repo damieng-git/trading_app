@@ -231,8 +231,23 @@
 
     /* Per-tab filter bar (group + TF) */
     .tab-filter-bar {
-      display: flex; align-items: center; gap: 6px;
+      display: flex; align-items: stretch; gap: 0;
       padding: 6px 8px;
+    }
+    .filter-group {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 4px; padding: 0 12px;
+    }
+    .filter-group:first-child { padding-left: 0; }
+    .filter-label {
+      font-size: 9px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--muted); line-height: 1;
+      user-select: none;
+    }
+    .filter-sep-v {
+      width: 1px; align-self: stretch;
+      background: var(--border-strong); opacity: 0.5;
+      margin: 2px 0; flex-shrink: 0;
     }
     .tab-group-dropdown {
       position: relative; display: inline-flex; align-items: center;
@@ -451,6 +466,21 @@
       background: var(--bg);
     }
     #indicatorStrip.collapsed { display: none; }
+
+    /* Foldable oscillator panel */
+    .panel-toggle {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+      color: var(--fg);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .panel-toggle:hover { opacity: 0.8; }
+    #chartOsc.osc-collapsed { display: none; }
+
     .chip {
       display: inline-flex;
       align-items: center;
@@ -486,6 +516,15 @@
     .chip.clear-btn:hover {
       background: var(--panel-hover);
       color: var(--text);
+    }
+    .chip.heatmap-only {
+      cursor: default;
+      opacity: 0.85;
+      border-style: dashed;
+    }
+    .chip.heatmap-only.on {
+      background: var(--active-bg);
+      border-color: var(--active-br);
     }
     .chip input { display: none; }
     .chip span {
@@ -1396,30 +1435,6 @@
 .filter-sep {
   display: inline-block; width: 1px; height: 18px;
   background: var(--border); margin: 0 8px; vertical-align: middle;
-}
-.strategy-dropdown { position: relative; display: inline-block; }
-.strategy-trigger {
-  cursor: pointer; font-size: 11px; font-weight: 600;
-  padding: 4px 10px; border-radius: 4px;
-  background: var(--bg-card); border: 1px solid var(--border);
-  color: var(--fg); user-select: none; white-space: nowrap;
-}
-.strategy-trigger:hover { border-color: var(--accent); }
-.strategy-menu {
-  display: none; position: absolute; top: 100%; left: 0;
-  margin-top: 4px; min-width: 140px; z-index: 999;
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  overflow: hidden;
-}
-.strategy-menu.open { display: block; }
-.strategy-menu-item {
-  padding: 6px 12px; cursor: pointer; font-size: 11px;
-  font-weight: 500; color: var(--fg);
-}
-.strategy-menu-item:hover { background: var(--bg-hover); }
-.strategy-menu-item.active {
-  background: var(--accent); color: #000; font-weight: 700;
 }
 
 /* ── Stoof Score Bar ─────────────────────────────────────────────── */

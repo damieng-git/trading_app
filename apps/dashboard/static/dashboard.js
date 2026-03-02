@@ -51,6 +51,7 @@
     let _upperShapesStrategy = [];
     let _upperShapesCharts = [];
     let currentStrategy = (typeof _st0.strategy === "string") ? _st0.strategy : "v6";
+    window.currentStrategy = currentStrategy;
 
     function _debounce(fn, ms) {
       let t;
@@ -314,10 +315,10 @@
     }
 
     function _updateGroupDropdown() {
-      document.querySelectorAll(".tab-group-trigger").forEach(trigger => {
+      document.querySelectorAll(".tab-group-dropdown:not(#strategyDropdown):not(.strategy-placeholder) .tab-group-trigger").forEach(trigger => {
         trigger.innerHTML = _groupLabel(currentGroup) + " &#9662;";
       });
-      document.querySelectorAll(".group-option").forEach(opt => {
+      document.querySelectorAll(".tab-group-dropdown:not(#strategyDropdown):not(.strategy-placeholder) .group-option").forEach(opt => {
         opt.classList.toggle("active", opt.dataset.group === currentGroup);
       });
     }
@@ -339,6 +340,7 @@
       if (!dropdowns.length) return;
 
       dropdowns.forEach(dropdown => {
+        if (dropdown.id === "strategyDropdown" || dropdown.classList.contains("strategy-placeholder")) return;
         if (!GROUP_KEYS.length) { dropdown.style.display = "none"; return; }
         dropdown.style.display = "";
         const trigger = dropdown.querySelector(".tab-group-trigger");
@@ -507,20 +509,30 @@
       const comboKpis = new Set([...(meta.combo_3_kpis || []), ...(meta.combo_4_kpis || [])]);
 
       const chartsExclude = new Set(["Price", "KPI Trend", "KPI Breakout", "TrendScore", "P&L", "Combo Signal"]);
-      const plottableKeys = new Set();
+      const traceKeys = new Set();
       fig.data.forEach(tr => {
         const k = indicatorKeyForTrace(tr);
         if (!k || chartsExclude.has(k)) return;
         const xa = tr.xaxis || "x";
         const axNum = parseInt((xa.replace("x", "") || "1"), 10);
-        if (axNum === 1 || axNum === 3) plottableKeys.add(k);
+        if (axNum === 1 || axNum === 3) traceKeys.add(k);
       });
+      const plottableKeys = new Set(traceKeys);
 
-      // Strategy filter: if a strategy is active, restrict to its KPI set
+      // Strategy filter: if a strategy is active, show only its KPIs
+      const heatmapOnlyKeys = new Set();
       const stratKpis = (typeof _getStrategyKpis === "function") ? _getStrategyKpis() : null;
       if (stratKpis) {
         const allowed = new Set(stratKpis);
         plottableKeys.forEach(k => { if (!allowed.has(k)) plottableKeys.delete(k); });
+        const rawPayload = fig._rawPayload || {};
+        const payloadKpiNames = (rawPayload.kpi && rawPayload.kpi.kpis) ? new Set(rawPayload.kpi.kpis) : new Set();
+        stratKpis.forEach(k => {
+          if (payloadKpiNames.has(k)) {
+            plottableKeys.add(k);
+            if (!traceKeys.has(k)) heatmapOnlyKeys.add(k);
+          }
+        });
       }
 
       const keys = new Set(plottableKeys);
@@ -578,11 +590,19 @@
           const label = document.createElement("label");
           label.className = "chip";
           const isCombo = comboKpis.has(k);
+          const isHeatmapOnly = heatmapOnlyKeys.has(k);
           if (isCombo) label.classList.add("combo-kpi");
+          if (isHeatmapOnly) label.classList.add("heatmap-only");
           const cb = document.createElement("input");
           cb.type = "checkbox";
-          cb.checked = selectedIndicators.has(k);
-          label.classList.toggle("on", cb.checked);
+          if (isHeatmapOnly) {
+            cb.checked = true;
+            cb.disabled = true;
+            label.classList.add("on");
+          } else {
+            cb.checked = selectedIndicators.has(k);
+            label.classList.toggle("on", cb.checked);
+          }
 
           const kState = (kpiSt[k] !== undefined) ? kpiSt[k] : -2;
           function _applyChipStyle() {
@@ -601,14 +621,16 @@
           }
           _applyChipStyle();
 
-          cb.addEventListener("change", () => {
-            if (cb.checked) selectedIndicators.add(k);
-            else selectedIndicators.delete(k);
-            label.classList.toggle("on", cb.checked);
-            _applyChipStyle();
-            saveState({ indicators: Array.from(selectedIndicators) });
-            applyIndicatorVisibility();
-          });
+          if (!isHeatmapOnly) {
+            cb.addEventListener("change", () => {
+              if (cb.checked) selectedIndicators.add(k);
+              else selectedIndicators.delete(k);
+              label.classList.toggle("on", cb.checked);
+              _applyChipStyle();
+              saveState({ indicators: Array.from(selectedIndicators) });
+              applyIndicatorVisibility();
+            });
+          }
           const dot = document.createElement("span");
           dot.style.cssText = "display:inline-block;width:6px;height:6px;border-radius:50%;flex-shrink:0;";
           if (kState === 1) dot.style.background = "var(--candle-up)";
@@ -1412,10 +1434,24 @@
       lowerLayout.shapes = [];
       lowerLayout.xaxis  = cleanAxis(layout.xaxis5, Object.assign({domain: [0, 1], anchor: "y"}, xRangeOvr));
       lowerLayout.xaxis2 = cleanAxis(layout.xaxis6, Object.assign({domain: [0, 1], anchor: "y2", matches: "x"}, xRangeOvr));
-      lowerLayout.yaxis  = cleanAxis(layout.yaxis5, {domain: [0.52, 1.0], anchor: "x"});
-      lowerLayout.yaxis2 = cleanAxis(layout.yaxis6, {domain: [0.0, 0.48], anchor: "x2"});
+      const _meta = layout.meta || {};
+      const _nBr = _meta._nBr || 0;
+      const _nTr = _meta._nTr || 0;
+      const _totalK = Math.max((_nBr + _nTr), 1);
+      const _trFrac = _nTr / _totalK;
+      const _brFrac = _nBr / _totalK;
+      const _splitGap = 0.04;
+      const _trTop = 1.0;
+      const _trBot = _trTop - _trFrac * (1.0 - _splitGap);
+      const _brTop = _trBot - _splitGap;
+      const _brBot = 0.0;
+      lowerLayout.yaxis  = cleanAxis(layout.yaxis5, {domain: [_brBot, _brTop], anchor: "x"});
+      lowerLayout.yaxis2 = cleanAxis(layout.yaxis6, {domain: [_trBot, _trTop], anchor: "x2"});
       lowerLayout.autosize = false;
-      lowerLayout.height = 1200;
+      const _kpiRowPx = 30;
+      const _lowerH = Math.max(200, (_nBr + _nTr) * _kpiRowPx + 80);
+      lowerLayout.height = _lowerH;
+      _chartHeights.chartLower = _lowerH;
       lowerLayout.hovermode = "closest";
       lowerLayout.barmode = "relative";
       lowerLayout.margin = Object.assign({}, layout.margin || {}, {t: 30});
@@ -2186,7 +2222,7 @@
       const isStrategy = currentSubTab === "strategy";
       const ids = {
         strategy: ["chartPnl", "strategySpacing", "chartTs"],
-        chart: ["chartOsc", "chartLower"],
+        chart: ["oscWrap", "chartLower"],
       };
       ids.strategy.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isStrategy ? "" : "none"; });
       ids.chart.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isStrategy ? "none" : ""; });
@@ -2651,6 +2687,19 @@
         _indToggle.innerHTML = collapsed ? "Indicators &#9654;" : "Indicators &#9660;";
       });
     }
+
+    // Foldable oscillator panel (collapsed by default)
+    const _oscToggle = document.getElementById("oscToggle");
+    const _oscChart = document.getElementById("chartOsc");
+    if (_oscToggle && _oscChart) {
+      _oscToggle.addEventListener("click", () => {
+        const collapsed = _oscChart.classList.toggle("osc-collapsed");
+        _oscToggle.innerHTML = collapsed ? "Oscillators &#9654;" : "Oscillators &#9660;";
+        if (!collapsed) {
+          try { Plotly.Plots.resize(document.getElementById("chartOsc")); } catch (e) {}
+        }
+      });
+    }
     // Indicator strip + symbol list are always visible.
 
     // ── Strategy dropdown ──────────────────────────────────────────────
@@ -2662,19 +2711,27 @@
       const setupDefs = setups.setups || {};
       const kpisByStrategy = setups.kpis_by_strategy || {};
 
+      function _getLabel(key) {
+        if (key === "all") return "All Indicators";
+        return (setupDefs[key] || {}).label || key;
+      }
+
       function _build() {
         menu.innerHTML = "";
         const entries = [["all", "All Indicators"]];
         Object.keys(setupDefs).forEach(k => entries.push([k, setupDefs[k].label || k]));
         entries.forEach(([key, label]) => {
           const item = document.createElement("div");
-          item.className = "strategy-menu-item" + (key === currentStrategy ? " active" : "");
+          item.className = "group-option" + (key === currentStrategy ? " active" : "");
           item.textContent = label;
-          item.addEventListener("click", () => {
+          item.addEventListener("click", (e) => {
+            e.stopPropagation();
             currentStrategy = key;
+            window.currentStrategy = currentStrategy;
+            figCache = {};
             saveState({ strategy: currentStrategy });
-            trigger.innerHTML = label + " &#9662;";
-            menu.classList.remove("open");
+            _closeAllGroupMenus();
+            _updateAllStrategyDropdowns();
             _build();
             renderChart();
           });
@@ -2682,14 +2739,63 @@
         });
       }
       _build();
-      const initLabel = currentStrategy === "all" ? "All Indicators" : ((setupDefs[currentStrategy] || {}).label || currentStrategy);
-      trigger.innerHTML = initLabel + " &#9662;";
+      trigger.innerHTML = _getLabel(currentStrategy) + " &#9662;";
 
       trigger.addEventListener("click", (e) => {
         e.stopPropagation();
-        menu.classList.toggle("open");
+        const wasOpen = menu.classList.contains("open");
+        _closeAllGroupMenus();
+        if (!wasOpen) menu.classList.add("open");
       });
-      document.addEventListener("click", () => menu.classList.remove("open"));
+
+      function _updateAllStrategyDropdowns() {
+        const lbl = _getLabel(currentStrategy) + " &#9662;";
+        document.querySelectorAll(".strategy-trigger-sync").forEach(el => {
+          el.innerHTML = lbl;
+        });
+        trigger.innerHTML = lbl;
+      }
+
+      // Placeholder strategy dropdowns on other tabs
+      document.querySelectorAll(".strategy-placeholder").forEach(dd => {
+        const phTrigger = dd.querySelector(".tab-group-trigger");
+        const phMenu = dd.querySelector(".tab-group-menu");
+        if (!phTrigger || !phMenu) return;
+        phTrigger.classList.add("strategy-trigger-sync");
+        phTrigger.innerHTML = _getLabel(currentStrategy) + " &#9662;";
+
+        function _buildPlaceholder() {
+          phMenu.innerHTML = "";
+          const entries2 = [["all", "All Indicators"]];
+          Object.keys(setupDefs).forEach(k => entries2.push([k, setupDefs[k].label || k]));
+          entries2.forEach(([key, label]) => {
+            const item = document.createElement("div");
+            item.className = "group-option" + (key === currentStrategy ? " active" : "");
+            item.textContent = label;
+            item.addEventListener("click", (e) => {
+              e.stopPropagation();
+              currentStrategy = key;
+              window.currentStrategy = currentStrategy;
+              figCache = {};
+              saveState({ strategy: currentStrategy });
+              _closeAllGroupMenus();
+              _updateAllStrategyDropdowns();
+              _build();
+              _buildPlaceholder();
+              renderChart();
+            });
+            phMenu.appendChild(item);
+          });
+        }
+        _buildPlaceholder();
+
+        phTrigger.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const wasOpen = phMenu.classList.contains("open");
+          _closeAllGroupMenus();
+          if (!wasOpen) phMenu.classList.add("open");
+        });
+      });
     })();
 
     function _getStrategyKpis() {

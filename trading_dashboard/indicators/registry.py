@@ -347,6 +347,7 @@ register(IndicatorDef(
     kpi_name="MACD_BL", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"fast": 15, "slow": 23, "signal": 5, "close_to_zero_pct": 0.05},
+    columns=["MACD_BL", "MACD_BL_hist", "MACD_BL_signal"],
 ))
 register(IndicatorDef(
     key="WT_LB_BL", title="WaveTrend (27, 21) [BL]",
@@ -354,6 +355,7 @@ register(IndicatorDef(
     kpi_name="WT_LB_BL", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"n1": 27, "n2": 21, "ob_level": 60.0, "os_level": -60.0},
+    columns=["WT_LB_BL_wt1", "WT_LB_BL_wt2"],
 ))
 register(IndicatorDef(
     key="OBVOSC_BL", title="OBV Oscillator Dual-EMA [BL]",
@@ -361,6 +363,7 @@ register(IndicatorDef(
     kpi_name="OBVOSC_BL", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"short_length": 1, "long_length": 20},
+    columns=["OBVOSC_BL_osc"],
 ))
 register(IndicatorDef(
     key="CCI_Chop_BB_v1", title="CCI+Chop+BB v1 [BL]",
@@ -368,13 +371,15 @@ register(IndicatorDef(
     kpi_name="CCI_Chop_BB_v1", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"cci_length": 18, "chop_length": 14, "bb_length": 20, "bb_mult": 2.0, "smooth": 10, "upper_threshold": 65.0, "lower_threshold": 25.0},
+    columns=["CCI_Chop_BB_v1_smooth"],
 ))
 register(IndicatorDef(
     key="ADX_DI_BL", title="ADX & DI (14) [BL]",
-    dimension="momentum", overlay=False,
+    dimension="trend", overlay=False,
     kpi_name="ADX_DI_BL", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"length": 14, "adx_threshold": 20.0},
+    columns=["ADX_BL", "DI_plus_BL", "DI_minus_BL"],
 ))
 register(IndicatorDef(
     key="LuxAlgo_Norm_v1", title="LuxAlgo Normalized v1 [BL]",
@@ -382,13 +387,15 @@ register(IndicatorDef(
     kpi_name="LuxAlgo_Norm_v1", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"length": 14, "presmooth": 10, "postsmooth": 10, "upper_bound": 80.0, "lower_bound": 20.0},
+    columns=["LuxAlgo_Norm_v1"],
 ))
 register(IndicatorDef(
     key="Risk_Indicator", title="Risk Indicator [BL]",
-    dimension="momentum", overlay=False,
+    dimension="risk_exit", overlay=False,
     kpi_name="Risk_Indicator", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"sma_period": 50, "power_factor": 0.395, "initial_atl": 2.5, "upper_bound": 0.8, "lower_bound": 0.2},
+    columns=["Risk_Indicator"],
 ))
 register(IndicatorDef(
     key="LuxAlgo_Norm_v2", title="LuxAlgo Normalized v2 [BL]",
@@ -396,6 +403,7 @@ register(IndicatorDef(
     kpi_name="LuxAlgo_Norm_v2", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"length": 14, "presmooth": 10, "postsmooth": 10, "upper_bound": 80.0, "lower_bound": 20.0},
+    columns=["LuxAlgo_Norm_v2"],
 ))
 register(IndicatorDef(
     key="CCI_Chop_BB_v2", title="CCI+Chop+BB v2 [BL]",
@@ -403,6 +411,7 @@ register(IndicatorDef(
     kpi_name="CCI_Chop_BB_v2", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"cci_length": 90, "chop_length": 24, "bb_length": 10, "bb_mult": 2.0, "smooth": 10, "upper_threshold": 65.0, "lower_threshold": 25.0},
+    columns=["CCI_Chop_BB_v2_smooth"],
 ))
 register(IndicatorDef(
     key="PAI", title="Price Action Index [BL]",
@@ -410,4 +419,5 @@ register(IndicatorDef(
     kpi_name="PAI", kpi_type="trend",
     strategies=["stoof"],
     config_defaults={"stoch_length": 20, "smooth": 3, "dispersion_length": 20},
+    columns=["PAI"],
 ))

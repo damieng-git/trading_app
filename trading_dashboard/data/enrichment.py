@@ -497,17 +497,17 @@ def translate_and_compute_indicators(
     # Stoof (Band Light) indicators
     # ══════════════════════════════════════════════════════════════════════════
 
-    # BL1: MACD (15, 23, 5)
+    # BL1: MACD (15, 23, 5) — Pine ta.macd uses EMA for signal line
     p = _p("MACD_BL")
-    bl_macd, bl_macd_sig, bl_macd_hist = macd(out["Close"], fast=int(p.get("fast", 15)), slow=int(p.get("slow", 23)), signal=int(p.get("signal", 5)))
+    bl_macd, bl_macd_sig, bl_macd_hist = macd(out["Close"], fast=int(p.get("fast", 15)), slow=int(p.get("slow", 23)), signal=int(p.get("signal", 5)), signal_ma="EMA")
     out["MACD_BL"] = bl_macd
     out["MACD_BL_signal"] = bl_macd_sig
     out["MACD_BL_hist"] = bl_macd_hist
     specs.append(IndicatorSpec(key="MACD_BL", title="MACD (15,23,5) [BL]", overlay=False, columns=["MACD_BL", "MACD_BL_signal", "MACD_BL_hist"]))
 
-    # BL2: WaveTrend (27, 21)
+    # BL2: WaveTrend (27, 21) — Pine BL uses close, not hlc3
     p = _p("WT_LB_BL")
-    bl_wt1, bl_wt2, bl_wt_hist = wavetrend_lazybear(out, n1=int(p.get("n1", 27)), n2=int(p.get("n2", 21)))
+    bl_wt1, bl_wt2, bl_wt_hist = wavetrend_lazybear(out, n1=int(p.get("n1", 27)), n2=int(p.get("n2", 21)), source="close")
     out["WT_LB_BL_wt1"] = bl_wt1
     out["WT_LB_BL_wt2"] = bl_wt2
     out["WT_LB_BL_hist"] = bl_wt_hist
@@ -527,9 +527,9 @@ def translate_and_compute_indicators(
     out["CCI_Chop_BB_v1_smooth"] = _ccb1_smooth
     specs.append(IndicatorSpec(key="CCI_Chop_BB_v1", title="CCI+Chop+BB v1 [BL]", overlay=False, columns=["CCI_Chop_BB_v1_raw", "CCI_Chop_BB_v1_smooth"]))
 
-    # BL5: ADX & DI (14)
+    # BL5: ADX & DI (14) — Pine BL uses ta.rma for ADX smoothing
     p = _p("ADX_DI_BL")
-    bl_adx, bl_dip, bl_dim = adx_di(out, length=int(p.get("length", 14)))
+    bl_adx, bl_dip, bl_dim = adx_di(out, length=int(p.get("length", 14)), adx_smoothing="RMA")
     out["ADX_BL"] = bl_adx
     out["DI_plus_BL"] = bl_dip
     out["DI_minus_BL"] = bl_dim

@@ -25,6 +25,8 @@ class TFConfig(NamedTuple):
 
 
 TIMEFRAME_CONFIGS: Dict[str, TFConfig] = {
+    "1M": TFConfig("1M", [1, 2, 4], 2, 24, ["1m", "2m", "4m"]),
+    "2W": TFConfig("2W", [1, 2, 6], 2, 40, ["2w", "4w", "12w"]),
     "1W": TFConfig("1W", [1, 4, 13], 4, 52, ["1w", "4w", "13w"]),
     "1D": TFConfig("1D", [1, 5, 20], 5, 200, ["1d", "5d", "20d"]),
     "4H": TFConfig("4H", [2, 6, 20], 6, 200, ["8h", "24h", "80h"]),

@@ -1,14 +1,28 @@
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Literal, Tuple
 
 import pandas as pd
 
 from ._base import ema, hlc3, sma
 
 
-def wavetrend_lazybear(df: pd.DataFrame, n1: int = 10, n2: int = 21) -> Tuple[pd.Series, pd.Series, pd.Series]:
-    ap = hlc3(df)
+WTSource = Literal["hlc3", "close"]
+
+
+def wavetrend_lazybear(
+    df: pd.DataFrame,
+    n1: int = 10,
+    n2: int = 21,
+    source: WTSource = "hlc3",
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """
+    WaveTrend oscillator.
+
+    The v6 LazyBear version uses hlc3 as the source.
+    The Band Light version (Pine ta.ema(close, ...)) uses close.
+    """
+    ap = df["Close"] if source == "close" else hlc3(df)
     esa = ema(ap, n1)
     d = ema((ap - esa).abs(), n1)
     denom = 0.015 * d

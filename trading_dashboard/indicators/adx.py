@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Literal, Tuple
 
 import numpy as np
 import pandas as pd
@@ -8,11 +8,19 @@ import pandas as pd
 from ._base import rma, sma
 
 
-def adx_di(df: pd.DataFrame, length: int = 14) -> Tuple[pd.Series, pd.Series, pd.Series]:
+AdxSmoothing = Literal["SMA", "RMA"]
+
+
+def adx_di(
+    df: pd.DataFrame,
+    length: int = 14,
+    adx_smoothing: AdxSmoothing = "SMA",
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
     """
-    ADX & DI.rtf translation (Pine v4 script).
-    - DI+/DI- use Wilder smoothing (RMA-like update).
-    - ADX is SMA(DX, len) in the script.
+    ADX & DI with configurable ADX smoothing.
+
+    The v6 ADX_DI.rtf script uses SMA(DX, len) for the ADX line.
+    The Band Light Pine script uses ta.rma(DX, len) (Wilder's smoothing).
     """
     length = int(length)
     prev_close = df["Close"].shift(1)
@@ -42,5 +50,5 @@ def adx_di(df: pd.DataFrame, length: int = 14) -> Tuple[pd.Series, pd.Series, pd
     di_plus = (sdm_plus / str_.replace(0.0, np.nan)) * 100.0
     di_minus = (sdm_minus / str_.replace(0.0, np.nan)) * 100.0
     dx = (di_plus - di_minus).abs() / (di_plus + di_minus).replace(0.0, np.nan) * 100.0
-    adx = sma(dx, length)
+    adx = rma(dx, length) if adx_smoothing == "RMA" else sma(dx, length)
     return adx, di_plus, di_minus

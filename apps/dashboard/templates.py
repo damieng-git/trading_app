@@ -201,17 +201,27 @@ def write_lazy_dashboard_shell_html(
   <div id="app">
     <div id="appHeader">
       <div class="tab-filter-bar" data-scope="chart">
-        <div class="tab-group-dropdown" data-scope="chart">
-          <div class="tab-group-trigger">All &#9662;</div>
-          <div class="tab-group-menu group-menu"></div>
+        <div class="filter-group">
+          <div class="filter-label">Strategy</div>
+          <div id="strategyDropdown" class="tab-group-dropdown" data-scope="chart">
+            <div id="strategyTrigger" class="tab-group-trigger">Strategy v6 &#9662;</div>
+            <div id="strategyMenu" class="tab-group-menu group-menu"></div>
+          </div>
         </div>
-        <div class="tab-tf-selector" data-scope="chart">
-          {''.join(f'<div class="tab-tf-btn" data-tf="{tf}">{"D" if tf=="1D" else "W" if tf=="1W" else tf}</div>' for tf in timeframes)}
+        <div class="filter-sep-v"></div>
+        <div class="filter-group">
+          <div class="filter-label">Stock List</div>
+          <div class="tab-group-dropdown" data-scope="chart">
+            <div class="tab-group-trigger">All &#9662;</div>
+            <div class="tab-group-menu group-menu"></div>
+          </div>
         </div>
-        <span class="filter-sep"></span>
-        <div id="strategyDropdown" class="strategy-dropdown">
-          <div id="strategyTrigger" class="strategy-trigger">Strategy v6 &#9662;</div>
-          <div id="strategyMenu" class="strategy-menu"></div>
+        <div class="filter-sep-v"></div>
+        <div class="filter-group">
+          <div class="filter-label">Timeframe</div>
+          <div class="tab-tf-selector" data-scope="chart">
+            {''.join(f'<div class="tab-tf-btn" data-tf="{tf}">{"D" if tf=="1D" else "W" if tf=="1W" else tf}</div>' for tf in timeframes)}
+          </div>
         </div>
       </div>
       <div id="stockTitle"></div>
@@ -238,7 +248,10 @@ def write_lazy_dashboard_shell_html(
         <div id="strategySpacing" style="height:24px;"></div>
         <div id="chartTs"></div>
         <!-- Charts tab panels -->
-        <div id="chartOsc" style="display:none;"></div>
+        <div id="oscWrap" style="display:none;">
+          <div id="oscToggle" class="panel-toggle">Oscillators &#9654;</div>
+          <div id="chartOsc" class="osc-collapsed"></div>
+        </div>
         <div id="chartLower" style="display:none;"></div>
       </main>
       <div id="sidebarResizer"></div>
@@ -694,12 +707,27 @@ def write_lazy_dashboard_shell_html(
   <div id="pnlWrap" style="display:none;">
     <div class="pnl-panel">
       <div class="tab-filter-bar" data-scope="pnl">
-        <div class="tab-group-dropdown" data-scope="pnl">
-          <div class="tab-group-trigger">All &#9662;</div>
-          <div class="tab-group-menu group-menu"></div>
+        <div class="filter-group">
+          <div class="filter-label">Strategy</div>
+          <div class="tab-group-dropdown strategy-placeholder" data-scope="pnl">
+            <div class="tab-group-trigger">Strategy v6 &#9662;</div>
+            <div class="tab-group-menu group-menu"></div>
+          </div>
         </div>
-        <div class="tab-tf-selector" data-scope="pnl">
-          {''.join(f'<div class="tab-tf-btn" data-tf="{tf}">{"D" if tf=="1D" else "W" if tf=="1W" else tf}</div>' for tf in timeframes)}
+        <div class="filter-sep-v"></div>
+        <div class="filter-group">
+          <div class="filter-label">Stock List</div>
+          <div class="tab-group-dropdown" data-scope="pnl">
+            <div class="tab-group-trigger">All &#9662;</div>
+            <div class="tab-group-menu group-menu"></div>
+          </div>
+        </div>
+        <div class="filter-sep-v"></div>
+        <div class="filter-group">
+          <div class="filter-label">Timeframe</div>
+          <div class="tab-tf-selector" data-scope="pnl">
+            {''.join(f'<div class="tab-tf-btn" data-tf="{tf}">{"D" if tf=="1D" else "W" if tf=="1W" else tf}</div>' for tf in timeframes)}
+          </div>
         </div>
         <div class="pnl-sub-tabs">
           <div class="pnl-sub-tab active" data-pnl-sub="backtest">Backtest</div>

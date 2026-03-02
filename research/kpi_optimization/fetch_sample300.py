@@ -20,6 +20,8 @@ import pandas as pd
 from trading_dashboard.data.downloader import (
     resample_to_4h,
     resample_to_weekly,
+    resample_to_biweekly,
+    resample_to_monthly,
     _flatten_multiindex,
 )
 from trading_dashboard.data.enrichment import translate_and_compute_indicators
@@ -44,7 +46,7 @@ SAMPLE_300_DIR = REPO_DIR / "research" / "data" / "feature_store" / "enriched" /
 INDICATOR_CFG = REPO_DIR / "apps" / "dashboard" / "configs" / "indicator_config.json"
 
 START_DATE = "2018-01-01"
-TFS = ["1D", "1W", "4H"]
+TFS = ["1D", "1W", "2W", "1M", "4H"]
 
 
 def load_tickers():
@@ -88,6 +90,10 @@ def fetch_and_enrich(sym, dst_dir):
                 df = daily.copy()
             elif tf == "1W":
                 df = resample_to_weekly(daily)
+            elif tf == "2W":
+                df = resample_to_biweekly(daily)
+            elif tf == "1M":
+                df = resample_to_monthly(daily)
             elif tf == "4H":
                 if hourly is None or hourly.empty:
                     continue
@@ -116,18 +122,41 @@ def fetch_and_enrich(sym, dst_dir):
         return 0
 
 
+def _needs_stoof_reenrich(sym, target_dir):
+    """Check if existing parquets lack Stoof columns (need re-enrichment)."""
+    for tf in TFS:
+        p = target_dir / f"{sym}_{tf}.parquet"
+        if p.exists():
+            try:
+                cols = pd.read_parquet(p, columns=[]).columns.tolist()
+                real_cols = pd.read_parquet(p).columns.tolist()
+                if "MACD_BL" not in real_cols:
+                    return True
+            except Exception:
+                return True
+    return False
+
+
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force", action="store_true",
+                        help="Re-enrich all tickers (e.g. after adding Stoof indicators)")
+    args = parser.parse_args()
+
     t0 = time.time()
     SAMPLE_300_DIR.mkdir(parents=True, exist_ok=True)
 
     tickers = load_tickers()
-    print(f"Sample 300: {len(tickers)} tickers", flush=True)
+    print(f"Sample 300: {len(tickers)} tickers, TFs: {TFS}", flush=True)
+    if args.force:
+        print("  --force: will re-enrich all tickers", flush=True)
 
     copied, fetched, failed = 0, 0, 0
 
     for i, sym in enumerate(tickers):
         all_have = all(has_enriched(sym, tf, SAMPLE_300_DIR) for tf in TFS)
-        if all_have:
+        if all_have and not args.force and not _needs_stoof_reenrich(sym, SAMPLE_300_DIR):
             continue
 
         from_100 = 0

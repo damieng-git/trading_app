@@ -29,6 +29,7 @@ apps/dashboard/configs/ticker_cache.json
 # Research data + outputs (regenerable from scripts)
 research/data/
 research/kpi_optimization/outputs/
+research/kpi_optimization/__pycache__/
 
 # Environment
 .env
@@ -43,3 +44,6 @@ htmlcov/
 
 # Logs
 *.log
+
+# PineScript source docs (binary/large)
+docs/pinescripts/

@@ -160,6 +160,16 @@
     SR_Breaks: "SR Breaks",
     GK_Trend: "GK Trend Ribbon",
     Impulse_Trend: "Impulse Trend",
+    MACD_BL: "MACD_BL",
+    WT_LB_BL: "WT_LB_BL",
+    OBVOSC_BL: "OBVOSC_BL",
+    CCI_Chop_BB_v1: "CCI_Chop_BB_v1",
+    CCI_Chop_BB_v2: "CCI_Chop_BB_v2",
+    ADX_DI_BL: "ADX_DI_BL",
+    LuxAlgo_Norm_v1: "LuxAlgo_Norm_v1",
+    LuxAlgo_Norm_v2: "LuxAlgo_Norm_v2",
+    Risk_Indicator: "Risk_Indicator",
+    PAI: "PAI",
   };
 
   /* ------------------------------------------------------------------ */
@@ -609,6 +619,44 @@
       traces.push(mkTrace({ type: "bar", x: x, y: mrsNeg, marker: { color: "rgba(239,68,68,0.6)" }, name: "MRS-" }, 3, mrsLabel));
     }
 
+    // --- Stoof (Band Light) oscillator traces ---
+    if (has(c, ["MACD_BL", "MACD_BL_hist"])) {
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "MACD_BL"), mode: "lines", line: { color: "#3b82f6", width: 1.5 } }, 3, LABEL.MACD_BL));
+      if ("MACD_BL_signal" in c) traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "MACD_BL_signal"), mode: "lines", line: { color: "#f59e0b", width: 1.2, dash: "dot" } }, 3, LABEL.MACD_BL));
+      traces.push(mkTrace({ type: "bar", x: x, y: col(c, "MACD_BL_hist"), marker: { color: col(c, "MACD_BL_hist").map(v => v >= 0 ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)") } }, 3, LABEL.MACD_BL));
+    }
+    if (has(c, ["WT_LB_BL_wt1", "WT_LB_BL_wt2"])) {
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "WT_LB_BL_wt1"), mode: "lines", line: { color: "#22c55e", width: 1.5 } }, 3, LABEL.WT_LB_BL));
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "WT_LB_BL_wt2"), mode: "lines", line: { color: "#ef4444", width: 1.2, dash: "dot" } }, 3, LABEL.WT_LB_BL));
+    }
+    if ("OBVOSC_BL_osc" in c) {
+      const obvBl = col(c, "OBVOSC_BL_osc");
+      traces.push(mkTrace({ type: "bar", x: x, y: obvBl, marker: { color: obvBl.map(v => v >= 0 ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)") } }, 3, LABEL.OBVOSC_BL));
+    }
+    if ("CCI_Chop_BB_v1_smooth" in c) {
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "CCI_Chop_BB_v1_smooth"), mode: "lines", line: { color: "#8b5cf6", width: 1.5 } }, 3, LABEL.CCI_Chop_BB_v1));
+    }
+    if ("CCI_Chop_BB_v2_smooth" in c) {
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "CCI_Chop_BB_v2_smooth"), mode: "lines", line: { color: "#a855f7", width: 1.5 } }, 3, LABEL.CCI_Chop_BB_v2));
+    }
+    if (has(c, ["ADX_BL", "DI_plus_BL", "DI_minus_BL"])) {
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "DI_plus_BL"), mode: "lines", line: { color: "#22c55e", width: 1.2 } }, 3, LABEL.ADX_DI_BL));
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "DI_minus_BL"), mode: "lines", line: { color: "#ef4444", width: 1.2 } }, 3, LABEL.ADX_DI_BL));
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "ADX_BL"), mode: "lines", line: { color: "#1e3a8a", width: 1.6 } }, 3, LABEL.ADX_DI_BL));
+    }
+    if ("LuxAlgo_Norm_v1" in c) {
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "LuxAlgo_Norm_v1"), mode: "lines", line: { color: "#06b6d4", width: 1.5 } }, 3, LABEL.LuxAlgo_Norm_v1));
+    }
+    if ("LuxAlgo_Norm_v2" in c) {
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "LuxAlgo_Norm_v2"), mode: "lines", line: { color: "#0891b2", width: 1.5, dash: "dot" } }, 3, LABEL.LuxAlgo_Norm_v2));
+    }
+    if ("Risk_Indicator" in c) {
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "Risk_Indicator"), mode: "lines", line: { color: "#f97316", width: 1.5 } }, 3, LABEL.Risk_Indicator));
+    }
+    if ("PAI" in c) {
+      traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "PAI"), mode: "lines", line: { color: "#14b8a6", width: 1.5 } }, 3, LABEL.PAI));
+    }
+
     /* ============================================================ */
     /*  ROW 4–7 — KPI panels                                        */
     /* ============================================================ */
@@ -640,7 +688,7 @@
 
     // Strategy-aware: build Stoof KPI slice
     const strategyKpis = data.strategy_kpis || {};
-    const _activeStrat = (typeof currentStrategy !== "undefined") ? currentStrategy : "v6";
+    const _activeStrat = (typeof window.currentStrategy === "string") ? window.currentStrategy : "v6";
     const stoofKpiNames = strategyKpis["stoof"] || [];
     const stoofSlice = kpiSlice(stoofKpiNames);
     const v6KpiNames = strategyKpis["v6"] || [];
@@ -674,14 +722,33 @@
       [1.0, "#22c55e"],
     ];
 
-    // Breakout dots (row 5)
+    // Breakout dots (row 5) — filter by strategy, sorted to match trend heatmap order
+    const activeStratKpiNames = _activeStrat === "stoof" ? stoofKpiNames
+                              : (_activeStrat === "v6" ? v6KpiNames : null);
+    const _brkFilteredRaw = activeStratKpiNames
+      ? kpisBreakout.filter(bk => {
+          const base = bk.startsWith("BO_") ? bk.slice(3) : bk;
+          return activeStratKpiNames.includes(base);
+        })
+      : kpisBreakout.slice();
+    const _heatmapOrder = (_activeStrat === "stoof" ? stoofKpiNames : (_activeStrat === "v6" ? v6KpiNames : kpisTrend));
+    const _heatmapIdx = {};
+    _heatmapOrder.forEach((k, i) => { _heatmapIdx[k] = i; });
+    _brkFilteredRaw.sort((a, b) => {
+      const ba = a.startsWith("BO_") ? a.slice(3) : a;
+      const bb = b.startsWith("BO_") ? b.slice(3) : b;
+      const ia = _heatmapIdx[ba] != null ? _heatmapIdx[ba] : 9999;
+      const ib = _heatmapIdx[bb] != null ? _heatmapIdx[bb] : 9999;
+      return ia - ib;
+    });
+    const brkFiltered = kpiSlice(_brkFilteredRaw);
     const brLabels = [];
-    if (brk.kk.length) {
-      brk.kk.forEach((k, i) => {
+    if (brkFiltered.kk.length) {
+      brkFiltered.kk.forEach((k, i) => {
         const label = shortLabel(k);
         const kk = k.startsWith("BO_") ? k.slice(3) : k;
         brLabels.push(label);
-        const rowZ = brk.zz[i], rowC = brk.cc[i];
+        const rowZ = brkFiltered.zz[i], rowC = brkFiltered.cc[i];
         const bullX = [], bullText = [], bearX = [], bearText = [];
         for (let ci = 0; ci < n; ci++) {
           if (rowZ[ci] === 1) { bullX.push(x[ci]); bullText.push(kk + ": " + (rowC[ci] || "")); }
@@ -1219,6 +1286,7 @@
         domain: [r6Bot, r6Top], tickmode: "array",
         tickvals: trLabels, ticktext: trLabels, tickfont: { size: 8 },
         ticklabelstandoff: 8, automargin: true,
+        categoryorder: "array", categoryarray: trLabels.slice().reverse(),
         showgrid: true, gridcolor: _gridAlpha,
       } : makeYAxis([r6Bot, r6Top])),
     };
@@ -1231,6 +1299,10 @@
       { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: "KPI \u2014 Trend (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
     ];
+    // Stash KPI counts in layout.meta for dynamic height in splitFigure
+    layout.meta = layout.meta || {};
+    layout.meta._nBr = nBr;
+    layout.meta._nTr = nTr;
     // P&L dynamic stat banner (updates on zoom)
     if (data._pnlStats && data._pnlStats.text) {
       subplotTitles.push({

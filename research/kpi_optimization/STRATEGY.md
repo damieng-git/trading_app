@@ -1111,3 +1111,127 @@ See Phase 15 output files for full tables. Key finding: **H=1 (next bar open) is
 | **1W** | NWSm+Donch+GKTr+OBVOsc (~11) | **NWSm+Stoch+cRSI+Vol>MA** (PF 43.9) | **~300%** |
 
 **Status: Adopted as v6 (v15).** All changes implemented in config.json, dashboard, screener, and charts.
+
+---
+
+## §17  Phase 17 — Unified Strategy Archetype Optimization
+
+**Goal**: Expand the strategy search beyond pure trend-following combos to 5 distinct
+strategy archetypes, each with tailored entry pools, polarity rules, and exit modes.
+Also integrates the 10 Stoof (Band Light) indicators and 2 additional timeframes (2W, 1M).
+
+**Scripts**:
+- `phase17_step0_audit.py` — Pre-flight data quality, coverage, correlation, scorecard
+- `phase17_strategy_archetypes.py` — Main pipeline (Stages 1–5)
+
+**Dataset**: sample_300 (~268 stocks, expanding to ~300 after re-enrichment)
+**Timeframes**: 4H, 1D, 1W, 2W, 1M (5 total)
+**KPIs**: 28 v6 + 10 Stoof = 38 total
+**OOS**: 50% in-sample / 25% OOS-A / 25% OOS-B
+
+### Prerequisites (Step 0)
+
+Before running the main pipeline, Step 0 validates data readiness:
+
+| Sub-step | What | Status |
+|----------|------|--------|
+| 0a | Re-enrich sample_300 with Stoof indicators + 2W/1M TFs | **PENDING** — run `fetch_sample300.py --force` |
+| 0b | Data quality audit (missing bars, columns, date ranges) | **DONE** — 268/300 symbols on 3 TFs, 0/300 on 2W/1M |
+| 0c | KPI state coverage (NA%, always-bull, signal rarity) | **DONE** — 10 Stoof KPIs show 100% NA (need re-enrichment) |
+| 0d | Correlation analysis (Spearman pairwise, r > 0.70) | **DONE** — see findings below |
+| 0e | Individual KPI scorecard (standalone HR/return per polarity) | **DONE** — 28 v6 KPIs scored |
+| 0f | Search space estimation (combos per archetype × TF) | **DONE** — ~397K combos/TF for v6 KPIs |
+
+### Step 0 Key Findings
+
+**Correlation clusters (consistent across TFs):**
+- Ichimoku ↔ Madrid Ribbon (r=0.82–0.86): highest persistent correlation
+- Ichimoku ↔ GMMA (r=0.78–0.83): strong overlap
+- Ichimoku ↔ ADX & DI (r=0.73–0.81): overlapping trend signal
+- TuTCI ↔ Donchian Ribbon (r=0.77–0.82): redundant trend
+- ADX & DI ↔ GMMA (r=0.72–0.75): moderate overlap
+- **Action**: Exclusion pairs applied — combos containing both sides not tested
+
+**Degenerate KPIs (flagged across all TFs):**
+- BB 30, NWE-MAE, NWE-STD: <1% bullish — too rare for entry combos
+- NWE-Repainting: 73% NA on 4H/1D — excluded from combos
+- **Action**: Excluded from combo pool but kept for breakout archetypes where rarity is expected
+
+**Top standalone KPIs by HR@mid-horizon:**
+- 4H: GK Trend Ribbon (+1, HR@6=61.3%), Nadaraya-Watson Envelop MAE (+1, HR@6=60.9%)
+- 1D: NWE-Repainting (+1, HR@5=62.3%), Donchian Ribbon (-1, HR@5=59.5%)
+- 1W: NWE-Repainting (+1, HR@4=94.1%), BB 30 (+1, HR@4=88.5%), TuTCI (-1, HR@4=68.5%)
+
+### Strategy Archetypes
+
+| Key | Label | Anchor | KPI Pool | Polarity | Exit Mode |
+|-----|-------|--------|----------|----------|-----------|
+| A_trend | Trend Following | trend | trend + momentum + rel.strength | All bull | Standard (v4) |
+| B_dip | Mean Reversion / Buy the Dip | trend | trend + mean_rev + breakout + momentum | Mixed (+1/-1) | Trend anchor |
+| C_breakout | Breakout / Momentum Surge | breakout | breakout + momentum + rel.strength | All bull | Momentum-governed |
+| D_risk | Trend + Risk-Managed | trend | trend + risk_exit + momentum | All bull | Risk priority |
+| E_mixed | Full Mixed / Unconstrained | any | all dimensions | Mixed (+1/-1) | Adaptive |
+
+**Exit modes explained:**
+- **Standard** = Exit Flow v4 unchanged (T/M lenient+strict, ATR stop, checkpoint)
+- **Trend anchor** = Only trend-dimension KPIs govern exit (contrarian KPIs ignored)
+- **Momentum-governed** = Only momentum/breakout KPIs govern exit
+- **Risk priority** = Any bearish risk KPI → immediate exit (tighter than standard)
+- **Adaptive** = Exit KPIs selected dynamically based on combo's dimension profile
+
+### Pipeline Stages
+
+```
+Stage 0  ──→  Stage 1  ──→  Stage 2  ──→  Stage 3  ──→  Stage 4  ──→  Stage 5
+Pre-flight    Combo         Exit Rule      Entry Gate    Walk-Forward   Final
+Audit         Search        Optimization   + Delay       Validation     Recommendation
+(done)        (per arch)    (top-N)        (sweep)       (OOS-B)        (compare all)
+```
+
+| Stage | What | Per-archetype |
+|-------|------|---------------|
+| 1 | C3–C6 combo search within archetype pool, ranked by PF | 5 archetypes × 5 TFs |
+| 2 | Test 5 exit modes on top-N combos from Stage 1 | Top 2 per size per arch |
+| 3 | Sweep 3 entry gates × 5 delays on best exit-optimized combos | Top 3 per arch |
+| 4 | Validate winners on OOS-B holdout (HR decay, PF ratio) | Top 5 per arch |
+| 5 | Cross-strategy comparison, final recommendation | Global ranking |
+
+### Validation Criteria (Stage 4)
+
+A combo **passes** walk-forward validation if:
+- OOS-B HR >= 50%
+- IS→OOS HR decay <= 15pp
+- OOS PF / IS PF ratio >= 0.5
+- OOS trades >= 3
+
+### Decision Framework (Stage 5)
+
+| Action | Condition |
+|--------|-----------|
+| **ADOPT** | OOS PF >= 1.2 AND OOS HR >= 55% AND OOS trades >= 10 |
+| **MONITOR** | OOS PF >= 1.0 but below ADOPT thresholds |
+| **HOLD_CURRENT** | No strategies pass validation |
+
+### Current Status
+
+- **Step 0 DONE** on v6 KPIs (3 TFs). Stoof KPIs require re-enrichment.
+- **Stages 1–5 READY** to run once re-enrichment completes.
+- Output directory: `research/kpi_optimization/outputs/all/phase17/`
+
+### Stoof Indicator Integration (Pre-Phase 17)
+
+Ten Stoof (Band Light) indicators were audited against PineScript source and corrected:
+
+| Indicator | Dimension | Fix Applied |
+|-----------|-----------|-------------|
+| MACD_BL | momentum | Signal line: SMA → EMA (matches Pine `ta.macd`) |
+| WT_LB_BL | mean_reversion | Source: hlc3 → close (matches Band Light PineScript) |
+| ADX_DI_BL | trend | Smoothing: SMA → RMA (matches Pine `ta.rma`) |
+| OBVOSC_BL | mean_reversion | No fix needed — correct |
+| CCI_Chop_BB_v1/v2 | mean_reversion | No fix needed — correct |
+| LuxAlgo_Norm_v1/v2 | mean_reversion | No fix needed — correct |
+| Risk_Indicator | risk_exit | No fix needed — correct |
+| PAI | momentum | No fix needed — correct |
+
+All fixes are backward-compatible (new parameters with v6 defaults). 22 unit tests added.
+See `docs/pinescripts/Combined Band Light/Combined Band Light - Audit.txt` for line-by-line analysis.
