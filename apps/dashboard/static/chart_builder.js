@@ -1225,9 +1225,9 @@
     const kpiShare = 0.32;
     const brShare = nKpi ? (kpiShare * nBr / nKpi) : 0.16;
     const trShare = nKpi ? (kpiShare * nTr / nKpi) : 0.16;
-    const tsShare = 0.05;
+    const tsShare = 0.09;
     const pnlShare = 0.08;
-    const priceShare = 0.30;
+    const priceShare = 0.27;
     const oscShare = 1 - priceShare - pnlShare - brShare - trShare - tsShare;
     const gap = 0.015;
 

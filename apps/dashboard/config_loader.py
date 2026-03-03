@@ -78,7 +78,9 @@ WEEKLY_RULE = "W-FRI"  # recommended by your instructions
 # - 1W uses 1d candles resampled to W-FRI
 # - 2W uses 1d candles resampled to 2W-FRI (bi-weekly)
 # - 1M uses 1d candles resampled to month-end
-TIMEFRAMES: List[str] = ["4H", "1D", "1W", "2W", "1M"]
+DEFAULT_TIMEFRAMES: list[str] = ["4H", "1D", "1W", "2W", "1M"]
+VALID_TIMEFRAMES: set[str] = {"4H", "1D", "1W", "2W", "1M"}
+TIMEFRAMES: List[str] = list(DEFAULT_TIMEFRAMES)
 
 
 @dataclass(frozen=True)
@@ -105,10 +107,11 @@ def get_timeframe(key: str) -> Timeframe:
     return TIMEFRAME_REGISTRY[key]
 
 # Paths (robust to current working directory).
-# This file lives in: PRIVATE/trading_dashboard/apps/dashboard/config_loader.py
-# Repo root is:        PRIVATE/trading_dashboard/
+# This file lives in: trading_app/apps/dashboard/config_loader.py
+# Repo root (PROJECT_ROOT) is: trading_app/
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_DIR = SCRIPT_DIR.parents[1]
+REPO_DIR = SCRIPT_DIR.parents[2]  # trading_app (root)
+PROJECT_ROOT = REPO_DIR
 PROJECT_DIR = REPO_DIR  # legacy name used throughout the file
 
 # Optional legacy README folder (not required for dashboard runtime)
@@ -124,8 +127,10 @@ LEGACY_PINESCRIPTS_DIR = REPO_DIR / "PineScripts"
 
 # Data tiers (end-state layout)
 DATA_DIR = REPO_DIR / "data"
-FEATURE_STORE_ENRICHED_DIR = DATA_DIR / "feature_store" / "enriched"
-OHLCV_CACHE_DIR = DATA_DIR / "cache" / "ohlcv_raw"
+CACHE_DIR = DATA_DIR / "cache"
+FEATURE_STORE_DIR = DATA_DIR / "feature_store"
+FEATURE_STORE_ENRICHED_DIR = FEATURE_STORE_DIR / "enriched"
+OHLCV_CACHE_DIR = CACHE_DIR / "ohlcv_raw"
 DASHBOARD_ARTIFACTS_DIR = DATA_DIR / "dashboard_artifacts"
 DEFAULT_DATASET_NAME = "dashboard"
 
@@ -143,6 +148,7 @@ OUTPUT_README = REPO_DIR / "README.md"
 
 TRADINGVIEW_DATA_DIR = DASHBOARD_ARTIFACTS_DIR / "tradingview_data"
 CONFIG_JSON = SCRIPT_DIR / "configs" / "config.json"
+LISTS_DIR = SCRIPT_DIR / "configs" / "lists"
 INDICATOR_CONFIG_JSON_DEFAULT = SCRIPT_DIR / "configs" / "indicator_config.json"
 SYMBOL_DISPLAY_OVERRIDES_JSON = SCRIPT_DIR / "configs" / "symbol_display_overrides.json"
 RUN_METADATA_JSON = OUTPUT_DATA_DIR / "run_metadata.json"

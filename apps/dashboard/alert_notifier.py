@@ -32,6 +32,7 @@ Configuration (apps/dashboard/configs/alerts_config.json):
 from __future__ import annotations
 
 import json
+import os
 import smtplib
 import urllib.request
 import urllib.parse
@@ -64,7 +65,40 @@ def load_config(config_path: Path | None = None) -> Dict[str, Any]:
     path = config_path or ALERTS_CONFIG_PATH
     if not path.exists():
         return {"telegram": {"enabled": False}, "email": {"enabled": False}, "min_combo_level": "C3"}
-    return json.loads(path.read_text(encoding="utf-8"))
+    config = json.loads(path.read_text(encoding="utf-8"))
+    # Environment variable overrides (take precedence over JSON)
+    tg = config.get("telegram", {})
+    if os.environ.get("TELEGRAM_BOT_TOKEN"):
+        tg = dict(tg)
+        tg["bot_token"] = os.environ["TELEGRAM_BOT_TOKEN"]
+    if os.environ.get("TELEGRAM_CHAT_ID"):
+        tg = dict(tg)
+        tg["chat_id"] = os.environ["TELEGRAM_CHAT_ID"]
+    if tg != config.get("telegram", {}):
+        config = dict(config)
+        config["telegram"] = tg
+
+    em = config.get("email", {})
+    if os.environ.get("SMTP_HOST"):
+        em = dict(em)
+        em["smtp_host"] = os.environ["SMTP_HOST"]
+    if os.environ.get("SMTP_PORT"):
+        em = dict(em)
+        try:
+            em["smtp_port"] = int(os.environ["SMTP_PORT"])
+        except ValueError:
+            pass
+    if os.environ.get("SMTP_USER"):
+        em = dict(em)
+        em["username"] = os.environ["SMTP_USER"]
+    if os.environ.get("SMTP_PASS"):
+        em = dict(em)
+        em["password"] = os.environ["SMTP_PASS"]
+    if em != config.get("email", {}):
+        config = dict(config)
+        config["email"] = em
+
+    return config
 
 
 # ---------------------------------------------------------------------------

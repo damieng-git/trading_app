@@ -72,3 +72,22 @@ def ohlcv_missing_columns():
     """OHLCV data missing required columns."""
     dates = pd.date_range("2020-01-01", periods=100, freq="D")
     return pd.DataFrame({"Close": np.random.randn(100).cumsum() + 100}, index=dates)
+
+
+@pytest.fixture
+def mock_yfinance(monkeypatch):
+    """Mock yfinance.download to avoid network calls in tests."""
+    def fake_download(tickers, **kwargs):
+        dates = pd.date_range("2024-01-01", periods=100, freq="B")
+        np.random.seed(42)
+        prices = 100 + np.cumsum(np.random.randn(100) * 2)
+        return pd.DataFrame({
+            "Open": prices * 0.99,
+            "High": prices * 1.02,
+            "Low": prices * 0.98,
+            "Close": prices,
+            "Volume": np.random.randint(1_000_000, 5_000_000, 100),
+        }, index=dates)
+
+    monkeypatch.setattr("yfinance.download", fake_download)
+    return fake_download

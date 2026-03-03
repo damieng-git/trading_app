@@ -90,6 +90,14 @@ class IncrementalUpdater:
         """
         existing = self.store.load_raw(symbol, tf)
         if existing is not None and not existing.empty:
+            new_max = pd.to_datetime(new_df.index.max()) if new_df is not None and not new_df.empty else None
+            existing_max = pd.to_datetime(existing.index.max())
+            if new_max is not None and new_max < existing_max:
+                logger.warning(
+                    "Skipping merge for %s/%s: new data max %s is older than existing max %s",
+                    symbol, tf, new_max, existing_max,
+                )
+                return existing
             combined = pd.concat([existing, new_df])
             combined = combined[~combined.index.duplicated(keep="last")]
             combined = combined.sort_index()

@@ -153,29 +153,95 @@ def write_lazy_dashboard_shell_html(
 
     _static_dir = Path(__file__).resolve().parent / "static"
     _css_path = _static_dir / "dashboard.css"
-    _js_path = _static_dir / "dashboard.js"
     _chart_builder_path = _static_dir / "chart_builder.js"
+    _js_module_paths = [
+        _static_dir / "dashboard_screener.js",
+        _static_dir / "dashboard_pnl.js",
+        _static_dir / "dashboard_modals.js",
+        _static_dir / "dashboard.js",
+    ]
     if not _css_path.exists():
         raise FileNotFoundError(f"Missing dashboard CSS: {_css_path}. Ensure apps/dashboard/static/dashboard.css exists.")
-    if not _js_path.exists():
-        raise FileNotFoundError(f"Missing dashboard JS: {_js_path}. Ensure apps/dashboard/static/dashboard.js exists.")
+    for p in _js_module_paths:
+        if not p.exists():
+            raise FileNotFoundError(f"Missing dashboard JS: {p}. Ensure apps/dashboard/static/ has all module files.")
     _css_text = _css_path.read_text(encoding="utf-8")
     _chart_builder_text = _chart_builder_path.read_text(encoding="utf-8") if _chart_builder_path.exists() else ""
-    _js_text = _js_path.read_text(encoding="utf-8")
+    _js_text = "\n".join(_p.read_text(encoding="utf-8") for _p in _js_module_paths)
 
-    html = f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
+    def _tf_btn(tf: str) -> str:
+        lbl = "D" if tf == "1D" else "W" if tf == "1W" else tf
+        return f'<div class="tab-tf-btn" data-tf="{tf}">{lbl}</div>'
+    tf_buttons = "".join(_tf_btn(tf) for tf in timeframes)
+    tf_options = "".join(f'<option value="{tf}">{tf}</option>' for tf in timeframes)
+
+    def _build_head_section() -> str:
+        """Build the <head> section with Plotly JS and CSS."""
+        return f"""  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Trading Dashboard (Lazy)</title>
   <script>{plotly_js}</script>
   <style>
 {_css_text}
   </style>
-</head>
-<body>
-  <div class="topbar">
+"""
+
+    def _build_sidebar() -> str:
+        """Build the sidebar HTML fragment."""
+        return """        <div id="symbolListTools">
+          <label for="symbolListSearch" class="visually-hidden">Filter symbols by ticker or exchange suffix</label>
+          <input id="symbolListSearch" type="search" placeholder="Filter symbols (e.g. .DE, AAPL)" aria-label="Filter symbols by ticker or exchange suffix" />
+        </div>
+        <div id="sidebarSort">
+          <div class="btn active" data-sort="name">A-Z</div>
+          <div class="btn" data-sort="delta">% Chg</div>
+          <div class="btn" data-sort="trend">Score</div>
+          <div class="btn" data-sort="combo" title="Show only stocks with active combo">Combo</div>
+        </div>
+        <div id="symbolList" aria-label="Symbols"></div>
+"""
+
+    def _build_main_content() -> str:
+        """Build the main body content (topbar, app, screener, info, pnl, modals)."""
+        # Inline the body HTML - uses tf_buttons, tf_options, _build_sidebar from closure
+        return _get_body_content()
+
+    def _build_scripts() -> str:
+        """Build the script section with config and JS."""
+        return f"""  <script>
+    const FIG_SOURCE = {json.dumps(fig_source)};
+    const ASSETS_DIR = {json.dumps(assets_rel_dir or "")};
+    const SYMBOLS = {json.dumps(symbols)};
+    const SYMBOL_GROUPS = {groups_payload};
+    const TIMEFRAMES = {json.dumps(timeframes)};
+    const KPI_KEYS = {kpi_keys_payload};
+    const RUN_META = {meta_payload};
+    const DATA_HEALTH = {health_payload};
+    const SYMBOL_META = {sym_meta_payload};
+    const SYMBOL_DISPLAY = {sym_disp_payload};
+    const SYMBOL_TO_ASSET = {sym_to_asset_payload};
+    const SCREENER = {screener_payload};
+    const EXIT_PARAMS_CFG = {exit_params_payload};
+    const MAX_TREND_SCORE = {max_trend_score};
+    const DIMENSION_MAP = {_build_dimension_map_payload()};
+    const DIMENSION_ORDER = {json.dumps([DIMENSIONS[k] for k in DIMENSION_ORDER])};
+    const DEFAULT_SYMBOL = {json.dumps(default_symbol)};
+    const DEFAULT_TF = {json.dumps(default_tf)};
+    const FX_TO_EUR = {fx_rates_payload};
+    const SYMBOL_CURRENCIES = {sym_currencies_payload};
+    const STRATEGY_SETUPS = {strategy_setups_payload};
+
+  </script>
+  <script>
+{_chart_builder_text}
+  </script>
+  <script>
+{_js_text}
+  </script>
+"""
+
+    def _get_body_content() -> str:
+        return f"""  <div class="topbar">
     <div class="topbarRow">
       <div class="nav-tabs" role="tablist" aria-label="Dashboard tabs">
         <div id="tabScreener" class="nav-tab" role="tab" tabindex="0" aria-selected="false">Screener</div>
@@ -224,7 +290,7 @@ def write_lazy_dashboard_shell_html(
         <div class="filter-group">
           <div class="filter-label">Timeframe</div>
           <div class="tab-tf-selector" data-scope="chart">
-            {''.join(f'<div class="tab-tf-btn" data-tf="{tf}">{"D" if tf=="1D" else "W" if tf=="1W" else tf}</div>' for tf in timeframes)}
+            {tf_buttons}
           </div>
         </div>
       </div>
@@ -260,30 +326,22 @@ def write_lazy_dashboard_shell_html(
       </main>
       <div id="sidebarResizer"></div>
       <aside id="sidebar">
-        <div id="symbolListTools">
-          <input id="symbolListSearch" type="search" placeholder="Filter symbols (e.g. .DE, AAPL)" />
-        </div>
-        <div id="sidebarSort">
-          <div class="btn active" data-sort="name">A-Z</div>
-          <div class="btn" data-sort="delta">% Chg</div>
-          <div class="btn" data-sort="trend">Score</div>
-          <div class="btn" data-sort="combo" title="Show only stocks with active combo">Combo</div>
-        </div>
-        <div id="symbolList" aria-label="Symbols"></div>
+{_build_sidebar()}
       </aside>
     </div>
   </div>
   <div id="comboTooltip"></div>
   <div id="screenerWrap" style="display:none;">
     <div id="screenerTools">
-      <input id="screenerSearch" type="search" placeholder="Filter symbols (e.g. DE, PA, DASH)" />
+      <label for="screenerSearch" class="visually-hidden">Filter screener symbols by ticker or exchange</label>
+      <input id="screenerSearch" type="search" placeholder="Filter symbols (e.g. DE, PA, DASH)" aria-label="Filter screener symbols by ticker or exchange" />
       <div id="screenerFilters">
         <div class="tab-group-dropdown" data-scope="screener">
           <div class="tab-group-trigger">All &#9662;</div>
           <div class="tab-group-menu group-menu"></div>
         </div>
         <div class="tab-tf-selector" data-scope="screener">
-          {''.join(f'<div class="tab-tf-btn" data-tf="{tf}">{"D" if tf=="1D" else "W" if tf=="1W" else tf}</div>' for tf in timeframes)}
+          {tf_buttons}
         </div>
         <span class="filter-sep"></span>
         <div class="btn active" data-filter="all" title="Show all symbols">All</div>
@@ -730,7 +788,7 @@ def write_lazy_dashboard_shell_html(
         <div class="filter-group">
           <div class="filter-label">Timeframe</div>
           <div class="tab-tf-selector" data-scope="pnl">
-            {''.join(f'<div class="tab-tf-btn" data-tf="{tf}">{"D" if tf=="1D" else "W" if tf=="1W" else tf}</div>' for tf in timeframes)}
+            {tf_buttons}
           </div>
         </div>
         <div class="pnl-sub-tabs">
@@ -776,9 +834,9 @@ def write_lazy_dashboard_shell_html(
       </div>
       <div class="modal-body">
         <div class="modal-field">
-          <label>Search ticker or company name</label>
+          <label for="addTickerInput">Search ticker or company name</label>
           <div style="display:flex;gap:8px;">
-            <input id="addTickerInput" type="text" placeholder="e.g. AAPL, Microsoft, IWDA, BNP.PA" style="flex:1;" />
+            <input id="addTickerInput" type="text" placeholder="e.g. AAPL, Microsoft, IWDA, BNP.PA" aria-label="Search ticker or company name" style="flex:1;" />
             <button id="addTickerSearch" class="btn btn-search">Search</button>
           </div>
         </div>
@@ -838,7 +896,7 @@ def write_lazy_dashboard_shell_html(
           <div class="modal-field">
             <label>Timeframe</label>
             <select id="tradeTF">
-              {''.join(f'<option value="{tf}">{tf}</option>' for tf in timeframes)}
+              {tf_options}
             </select>
           </div>
         </div>
@@ -876,40 +934,12 @@ def write_lazy_dashboard_shell_html(
       </div>
     </div>
   </div>
-
-  <script>
-    const FIG_SOURCE = {json.dumps(fig_source)};
-    const ASSETS_DIR = {json.dumps(assets_rel_dir or "")};
-    const SYMBOLS = {json.dumps(symbols)};
-    const SYMBOL_GROUPS = {groups_payload};
-    const TIMEFRAMES = {json.dumps(timeframes)};
-    const KPI_KEYS = {kpi_keys_payload};
-    const RUN_META = {meta_payload};
-    const DATA_HEALTH = {health_payload};
-    const SYMBOL_META = {sym_meta_payload};
-    const SYMBOL_DISPLAY = {sym_disp_payload};
-    const SYMBOL_TO_ASSET = {sym_to_asset_payload};
-    const SCREENER = {screener_payload};
-    const EXIT_PARAMS_CFG = {exit_params_payload};
-    const MAX_TREND_SCORE = {max_trend_score};
-    const DIMENSION_MAP = {_build_dimension_map_payload()};
-    const DIMENSION_ORDER = {json.dumps([DIMENSIONS[k] for k in DIMENSION_ORDER])};
-    const DEFAULT_SYMBOL = {json.dumps(default_symbol)};
-    const DEFAULT_TF = {json.dumps(default_tf)};
-    const FX_TO_EUR = {fx_rates_payload};
-    const SYMBOL_CURRENCIES = {sym_currencies_payload};
-    const STRATEGY_SETUPS = {strategy_setups_payload};
-
-  </script>
-  <script>
-{_chart_builder_text}
-  </script>
-  <script>
-{_js_text}
-  </script>
-</body>
-</html>
 """
+
+    head = _build_head_section()
+    content = _build_main_content()
+    scripts = _build_scripts()
+    html = f"<!doctype html>\n<html lang=\"en\">\n<head>\n{head}</head>\n<body>\n{content}\n{scripts}\n</body>\n</html>"
     output_path.write_text(html, encoding="utf-8")
 
 

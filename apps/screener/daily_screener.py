@@ -26,9 +26,16 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
+from apps.dashboard.config_loader import (
+    CONFIG_JSON,
+    DASHBOARD_ARTIFACTS_DIR,
+    FEATURE_STORE_ENRICHED_DIR,
+    LISTS_DIR,
+    OHLCV_CACHE_DIR,
+    VALID_TIMEFRAMES,
+)
 _CONFIGS_DIR = Path(__file__).resolve().parent / "configs"
-_OUTPUT_PATH = _PROJECT_DIR / "data" / "dashboard_artifacts" / "daily_screener.json"
+_OUTPUT_PATH = DASHBOARD_ARTIFACTS_DIR / "daily_screener.json"
 
 MAX_C3_HITS = 0  # 0 = no limit
 MAX_C4_HITS = 0  # 0 = no limit
@@ -36,8 +43,7 @@ MAX_C4_HITS = 0  # 0 = no limit
 
 def _load_screener_config() -> dict:
     """Load C3/C4 combo definitions and KPI weights from dashboard config."""
-    cfg_path = _PROJECT_DIR / "apps" / "dashboard" / "configs" / "config.json"
-    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    cfg = json.loads(CONFIG_JSON.read_text(encoding="utf-8"))
     return {
         "combo_kpis_by_tf": cfg.get("combo_kpis_by_tf", {}),
         "combo_3_kpis": cfg.get("combo_3_kpis", []),
@@ -155,8 +161,8 @@ def run_screener(
     if use_cached_ohlcv:
         from trading_dashboard.data.store import DataStore
         store = DataStore(
-            enriched_dir=_PROJECT_DIR / "data" / "feature_store" / "enriched" / "dashboard" / "stock_data",
-            raw_dir=_PROJECT_DIR / "data" / "feature_store" / "enriched" / "dashboard" / "ohlcv_raw",
+            enriched_dir=FEATURE_STORE_ENRICHED_DIR / "dashboard" / "stock_data",
+            raw_dir=OHLCV_CACHE_DIR / "dashboard",
             fmt="parquet",
             cache_ttl_hours=0,
         )
@@ -470,11 +476,11 @@ def _purge_stale_data(tickers: set[str]) -> int:
     """Delete enriched parquets and chart assets for tickers no longer needed."""
     import shutil
 
-    stock_dir = _PROJECT_DIR / "data" / "feature_store" / "enriched" / "dashboard" / "stock_data"
-    assets_dir = _PROJECT_DIR / "data" / "dashboard_artifacts" / "dashboard_assets"
+    stock_dir = FEATURE_STORE_ENRICHED_DIR / "dashboard" / "stock_data"
+    assets_dir = DASHBOARD_ARTIFACTS_DIR / "dashboard_assets"
     purged = 0
     for sym in tickers:
-        for tf in ("4H", "1D", "1W", "2W", "1M"):
+        for tf in VALID_TIMEFRAMES:
             for ext in ("parquet", "csv"):
                 p = stock_dir / f"{sym}_{tf}.{ext}"
                 if p.exists():
@@ -504,7 +510,7 @@ def inject_screener_groups(
     """
     import csv
 
-    lists_dir = _PROJECT_DIR / "apps" / "dashboard" / "configs" / "lists"
+    lists_dir = LISTS_DIR
     entry_stocks_path = lists_dir / "entry_stocks.csv"
     portfolio_path = lists_dir / "portfolio.csv"
 

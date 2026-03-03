@@ -16,9 +16,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from apps.dashboard.config_loader import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
-_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "trades.db"
+_DB_PATH = DATA_DIR / "trades.db"
 _lock = threading.Lock()
 
 

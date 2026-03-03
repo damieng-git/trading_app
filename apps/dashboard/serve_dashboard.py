@@ -48,12 +48,37 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+class _JsonFormatter(logging.Formatter):
+    def format(self, record):
+        log_entry = {
+            "ts": self.formatTime(record),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info and record.exc_info[0]:
+            log_entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_entry)
+
+
+def _configure_logging():
+    handler = logging.StreamHandler()
+    handler.setFormatter(_JsonFormatter())
+    logging.root.handlers = [handler]
+    logging.root.setLevel(logging.INFO)
+
+
+from apps.dashboard.config_loader import (
+    CONFIG_JSON,
+    DATA_DIR,
+    DASHBOARD_ARTIFACTS_DIR,
+    FEATURE_STORE_ENRICHED_DIR,
+    PROJECT_ROOT,
+    VALID_TIMEFRAMES,
+)
+
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_DIR = SCRIPT_DIR.parents[1]
-DATA_DIR = REPO_DIR / "data"
-FEATURE_STORE_ENRICHED_DIR = DATA_DIR / "feature_store" / "enriched"
-DASHBOARD_ARTIFACTS_DIR = DATA_DIR / "dashboard_artifacts"
-CONFIG_JSON = SCRIPT_DIR / "configs" / "config.json"
+REPO_DIR = PROJECT_ROOT
 LISTS_DIR = SCRIPT_DIR / "configs" / "lists"
 
 # Default dataset (can be overridden in config.json via `dataset_name`)
@@ -113,7 +138,33 @@ def _plot_window(df: pd.DataFrame, *, tf: str) -> pd.DataFrame:
 
 _VALID_SYMBOL = re.compile(r"^[A-Z0-9^._-]{1,20}$")
 _VALID_GROUP = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+_MAX_PNL_TRADES = 500
+_RATE_LIMIT_MAX = 60
+_RATE_LIMIT_WINDOW = 60
 _MAX_POST_BODY = 64 * 1024  # 64 KB
+
+
+class _RateLimiter:
+    """Simple per-IP token bucket rate limiter."""
+    def __init__(self, max_requests: int = 60, window_seconds: int = 60):
+        self._max = max_requests
+        self._window = window_seconds
+        self._requests: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, ip: str) -> bool:
+        import time
+        now = time.time()
+        with self._lock:
+            reqs = self._requests.setdefault(ip, [])
+            reqs[:] = [t for t in reqs if now - t < self._window]
+            if len(reqs) >= self._max:
+                return False
+            reqs.append(now)
+            return True
+
+
+_RATE_LIMITER = _RateLimiter(_RATE_LIMIT_MAX, _RATE_LIMIT_WINDOW)
 
 
 def _is_any_task_running(exclude: str = "") -> bool:
@@ -715,7 +766,8 @@ def _compute_pnl_summary(group: str, tf: str) -> dict:
         from apps.dashboard.build_dashboard import _derive_symbol_display
         smap = load_sector_map()
         sym_display = _derive_symbol_display(smap)
-    except Exception:
+    except Exception as exc:
+        logger.debug("Failed to load sector map for PnL display: %s", exc)
         sym_display = {}
 
     per_symbol = []
@@ -728,7 +780,8 @@ def _compute_pnl_summary(group: str, tf: str) -> dict:
         try:
             st = compute_kpi_state_map(df)
             events = compute_position_events(df, st, c3_kpis, c4_kpis, tf)
-        except Exception:
+        except Exception as exc:
+            logger.debug("PnL compute skipped for %s: %s", sym, exc)
             continue
 
         closed = [e for e in events if e.get("exit_reason") != "Open" and e.get("ret_pct") is not None]
@@ -820,7 +873,7 @@ def _compute_pnl_summary(group: str, tf: str) -> dict:
     return {
         "portfolio": portfolio,
         "per_symbol": sorted(per_symbol, key=lambda s: s["return"], reverse=True),
-        "all_trades": all_trades[-500:],
+        "all_trades": all_trades[-_MAX_PNL_TRADES:],
     }
 
 
@@ -869,7 +922,8 @@ class _Caches:
             _, specs = translate_and_compute_indicators(df, indicator_config_path=indicator_cfg)
             self._indicator_specs = specs
             return specs
-        except Exception:
+        except Exception as exc:
+            logger.debug("Failed to load indicator specs: %s", exc)
             return []
 
     def load_df(self, symbol: str, tf: str) -> pd.DataFrame:
@@ -878,7 +932,8 @@ class _Caches:
             return pd.DataFrame()
         try:
             mt = float(p.stat().st_mtime)
-        except Exception:
+        except Exception as exc:
+            logger.debug("Could not get mtime for %s: %s", p, exc)
             mt = 0.0
 
         key = (symbol, tf)
@@ -892,7 +947,8 @@ class _Caches:
                 df = pd.read_parquet(p)
             else:
                 df = pd.read_csv(p, parse_dates=[0], index_col=0)
-        except Exception:
+        except Exception as exc:
+            logger.debug("Failed to read data file %s: %s", p, exc)
             return pd.DataFrame()
         if df is None or df.empty:
             return pd.DataFrame()
@@ -912,7 +968,8 @@ class _Caches:
         p = self._find_data_file(symbol, tf)
         try:
             mt = float(p.stat().st_mtime) if p else 0.0
-        except Exception:
+        except Exception as exc:
+            logger.debug("Could not get mtime for fig %s: %s", p, exc)
             mt = 0.0
 
         key = (symbol, tf)
@@ -942,6 +999,10 @@ class _Caches:
 
 CACHE = _Caches()
 
+_pnl_cache: dict[str, tuple[float, dict]] = {}
+_pnl_cache_lock = threading.Lock()
+_PNL_CACHE_TTL = 60.0
+
 
 class Handler(BaseHTTPRequestHandler):
     def _check_auth(self) -> bool:
@@ -962,8 +1023,8 @@ class Handler(BaseHTTPRequestHandler):
             provided_user, provided_pass = decoded.split(":", 1)
             if provided_user == user and provided_pass == passwd:
                 return True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Auth decode failed: %s", exc)
         self.send_response(401)
         self.send_header("WWW-Authenticate", 'Basic realm="Dashboard"')
         self.end_headers()
@@ -990,6 +1051,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         if not self._check_auth():
+            return
+        client_ip = self.client_address[0]
+        if not _RATE_LIMITER.allow(client_ip):
+            self._send(HTTPStatus.TOO_MANY_REQUESTS, b'{"error":"Rate limit exceeded"}', content_type="application/json")
             return
         u = urlparse(self.path)
         path = u.path or "/"
@@ -1022,7 +1087,7 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(u.query or "")
             symbol = (qs.get("symbol", [""])[0] or "").strip().upper()
             tf = (qs.get("tf", [""])[0] or "").strip().upper()
-            if not symbol or tf not in {"4H", "1D", "1W", "2W", "1M"} or not _VALID_SYMBOL.match(symbol):
+            if not symbol or tf not in VALID_TIMEFRAMES or not _VALID_SYMBOL.match(symbol):
                 self._send(HTTPStatus.BAD_REQUEST, b"Bad request", content_type="text/plain; charset=utf-8")
                 return
             payload = CACHE.load_fig_json(symbol, tf).encode("utf-8")
@@ -1053,11 +1118,12 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/scan/status":
-            body = json.dumps({
+            status_obj = {
                 "scan_running": SCAN.running,
                 "refresh_running": REFRESH.running,
                 "enrich_running": ENRICH.running,
-            }).encode("utf-8")
+            }
+            body = json.dumps({"ok": True, "data": status_obj}).encode("utf-8")
             self._send(HTTPStatus.OK, body, content_type="application/json")
             return
 
@@ -1065,7 +1131,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 from trading_dashboard.symbols.manager import SymbolManager
                 sm = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
-                body = json.dumps(sm.groups, indent=2).encode("utf-8")
+                body = json.dumps({"ok": True, "data": sm.groups}, indent=2).encode("utf-8")
                 self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
             except Exception as exc:
                 body = json.dumps({"error": str(exc)}).encode("utf-8")
@@ -1076,7 +1142,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 screener_path = DASHBOARD_ARTIFACTS_DIR / "screener_summary.json"
                 if screener_path.exists():
-                    body = screener_path.read_bytes()
+                    raw_data = json.loads(screener_path.read_text(encoding="utf-8"))
+                    body = json.dumps({"ok": True, "data": raw_data}).encode("utf-8")
                     self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
                 else:
                     self._send(HTTPStatus.NOT_FOUND, b'{"error":"no screener data"}', content_type="application/json")
@@ -1119,7 +1186,7 @@ class Handler(BaseHTTPRequestHandler):
                     "symbol_currencies": sym_currencies,
                     "fx_to_eur": fx_to_eur,
                 }
-                body = json.dumps(payload, allow_nan=False).encode("utf-8")
+                body = json.dumps({"ok": True, "data": payload}, allow_nan=False).encode("utf-8")
                 self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
             except Exception as exc:
                 body = json.dumps({"error": str(exc)}).encode("utf-8")
@@ -1130,10 +1197,21 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(u.query or "")
             group = (qs.get("group", ["all"])[0] or "all").strip()
             tf = (qs.get("tf", ["1D"])[0] or "1D").strip().upper()
-            if tf not in {"4H", "1D", "1W", "2W", "1M"}:
+            if tf not in VALID_TIMEFRAMES:
                 tf = "1D"
             try:
-                body = json.dumps(_compute_pnl_summary(group, tf), allow_nan=False).encode("utf-8")
+                import time
+                cache_key = f"{group}|{tf}"
+                with _pnl_cache_lock:
+                    cached = _pnl_cache.get(cache_key)
+                    if cached and (time.time() - cached[0]) < _PNL_CACHE_TTL:
+                        body = json.dumps({"ok": True, "data": cached[1]}, allow_nan=False).encode("utf-8")
+                        self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
+                        return
+                result = _compute_pnl_summary(group, tf)
+                with _pnl_cache_lock:
+                    _pnl_cache[cache_key] = (time.time(), result)
+                body = json.dumps({"ok": True, "data": result}, allow_nan=False).encode("utf-8")
                 self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
             except Exception as exc:
                 body = json.dumps({"error": str(exc)}).encode("utf-8")
@@ -1147,7 +1225,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 from apps.dashboard.trades import list_trades
                 rows = list_trades(status=status, symbol=symbol)
-                body = json.dumps(rows).encode("utf-8")
+                body = json.dumps({"ok": True, "data": rows}).encode("utf-8")
                 self._send(HTTPStatus.OK, body, content_type="application/json")
             except Exception as exc:
                 body = json.dumps({"error": str(exc)}).encode("utf-8")
@@ -1157,7 +1235,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/trades/stats":
             try:
                 from apps.dashboard.trades import trade_stats
-                body = json.dumps(trade_stats()).encode("utf-8")
+                stats = trade_stats()
+                body = json.dumps({"ok": True, "data": stats}).encode("utf-8")
                 self._send(HTTPStatus.OK, body, content_type="application/json")
             except Exception as exc:
                 body = json.dumps({"error": str(exc)}).encode("utf-8")
@@ -1168,6 +1247,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         if not self._check_auth():
+            return
+        client_ip = self.client_address[0]
+        if not _RATE_LIMITER.allow(client_ip):
+            self._send(HTTPStatus.TOO_MANY_REQUESTS, b'{"error":"Rate limit exceeded"}', content_type="application/json")
             return
         u = urlparse(self.path)
         path = u.path or "/"
@@ -1229,7 +1312,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Missing query"}).encode(), content_type="application/json")
                     return
                 results = _resolve_ticker_search(query)
-                body = json.dumps({"results": results}).encode("utf-8")
+                body = json.dumps({"ok": True, "data": {"results": results}}).encode("utf-8")
                 self._send(HTTPStatus.OK, body, content_type="application/json")
             except Exception as exc:
                 body = json.dumps({"error": str(exc)}).encode("utf-8")
@@ -1447,7 +1530,7 @@ class Handler(BaseHTTPRequestHandler):
         import shutil
         purged = 0
         stock_dir = OUTPUT_STOCK_DATA_DIR
-        for tf in ("4H", "1D", "1W", "2W", "1M"):
+        for tf in VALID_TIMEFRAMES:
             for ext in ("parquet", "csv"):
                 p = stock_dir / f"{ticker}_{tf}.{ext}"
                 if p.exists():
@@ -1609,6 +1692,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    _configure_logging()
     host = os.environ.get("TD_HOST", "127.0.0.1")
     port = int(os.environ.get("TD_PORT", "8050"))
     ThreadingHTTPServer.allow_reuse_address = True

@@ -124,6 +124,7 @@ def download_hourly_ohlcv(
 # ---------------------------------------------------------------------------
 
 _BATCH_CHUNK_SIZE = 50
+_BATCH_TIMEOUT_S = 300
 
 
 def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
@@ -164,16 +165,25 @@ def download_daily_batch(
     total = len(tickers)
     for i in range(0, total, chunk_size):
         chunk = tickers[i : i + chunk_size]
-        df = _yf_download_with_retry(
-            tickers=chunk,
-            start=start,
-            end=end,
-            interval="1d",
-            auto_adjust=False,
-            progress=False,
-            group_by="column",
-            threads=True,
-        )
+        try:
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    _yf_download_with_retry,
+                    tickers=chunk,
+                    start=start,
+                    end=end,
+                    interval="1d",
+                    auto_adjust=False,
+                    progress=False,
+                    group_by="column",
+                    threads=True,
+                )
+                df = future.result(timeout=_BATCH_TIMEOUT_S)
+        except FuturesTimeout:
+            _log.warning("download_daily_batch timed out after %ds for chunk of %d tickers",
+                         _BATCH_TIMEOUT_S, len(chunk))
+            df = pd.DataFrame()
         if df is None or df.empty:
             if on_chunk:
                 on_chunk(min(i + chunk_size, total), total, chunk)
@@ -220,15 +230,24 @@ def download_hourly_batch(
             break
         for i in range(0, len(remaining), chunk_size):
             chunk = remaining[i : i + chunk_size]
-            df = _yf_download_with_retry(
-                tickers=chunk,
-                period=per,
-                interval="60m",
-                auto_adjust=False,
-                progress=False,
-                group_by="column",
-                threads=True,
-            )
+            try:
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        _yf_download_with_retry,
+                        tickers=chunk,
+                        period=per,
+                        interval="60m",
+                        auto_adjust=False,
+                        progress=False,
+                        group_by="column",
+                        threads=True,
+                    )
+                    df = future.result(timeout=_BATCH_TIMEOUT_S)
+            except FuturesTimeout:
+                _log.warning("download_hourly_batch timed out after %ds for chunk of %d tickers",
+                             _BATCH_TIMEOUT_S, len(chunk))
+                df = pd.DataFrame()
             if df is None or df.empty:
                 continue
             if not isinstance(df.columns, pd.MultiIndex):

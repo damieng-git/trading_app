@@ -122,6 +122,21 @@ class TestIncrementalUpdater:
         assert not updater.needs_update("SYM", "1D", max_age_hours=1.0)
 
 
+class TestMockYfinance:
+    """Verify mock_yfinance fixture returns synthetic data without network calls."""
+
+    def test_mock_yfinance_returns_synthetic_ohlcv(self, mock_yfinance):
+        import yfinance as yf
+
+        df = yf.download("AAPL", period="1mo", progress=False)
+        assert len(df) == 100
+        assert "Close" in df.columns
+        assert "Open" in df.columns
+        assert "High" in df.columns
+        assert "Low" in df.columns
+        assert "Volume" in df.columns
+
+
 class TestEnrichment:
     def test_translate_and_compute(self, sample_ohlcv):
         from trading_dashboard.data.enrichment import translate_and_compute_indicators

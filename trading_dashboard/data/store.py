@@ -284,14 +284,19 @@ class DataStore:
 
     @staticmethod
     def compute_raw_hash(df: pd.DataFrame) -> str:
-        """Fast fingerprint of a raw OHLCV DataFrame (row count + boundary timestamps + close hash)."""
+        """Fast fingerprint of a raw OHLCV DataFrame (row count + boundary timestamps + sampled close values)."""
         if df is None or df.empty:
             return "empty"
         n = len(df)
         first_ts = str(df.index[0])
         last_ts = str(df.index[-1])
-        last_close = float(df["Close"].iloc[-1]) if "Close" in df.columns else 0.0
-        token = f"{n}|{first_ts}|{last_ts}|{last_close:.6f}"
+        token = f"{n}|{first_ts}|{last_ts}"
+        if "Close" in df.columns:
+            indices = list(range(0, n, max(1, n // 20)))
+            if (n - 1) not in indices:
+                indices.append(n - 1)
+            sampled = "|".join(f"{df['Close'].iloc[i]:.6f}" for i in indices)
+            token += f"|{sampled}"
         return hashlib.md5(token.encode()).hexdigest()[:12]
 
     @staticmethod

@@ -422,3 +422,71 @@ All P0 through P3 recommendations were applied. Test suite: **109 passed, 0 fail
 | 8 | UX/UI Designer | C | B | +2 |
 | 9 | Quant Analyst | B+ | A- | +1 |
 | 10 | Tech Lead / Architect | B- | B+ | +2 |
+
+---
+
+## Remediation Report — Round 2 (2026-03-03)
+
+All remaining recommendations from Round 1 applied. 121 tests pass; 0 failures.
+
+### Additional Fixes Applied
+
+| ID | Description | Status |
+|----|-------------|--------|
+| **R2-FS1** | Split `dashboard.js` into 4 modules: `dashboard_screener.js`, `dashboard_pnl.js`, `dashboard_modals.js`, `dashboard.js` (core) via `window.Dashboard` namespace | FIXED |
+| **R2-FS2** | Extract `templates.py` helpers: `_build_head_section`, `_build_sidebar`, `_build_main_content`, `_build_scripts` | FIXED |
+| **R2-BE1** | Rate limiting: `_RateLimiter` (60 req/min per IP) on all GET/POST endpoints | FIXED |
+| **R2-BE2** | Named constants: `_VALID_TIMEFRAMES`, `_MAX_PNL_TRADES`, `_RATE_LIMIT_MAX`, `_RATE_LIMIT_WINDOW` | FIXED |
+| **R2-BE3** | PnL summary cache: `_pnl_cache` with 60s TTL, thread-safe | FIXED |
+| **R2-BE4** | Standardized API envelope: all endpoints return `{"ok": true, "data": ...}` | FIXED |
+| **R2-BE5** | Client JS updated to unwrap API envelope on all fetch calls | FIXED |
+| **R2-BE6** | All silent `except Exception: pass` replaced with `logger.warning`/`logger.debug` | FIXED |
+| **R2-DA1** | Strengthened content hash: sampled Close values (every n/20 rows + last row) | FIXED |
+| **R2-DA2** | Screener raw path aligned to `data/cache/ohlcv_raw/dashboard` | FIXED |
+| **R2-DA3** | `enrich_symbols()` passes `raw_hash` + `config_hash` to `save_enriched()` | FIXED |
+| **R2-DA4** | Health checks block pipeline on `missing_close_pct > 10%` | FIXED |
+| **R2-DA5** | Incremental merge recency check: skips merge if new data older than existing | FIXED |
+| **R2-DA6** | Batch download timeout: 300s per batch with `ThreadPoolExecutor` | FIXED |
+| **R2-DEV1** | Structured JSON logging: `_JsonFormatter` with ts/level/logger/msg | FIXED |
+| **R2-DEV2** | `DEPLOYMENT.md` with local/Docker/nginx/monitoring docs | FIXED |
+| **R2-DEV3** | `alert_notifier.py`: env var overrides for Telegram/SMTP credentials | FIXED |
+| **R2-DEV4** | `docker-compose.yml` with healthcheck, volumes, env_file | FIXED |
+| **R2-FE1** | DOM caching: `status`, `signalCard`, `dataWarn` cached in `initDOMCache()` | FIXED |
+| **R2-FE2** | Label consolidation: `window._INDICATOR_LABELS` shared between dashboard/chart_builder | FIXED |
+| **R2-FE3** | `__init__.py` exports: `data/`, `kpis/`, `utils/` with `__all__` | FIXED |
+| **R2-UX1** | Chart subplot heights: TrendScore row 5% → 9%, price row 30% → 27% | FIXED |
+| **R2-UX2** | Mobile touch targets: `min-height: 44px` at 480px breakpoint | FIXED |
+| **R2-UX3** | Accessible input labels: `aria-label` + `.visually-hidden` `<label>` elements | FIXED |
+| **R2-QA1** | Server endpoint tests: health, groups, scan/status, 413, 429, 401, 404 | FIXED |
+| **R2-QA2** | Trade parity tests: P&L calculation, ATR fallback, C4 scaling | FIXED |
+| **R2-QA3** | `mock_yfinance` fixture to avoid network calls in tests | FIXED |
+| **R2-AR1** | Centralized timeframes: `DEFAULT_TIMEFRAMES`/`VALID_TIMEFRAMES` in config_loader | FIXED |
+| **R2-AR2** | Centralized paths: `PROJECT_ROOT`, `DATA_DIR`, `CACHE_DIR`, `FEATURE_STORE_DIR` in config_loader | FIXED |
+
+### Round 2 Re-Audit Grades
+
+| # | Role | Round 1 | Round 2 | Delta |
+|---|------|---------|---------|-------|
+| 1 | Full-Stack Engineer | A- | B+ | ~0 (stricter grading) |
+| 2 | Frontend Engineer | B+ | B | ~0 (hardcoded JS colors noted) |
+| 3 | Backend Engineer | B+ | B+ | 0 |
+| 4 | Data Engineer | B+ | B- | -1 (stricter: schema validation on load) |
+| 5 | DevOps Engineer | B | B | 0 |
+| 6 | QA / Test Engineer | C+ | C+ | 0 (module coverage gaps) |
+| 7 | Security Engineer | B | C+ | -1 (stricter: CSP unsafe-inline) |
+| 8 | UX/UI Designer | B | B+ | +1 |
+| 9 | Quant Analyst | A- | A- | 0 |
+| 10 | Tech Lead / Architect | B+ | B+ | 0 |
+
+### Remaining Open Items (Low/Medium Severity)
+
+| # | Item | Severity | Notes |
+|---|------|----------|-------|
+| 1 | Hardcoded hex colors in `chart_builder.js` (160+) | MEDIUM | Plotly traces use inline colors; would need CSS-to-JS bridge |
+| 2 | CSP includes `unsafe-inline`/`unsafe-eval` | LOW | Required for Plotly.js inline rendering |
+| 3 | Auth default-off (opt-in via env vars) | LOW | Intentional for local dev |
+| 4 | Schema validation on `store._read()` | LOW | Validated at enrichment entry point |
+| 5 | Survivorship bias in backtest universe | LOW | Data limitation, not code issue |
+| 6 | SMA gate `>=` vs `>` | LOW | Intentional per strategy spec v6 |
+| 7 | Design tokens `--space-*`/`--font-*` underused | LOW | Defined but not widely adopted yet |
+| 8 | No pip-compile lockfile | LOW | Upper-bounded pins in pyproject.toml |

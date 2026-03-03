@@ -1,3 +1,6 @@
 """Data layer: download, store, and enrich OHLCV data."""
 
-__all__: list[str] = []
+from trading_dashboard.data.store import DataStore
+from trading_dashboard.data.incremental import IncrementalUpdater
+
+__all__ = ["DataStore", "IncrementalUpdater"]

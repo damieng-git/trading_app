@@ -79,6 +79,7 @@ from apps.dashboard.config_loader import (
     DASHBOARD_SHELL_HTML,
     DATA_DIR,
     DATA_HEALTH_JSON,
+    FEATURE_STORE_ENRICHED_DIR,
     DOCS_DIR,
     END_DATE,
     INDICATOR_CONFIG_JSON_DEFAULT,
@@ -265,6 +266,7 @@ def archive_dashboard_snapshot(*, version: str) -> dict:
 
 
 _summarize_df_health = summarize_df_health
+_CRITICAL_MISSING_CLOSE_PCT = 10.0  # Block pipeline: skip symbol/tf when missing_close_pct exceeds this
 
 
 def _maybe_load_tradingview_ohlcv(display_symbol: str, timeframe: str) -> pd.DataFrame | None:
@@ -392,7 +394,7 @@ def _compute_indicators(df: pd.DataFrame, indicator_config_path: Path, *, timefr
         df,
         indicator_config_path=indicator_config_path,
         cache_dir=OHLCV_CACHE_DIR,
-        feature_store_dir=DATA_DIR / "feature_store" / "enriched",
+        feature_store_dir=FEATURE_STORE_ENRICHED_DIR,
         timeframe=timeframe,
         symbol=symbol,
         sector_info=sector_info,
@@ -547,31 +549,41 @@ def run_stock_export(
                 with ProcessPoolExecutor(max_workers=_workers) as pool:
                     for _sym, _tf, enriched, specs in pool.map(_enrich_one_task, enrich_tasks, chunksize=2):
                         if enriched is not None:
-                            indicator_specs = specs
-                            store.save_enriched(_sym, _tf, enriched)
-                            tf_map_enriched[_tf] = enriched
-                            data_health.setdefault(_sym, {})
-                            data_health[_sym][_tf] = _summarize_df_health(
+                            health = _summarize_df_health(
                                 enriched,
                                 tf=_tf,
                                 min_bars=int(cfg.min_bars_by_tf.get(_tf, 0) or 0) or None,
                                 max_missing_close_pct=float(cfg.max_missing_close_pct),
                                 max_missing_volume_pct=float(cfg.max_missing_volume_pct),
                             )
+                            if health.get("missing_close_pct") is not None and health["missing_close_pct"] > _CRITICAL_MISSING_CLOSE_PCT:
+                                logger.warning("Skipping %s/%s: missing_close_pct %.1f%% exceeds %.0f%%",
+                                               _sym, _tf, health["missing_close_pct"], _CRITICAL_MISSING_CLOSE_PCT)
+                            else:
+                                indicator_specs = specs
+                                store.save_enriched(_sym, _tf, enriched)
+                                tf_map_enriched[_tf] = enriched
+                                data_health.setdefault(_sym, {})
+                                data_health[_sym][_tf] = health
             else:
                 for _sym, _tf, raw_df, sector_info, _ind_cfg in enrich_tasks:
                     enriched, specs = _compute_indicators(raw_df, _ind_cfg, timeframe=_tf, symbol=_sym, sector_info=sector_info)
-                    indicator_specs = specs
-                    store.save_enriched(_sym, _tf, enriched)
-                    tf_map_enriched[_tf] = enriched
-                    data_health.setdefault(_sym, {})
-                    data_health[_sym][_tf] = _summarize_df_health(
+                    health = _summarize_df_health(
                         enriched,
                         tf=_tf,
                         min_bars=int(cfg.min_bars_by_tf.get(_tf, 0) or 0) or None,
                         max_missing_close_pct=float(cfg.max_missing_close_pct),
                         max_missing_volume_pct=float(cfg.max_missing_volume_pct),
                     )
+                    if health.get("missing_close_pct") is not None and health["missing_close_pct"] > _CRITICAL_MISSING_CLOSE_PCT:
+                        logger.warning("Skipping %s/%s: missing_close_pct %.1f%% exceeds %.0f%%",
+                                       _sym, _tf, health["missing_close_pct"], _CRITICAL_MISSING_CLOSE_PCT)
+                    else:
+                        indicator_specs = specs
+                        store.save_enriched(_sym, _tf, enriched)
+                        tf_map_enriched[_tf] = enriched
+                        data_health.setdefault(_sym, {})
+                        data_health[_sym][_tf] = health
 
             if tf_map_enriched:
                 apply_mtf_overlay(tf_map_enriched)
@@ -581,25 +593,32 @@ def run_stock_export(
         if USE_CACHED_OUTPUT_DATA and (export_phase == "all") and (not force_recompute_indicators):
             cached = _load_cached_symbol(sym)
             if cached and set(timeframes).issubset(cached.keys()):
-                all_data[sym] = cached
-                weekly_override = _maybe_load_tradingview_ohlcv(sym, "1W")
-                weekly_source = "tradingview_csv" if (weekly_override is not None and not weekly_override.empty) else "yfinance_resample_or_cached"
-                symbol_meta.setdefault(sym, {})
-                symbol_meta[sym]["weekly_source"] = weekly_source
-
                 data_health.setdefault(sym, {})
+                filtered_cached: Dict[str, pd.DataFrame] = {}
                 for tf, df_cached in cached.items():
-                    data_health[sym][tf] = _summarize_df_health(
+                    health = _summarize_df_health(
                         df_cached,
                         tf=tf,
                         min_bars=int(cfg.min_bars_by_tf.get(tf, 0) or 0) or None,
                         max_missing_close_pct=float(cfg.max_missing_close_pct),
                         max_missing_volume_pct=float(cfg.max_missing_volume_pct),
                     )
+                    data_health[sym][tf] = health
+                    if health.get("missing_close_pct") is not None and health["missing_close_pct"] > _CRITICAL_MISSING_CLOSE_PCT:
+                        logger.warning("Skipping cached %s/%s: missing_close_pct %.1f%% exceeds %.0f%%",
+                                       sym, tf, health["missing_close_pct"], _CRITICAL_MISSING_CLOSE_PCT)
+                    else:
+                        filtered_cached[tf] = df_cached
+                if filtered_cached:
+                    all_data[sym] = filtered_cached
+                weekly_override = _maybe_load_tradingview_ohlcv(sym, "1W")
+                weekly_source = "tradingview_csv" if (weekly_override is not None and not weekly_override.empty) else "yfinance_resample_or_cached"
+                symbol_meta.setdefault(sym, {})
+                symbol_meta[sym]["weekly_source"] = weekly_source
 
-                if not indicator_specs:
+                if filtered_cached and not indicator_specs:
                     try:
-                        df0 = cached.get("1W") or next(iter(cached.values()))
+                        df0 = filtered_cached.get("1W") or next(iter(filtered_cached.values()))
                         _, indicator_specs = _compute_indicators(df0, indicator_config_path)
                     except Exception as e:
                         logger.warning("Could not extract indicator specs from cached data: %s", e)
@@ -690,16 +709,21 @@ def run_stock_export(
                 if not force_recompute_indicators and store.enrichment_is_current(sym, tf, raw_hash, cfg_hash):
                     cached_enriched = store.load_enriched(sym, tf, respect_ttl=False)
                     if cached_enriched is not None:
-                        tf_map_enriched_dl[tf] = cached_enriched
-                        data_health.setdefault(sym, {})
-                        data_health[sym][tf] = _summarize_df_health(
+                        health = _summarize_df_health(
                             cached_enriched,
                             tf=tf,
                             min_bars=int(cfg.min_bars_by_tf.get(tf, 0) or 0) or None,
                             max_missing_close_pct=float(cfg.max_missing_close_pct),
                             max_missing_volume_pct=float(cfg.max_missing_volume_pct),
                         )
-                        continue
+                        if health.get("missing_close_pct") is not None and health["missing_close_pct"] > _CRITICAL_MISSING_CLOSE_PCT:
+                            logger.warning("Skipping cached %s/%s: missing_close_pct %.1f%% exceeds %.0f%%",
+                                           sym, tf, health["missing_close_pct"], _CRITICAL_MISSING_CLOSE_PCT)
+                        else:
+                            tf_map_enriched_dl[tf] = cached_enriched
+                            data_health.setdefault(sym, {})
+                            data_health[sym][tf] = health
+                            continue
 
                 dl_enrich_tasks.append((sym, tf, raw_df, _enrichment_sector_map.get(sym), indicator_config_path))
                 dl_enrich_meta[(sym, tf)] = (raw_hash, cfg_hash)
@@ -720,18 +744,23 @@ def run_stock_export(
                 with ProcessPoolExecutor(max_workers=_workers) as pool:
                     for _sym, _tf, enriched, specs in pool.map(_enrich_one_task, dl_enrich_tasks, chunksize=2):
                         if enriched is not None:
-                            raw_hash, cfg_hash = dl_enrich_meta.get((_sym, _tf), (None, None))
-                            store.save_enriched(_sym, _tf, enriched, raw_hash=raw_hash, indicator_config_hash=cfg_hash)
-                            all_data.setdefault(_sym, {})[_tf] = enriched
-                            data_health.setdefault(_sym, {})[_tf] = _summarize_df_health(
+                            health = _summarize_df_health(
                                 enriched,
                                 tf=_tf,
                                 min_bars=int(cfg.min_bars_by_tf.get(_tf, 0) or 0) or None,
                                 max_missing_close_pct=float(cfg.max_missing_close_pct),
                                 max_missing_volume_pct=float(cfg.max_missing_volume_pct),
                             )
-                            if specs:
-                                indicator_specs = specs
+                            if health.get("missing_close_pct") is not None and health["missing_close_pct"] > _CRITICAL_MISSING_CLOSE_PCT:
+                                logger.warning("Skipping %s/%s: missing_close_pct %.1f%% exceeds %.0f%%",
+                                               _sym, _tf, health["missing_close_pct"], _CRITICAL_MISSING_CLOSE_PCT)
+                            else:
+                                raw_hash, cfg_hash = dl_enrich_meta.get((_sym, _tf), (None, None))
+                                store.save_enriched(_sym, _tf, enriched, raw_hash=raw_hash, indicator_config_hash=cfg_hash)
+                                all_data.setdefault(_sym, {})[_tf] = enriched
+                                data_health.setdefault(_sym, {})[_tf] = health
+                                if specs:
+                                    indicator_specs = specs
                         _enrich_done += 1
                         if on_progress:
                             on_progress({"phase": "enrich", "label": "Enriching\u2026",
@@ -741,18 +770,23 @@ def run_stock_export(
             else:
                 for _sym, _tf, raw_df, sector_info, _ind_cfg in dl_enrich_tasks:
                     enriched, specs = _compute_indicators(raw_df, _ind_cfg, timeframe=_tf, symbol=_sym, sector_info=sector_info)
-                    raw_hash, cfg_hash = dl_enrich_meta.get((_sym, _tf), (None, None))
-                    store.save_enriched(_sym, _tf, enriched, raw_hash=raw_hash, indicator_config_hash=cfg_hash)
-                    all_data.setdefault(_sym, {})[_tf] = enriched
-                    data_health.setdefault(_sym, {})[_tf] = _summarize_df_health(
+                    health = _summarize_df_health(
                         enriched,
                         tf=_tf,
                         min_bars=int(cfg.min_bars_by_tf.get(_tf, 0) or 0) or None,
                         max_missing_close_pct=float(cfg.max_missing_close_pct),
                         max_missing_volume_pct=float(cfg.max_missing_volume_pct),
                     )
-                    if specs:
-                        indicator_specs = specs
+                    if health.get("missing_close_pct") is not None and health["missing_close_pct"] > _CRITICAL_MISSING_CLOSE_PCT:
+                        logger.warning("Skipping %s/%s: missing_close_pct %.1f%% exceeds %.0f%%",
+                                       _sym, _tf, health["missing_close_pct"], _CRITICAL_MISSING_CLOSE_PCT)
+                    else:
+                        raw_hash, cfg_hash = dl_enrich_meta.get((_sym, _tf), (None, None))
+                        store.save_enriched(_sym, _tf, enriched, raw_hash=raw_hash, indicator_config_hash=cfg_hash)
+                        all_data.setdefault(_sym, {})[_tf] = enriched
+                        data_health.setdefault(_sym, {})[_tf] = health
+                        if specs:
+                            indicator_specs = specs
                     _enrich_done += 1
                     if on_progress:
                         on_progress({"phase": "enrich", "label": "Enriching\u2026",
@@ -921,8 +955,21 @@ def enrich_symbols(
             try:
                 enriched, _specs = _compute_indicators(
                     raw_df, indicator_config_path, timeframe=tf, symbol=sym)
-                store.save_enriched(sym, tf, enriched)
-                tf_map_enriched[tf] = enriched
+                health = _summarize_df_health(
+                    enriched,
+                    tf=tf,
+                    min_bars=int(cfg.min_bars_by_tf.get(tf, 0) or 0) or None,
+                    max_missing_close_pct=float(cfg.max_missing_close_pct),
+                    max_missing_volume_pct=float(cfg.max_missing_volume_pct),
+                )
+                if health.get("missing_close_pct") is not None and health["missing_close_pct"] > _CRITICAL_MISSING_CLOSE_PCT:
+                    logger.warning("Skipping %s/%s: missing_close_pct %.1f%% exceeds %.0f%%",
+                                   sym, tf, health["missing_close_pct"], _CRITICAL_MISSING_CLOSE_PCT)
+                else:
+                    raw_hash = store.compute_raw_hash(raw_df)
+                    cfg_hash = store.compute_config_hash(indicator_config_path)
+                    store.save_enriched(sym, tf, enriched, raw_hash=raw_hash, indicator_config_hash=cfg_hash)
+                    tf_map_enriched[tf] = enriched
             except Exception as exc:
                 logger.warning("Enrichment failed for %s/%s: %s", sym, tf, exc)
 

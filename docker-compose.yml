@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  dashboard:
+    build: .
+    ports:
+      - "${PORT:-8050}:8050"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
