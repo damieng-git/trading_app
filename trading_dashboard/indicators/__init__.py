@@ -61,3 +61,4 @@ from trading_dashboard.indicators.sr_breaks_retests import sr_breaks_retests
 from trading_dashboard.indicators.gk_trend_ribbon import gk_trend_ribbon
 from trading_dashboard.indicators.impulse_trend import impulse_trend_levels
 from trading_dashboard.indicators.breakout_targets import breakout_targets
+from trading_dashboard.indicators.wt_mtf_signal import wt_mtf_signal

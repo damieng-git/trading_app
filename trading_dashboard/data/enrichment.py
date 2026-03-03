@@ -53,6 +53,7 @@ from trading_dashboard.indicators import (
     turtle_trade_channels,
     ut_bot_alert,
     wavetrend_lazybear,
+    wt_mtf_signal,
 )
 from trading_dashboard.data.downloader import load_benchmark_close
 
@@ -562,4 +563,91 @@ def translate_and_compute_indicators(
     out["PAI"] = price_action_index(out, stoch_length=int(p.get("stoch_length", 20)), smooth=int(p.get("smooth", 3)), dispersion_length=int(p.get("dispersion_length", 20)))
     specs.append(IndicatorSpec(key="PAI", title="Price Action Index [BL]", overlay=False, columns=["PAI"]))
 
+    # BL11: WT MTF Signal [PlungerMen] — WT extreme zone + MACD + RSI composite
+    # Same-TF MACD fallback; cross-TF MACD applied via apply_mtf_overlay() post-enrichment
+    p = _p("WT_MTF")
+    _wtm1, _wtm2, _wtm_sig, _wtm_rsi = wt_mtf_signal(
+        out,
+        mtf_close=None,
+        wt_channel_len=int(p.get("wt_channel_len", 27)),
+        wt_average_len=int(p.get("wt_average_len", 21)),
+        macd_fast=int(p.get("macd_fast", 15)),
+        macd_slow=int(p.get("macd_slow", 26)),
+        macd_signal_len=int(p.get("macd_signal_len", 12)),
+        rsi_len=int(p.get("rsi_len", 16)),
+        ob_level1=float(p.get("ob_level1", 60.0)),
+        os_level1=float(p.get("os_level1", -60.0)),
+        min_bars_in_extreme=int(p.get("min_bars_in_extreme", 2)),
+        confirm_window=int(p.get("confirm_window", 1)),
+        min_spread=float(p.get("min_spread", 1.5)),
+        cooldown_bars=int(p.get("cooldown_bars", 8)),
+    )
+    out["WT_MTF_wt1"] = _wtm1
+    out["WT_MTF_wt2"] = _wtm2
+    out["WT_MTF_signal"] = _wtm_sig
+    out["WT_MTF_rsi"] = _wtm_rsi
+    specs.append(IndicatorSpec(key="WT_MTF", title="WT MTF Signal [PlungerMen]", overlay=False,
+                               columns=["WT_MTF_wt1", "WT_MTF_wt2", "WT_MTF_signal", "WT_MTF_rsi"]))
+
     return out, specs
+
+
+# ---------------------------------------------------------------------------
+# MTF overlay — recompute WT_MTF signal using cross-timeframe MACD
+# ---------------------------------------------------------------------------
+
+_MTF_PAIRS: Dict[str, str] = {
+    "1M": "4H",
+    "2W": "4H",
+    "1W": "4H",
+    "1D": "4H",
+}
+
+
+def apply_mtf_overlay(
+    tf_map: Dict[str, pd.DataFrame],
+    *,
+    indicator_config_path: Path | None = None,
+) -> Dict[str, pd.DataFrame]:
+    """
+    Post-enrichment pass: re-compute WT_MTF_signal columns using
+    MACD from a faster timeframe.
+
+    Modifies DataFrames in *tf_map* in-place and returns the same dict.
+    """
+    _cfg_path = indicator_config_path or Path("/dev/null")
+
+    def _p(key: str) -> Dict[str, Any]:
+        return _indicator_params(key, _cfg_path)
+
+    for slow_tf, fast_tf in _MTF_PAIRS.items():
+        slow_df = tf_map.get(slow_tf)
+        fast_df = tf_map.get(fast_tf)
+        if slow_df is None or fast_df is None:
+            continue
+        if "Close" not in fast_df.columns or "Close" not in slow_df.columns:
+            continue
+
+        p = _p("WT_MTF")
+        _wtm1, _wtm2, _wtm_sig, _wtm_rsi = wt_mtf_signal(
+            slow_df,
+            mtf_close=fast_df["Close"],
+            wt_channel_len=int(p.get("wt_channel_len", 27)),
+            wt_average_len=int(p.get("wt_average_len", 21)),
+            macd_fast=int(p.get("macd_fast", 15)),
+            macd_slow=int(p.get("macd_slow", 26)),
+            macd_signal_len=int(p.get("macd_signal_len", 12)),
+            rsi_len=int(p.get("rsi_len", 16)),
+            ob_level1=float(p.get("ob_level1", 60.0)),
+            os_level1=float(p.get("os_level1", -60.0)),
+            min_bars_in_extreme=int(p.get("min_bars_in_extreme", 2)),
+            confirm_window=int(p.get("confirm_window", 1)),
+            min_spread=float(p.get("min_spread", 1.5)),
+            cooldown_bars=int(p.get("cooldown_bars", 8)),
+        )
+        slow_df["WT_MTF_wt1"] = _wtm1
+        slow_df["WT_MTF_wt2"] = _wtm2
+        slow_df["WT_MTF_signal"] = _wtm_sig
+        slow_df["WT_MTF_rsi"] = _wtm_rsi
+
+    return tf_map

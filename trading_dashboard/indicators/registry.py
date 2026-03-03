@@ -421,3 +421,17 @@ register(IndicatorDef(
     config_defaults={"stoch_length": 20, "smooth": 3, "dispersion_length": 20},
     columns=["PAI"],
 ))
+register(IndicatorDef(
+    key="WT_MTF", title="WT MTF Signal [PlungerMen]",
+    dimension="momentum", overlay=False,
+    kpi_name="WT_MTF", kpi_type="trend",
+    strategies=["stoof"],
+    config_defaults={
+        "wt_channel_len": 27, "wt_average_len": 21,
+        "macd_fast": 15, "macd_slow": 26, "macd_signal_len": 12,
+        "rsi_len": 16, "ob_level1": 60.0, "os_level1": -60.0,
+        "min_bars_in_extreme": 2, "confirm_window": 1,
+        "min_spread": 1.5, "cooldown_bars": 8,
+    },
+    columns=["WT_MTF_wt1", "WT_MTF_wt2", "WT_MTF_signal", "WT_MTF_rsi"],
+))

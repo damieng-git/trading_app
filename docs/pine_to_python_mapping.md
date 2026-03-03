@@ -28,12 +28,14 @@ This file documents how each PineScript indicator was translated to Python.
 | AMN | AMN | AMN |
 | ATE.PA | ATE.PA | ATE.PA |
 | BA.L | BA.L | BA.L |
+| BAS.DE | BAS.DE | BAS.DE |
 | BETZ | BETZ | BETZ |
 | BMPS.MI | BMPS.MI | BMPS.MI |
 | BNK.PA | BNK.PA | BNK.PA |
 | BNP.PA | BNP.PA | BNP.PA |
 | BPE.MI | BPE.MI | BPE.MI |
 | BRZE | BRZE | BRZE |
+| BTC-USD | BTC-USD | BTC-USD |
 | CAC.PA | CAC.PA | CAC.PA |
 | CBBHF | CBBHF | CBBHF |
 | CE | CE | CE |
@@ -51,6 +53,7 @@ This file documents how each PineScript indicator was translated to Python.
 | CYBR | CYBR | CYBR |
 | DANSKE.CO | DANSKE.CO | DANSKE.CO |
 | DASH | DASH | DASH |
+| DEO | DEO | DEO |
 | DPGA.DE | DPGA.DE | DPGA.DE |
 | DSY.PA | DSY.PA | DSY.PA |
 | DX-Y.NYB | DX-Y.NYB | DX-Y.NYB |
@@ -59,6 +62,7 @@ This file documents how each PineScript indicator was translated to Python.
 | EIDO | EIDO | EIDO |
 | ENGI.PA | ENGI.PA | ENGI.PA |
 | ERA.PA | ERA.PA | ERA.PA |
+| ETH-USD | ETH-USD | ETH-USD |
 | EXH3D.XD | EXH3D.XD | EXH3D.XD |
 | EXSD.DE | EXSD.DE | EXSD.DE |
 | EXV5.DE | EXV5.DE | EXV5.DE |
@@ -114,6 +118,7 @@ This file documents how each PineScript indicator was translated to Python.
 | NBTK.MU | NBTK.MU | NBTK.MU |
 | NEOG | NEOG | NEOG |
 | NKE | NKE | NKE |
+| NVO | NVO | NVO |
 | OFLX | OFLX | OFLX |
 | ORA.PA | ORA.PA | ORA.PA |
 | PACB | PACB | PACB |
@@ -124,6 +129,7 @@ This file documents how each PineScript indicator was translated to Python.
 | QFIN | QFIN | QFIN |
 | QSV.F | QSV.F | QSV.F |
 | RCO.PA | RCO.PA | RCO.PA |
+| RHI | RHI | RHI |
 | RI.PA | RI.PA | RI.PA |
 | RIZF.DE | RIZF.DE | RIZF.DE |
 | RMAX | RMAX | RMAX |
@@ -251,3 +257,5 @@ Implemented indicators (computed on each selected timeframe):
   - Columns: `CCI_Chop_BB_v2_smooth`
 - **Price Action Index [BL]** (`PAI`, Momentum) — KPI: PAI (trend)
   - Columns: `PAI`
+- **WT MTF Signal [PlungerMen]** (`WT_MTF`, Momentum) — KPI: WT_MTF (trend)
+  - Columns: `WT_MTF_wt1`, `WT_MTF_wt2`, `WT_MTF_signal`, `WT_MTF_rsi`

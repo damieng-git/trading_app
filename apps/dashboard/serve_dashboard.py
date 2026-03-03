@@ -1116,22 +1116,6 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         path = u.path or "/"
 
-        # #region agent log
-        if path == "/api/debug-log":
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-                raw = self.rfile.read(length) if length else b"{}"
-                import pathlib as _pl
-                _lp = _pl.Path("/root/damiverse_apps/.cursor/debug-49c204.log")
-                _lp.parent.mkdir(parents=True, exist_ok=True)
-                with open(_lp, "a") as _f:
-                    _f.write(raw.decode("utf-8", errors="replace") + "\n")
-                self._send(HTTPStatus.OK, b'{"ok":true}', content_type="application/json")
-            except Exception:
-                self._send(HTTPStatus.OK, b'{"ok":false}', content_type="application/json")
-            return
-        # #endregion
-
         if path == "/api/move":
             try:
                 length = int(self.headers.get("Content-Length", 0))

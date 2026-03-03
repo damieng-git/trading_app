@@ -170,6 +170,7 @@
     LuxAlgo_Norm_v2: "LuxAlgo_Norm_v2",
     Risk_Indicator: "Risk_Indicator",
     PAI: "PAI",
+    WT_MTF: "WT_MTF",
   };
 
   /* ------------------------------------------------------------------ */
@@ -656,6 +657,20 @@
     if ("PAI" in c) {
       traces.push(mkTrace({ type: "scatter", x: x, y: col(c, "PAI"), mode: "lines", line: { color: "#14b8a6", width: 1.5 } }, 3, LABEL.PAI));
     }
+    if (has(c, ["WT_MTF_wt1", "WT_MTF_wt2"])) {
+      const wtOb = constant(n, 60), wtOs = constant(n, -60);
+      const wt1 = col(c, "WT_MTF_wt1"), wt2 = col(c, "WT_MTF_wt2");
+      const wtOb2 = wt1.map(v => v != null && v > 60 ? v : null);
+      const wtOs2 = wt1.map(v => v != null && v < -60 ? v : null);
+      traces.push(mkTrace({ type: "scatter", x: x, y: wtOb, mode: "lines", line: { color: "rgba(0,0,0,0)", width: 0 }, hoverinfo: "skip" }, 3, LABEL.WT_MTF));
+      traces.push(mkTrace({ type: "scatter", x: x, y: wtOb2, mode: "lines", line: { color: "rgba(0,0,0,0)", width: 0 }, fill: "tonexty", fillcolor: "rgba(239,68,68,0.25)", connectgaps: false, hoverinfo: "skip" }, 3, LABEL.WT_MTF));
+      traces.push(mkTrace({ type: "scatter", x: x, y: wtOs, mode: "lines", line: { color: "rgba(0,0,0,0)", width: 0 }, hoverinfo: "skip" }, 3, LABEL.WT_MTF));
+      traces.push(mkTrace({ type: "scatter", x: x, y: wtOs2, mode: "lines", line: { color: "rgba(0,0,0,0)", width: 0 }, fill: "tonexty", fillcolor: "rgba(34,197,94,0.25)", connectgaps: false, hoverinfo: "skip" }, 3, LABEL.WT_MTF));
+      traces.push(mkTrace({ type: "scatter", x: x, y: wtOb, mode: "lines", line: { color: "rgba(239,68,68,0.55)", width: 1, dash: "dot" } }, 3, LABEL.WT_MTF));
+      traces.push(mkTrace({ type: "scatter", x: x, y: wtOs, mode: "lines", line: { color: "rgba(34,197,94,0.55)", width: 1, dash: "dot" } }, 3, LABEL.WT_MTF));
+      traces.push(mkTrace({ type: "scatter", x: x, y: wt1, mode: "lines", line: { color: "#6366f1", width: 1.5 } }, 3, LABEL.WT_MTF));
+      traces.push(mkTrace({ type: "scatter", x: x, y: wt2, mode: "lines", line: { color: "#a78bfa", width: 1.2, dash: "dot" } }, 3, LABEL.WT_MTF));
+    }
 
     /* ============================================================ */
     /*  ROW 4–7 — KPI panels                                        */
@@ -678,7 +693,7 @@
         const idx = idxByName[nm];
         if (idx === undefined) return;
         const row = kpiZ[idx];
-        if (row && !row.every(v => v === -2)) { kk.push(nm); zz.push(row); cc.push(kpiCustom[idx]); }
+        if (row) { kk.push(nm); zz.push(row); cc.push(kpiCustom[idx]); }
       });
       return { kk, zz, cc };
     }
@@ -746,16 +761,15 @@
     if (brkFiltered.kk.length) {
       brkFiltered.kk.forEach((k, i) => {
         const label = shortLabel(k);
-        const kk = k.startsWith("BO_") ? k.slice(3) : k;
         brLabels.push(label);
         const rowZ = brkFiltered.zz[i], rowC = brkFiltered.cc[i];
         const bullX = [], bullText = [], bearX = [], bearText = [];
         for (let ci = 0; ci < n; ci++) {
-          if (rowZ[ci] === 1) { bullX.push(x[ci]); bullText.push(kk + ": " + (rowC[ci] || "")); }
-          else if (rowZ[ci] === -1) { bearX.push(x[ci]); bearText.push(kk + ": " + (rowC[ci] || "")); }
+          if (rowZ[ci] === 1) { bullX.push(x[ci]); bullText.push(label + ": " + (rowC[ci] || "")); }
+          else if (rowZ[ci] === -1) { bearX.push(x[ci]); bearText.push(label + ": " + (rowC[ci] || "")); }
         }
-        if (bullX.length) traces.push(mkTrace({ type: "scatter", x: bullX, y: constant(bullX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#22c55e" }, text: constant(bullX.length, kk), hoverinfo: "text+x" }, 5, "KPI Breakout", true));
-        if (bearX.length) traces.push(mkTrace({ type: "scatter", x: bearX, y: constant(bearX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#ef4444" }, text: constant(bearX.length, kk), hoverinfo: "text+x" }, 5, "KPI Breakout", true));
+        if (bullX.length) traces.push(mkTrace({ type: "scatter", x: bullX, y: constant(bullX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#22c55e" }, text: constant(bullX.length, label), hoverinfo: "text+x" }, 5, "KPI Breakout", true));
+        if (bearX.length) traces.push(mkTrace({ type: "scatter", x: bearX, y: constant(bearX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#ef4444" }, text: constant(bearX.length, label), hoverinfo: "text+x" }, 5, "KPI Breakout", true));
       });
     }
 
@@ -806,12 +820,12 @@
     const trLabels = [];
     if (heatmapSlice.kk.length) {
       heatmapSlice.kk.forEach(k => trLabels.push(shortLabel(k)));
-      const grouped_kpi_names = heatmapSlice.kk.map(k => constant(n, k));
+      const grouped_kpi_labels = heatmapSlice.kk.map(k => constant(n, shortLabel(k)));
       traces.push(mkTrace({
         type: "heatmap", x: x, y: trLabels, z: heatmapSlice.zz,
         zmin: -3, zmax: 1, colorscale: colorscale, zsmooth: false,
         showscale: false, xgap: 0, ygap: 3,
-        customdata: grouped_kpi_names, text: heatmapSlice.cc,
+        customdata: grouped_kpi_labels, text: heatmapSlice.cc,
         hovertemplate: "<b>%{customdata}</b><br>%{x}<br>%{text}<extra></extra>",
       }, 6, "KPI Trend", true));
     }

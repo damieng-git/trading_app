@@ -63,6 +63,7 @@ from trading_dashboard.data.incremental import IncrementalUpdater
 from trading_dashboard.data.health import summarize_df_health
 from trading_dashboard.data.enrichment import (
     IndicatorSpec,
+    apply_mtf_overlay,
     translate_and_compute_indicators,
 )
 from apps.dashboard.templates import (
@@ -573,6 +574,7 @@ def run_stock_export(
                     )
 
             if tf_map_enriched:
+                apply_mtf_overlay(tf_map_enriched)
                 all_data[sym] = tf_map_enriched
             continue
 

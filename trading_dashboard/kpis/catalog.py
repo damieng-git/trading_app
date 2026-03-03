@@ -16,7 +16,6 @@ from .rules import (
     STATE_BULL,
     STATE_NA,
     STATE_NEUTRAL,
-    state_from_persistent_signals,
     state_from_regime,
     state_from_signals,
 )
@@ -239,28 +238,18 @@ def compute_kpi_state_map(df: pd.DataFrame, *, stoch_mtm_thresholds: dict | None
     else:
         state["SQZMOM_LB"] = pd.Series(STATE_NA, index=idx, dtype=int)
 
+    # Stoch_MTM — zone-based: green when SMI < -40 (oversold), red when > 40 (overbought)
     if all(c in df.columns for c in ["SMI", "SMI_ema"]):
         smi = pd.to_numeric(df["SMI"], errors="coerce")
-        se = pd.to_numeric(df["SMI_ema"], errors="coerce")
-        avail_val = smi.notna() & se.notna()
-        avail_sig = avail_val & smi.shift(1).notna() & se.shift(1).notna()
-
         _smi_t = stoch_mtm_thresholds or {}
         ob = float(_smi_t.get("overbought", 40.0))
         os_ = float(_smi_t.get("oversold", -40.0))
-        long_thr = float(_smi_t.get("long_threshold", -35.0))
-        short_thr = float(_smi_t.get("short_threshold", 35.0))
-
-        os_end = avail_sig & (smi >= os_) & (smi.shift(1) < os_)
-        ob_end = avail_sig & (smi <= ob) & (smi.shift(1) > ob)
-
-        cross_up = avail_sig & (smi > se) & (smi.shift(1) <= se.shift(1))
-        cross_dn = avail_sig & (smi < se) & (smi.shift(1) >= se.shift(1))
-
-        long_entry = os_end & cross_up & (smi <= long_thr)
-        short_entry = ob_end & cross_dn & (smi >= short_thr)
-
-        state["Stoch_MTM"] = state_from_persistent_signals(idx, long_entry, short_entry, avail_val)
+        avail = smi.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(smi < os_) & avail] = STATE_BULL
+        out.loc[(smi > ob) & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["Stoch_MTM"] = out
     else:
         state["Stoch_MTM"] = pd.Series(STATE_NA, index=idx, dtype=int)
 
@@ -279,15 +268,21 @@ def compute_kpi_state_map(df: pd.DataFrame, *, stoch_mtm_thresholds: dict | None
     else:
         state["Volume + MA20"] = pd.Series(STATE_NA, index=idx, dtype=int)
 
+    # cRSI — zone-based: green when cRSI < lower band (oversold), red when > upper band (overbought)
     if all(c in df.columns for c in ["cRSI", "cRSI_lb", "cRSI_ub"]):
         crsi = pd.to_numeric(df["cRSI"], errors="coerce")
         lb = pd.to_numeric(df["cRSI_lb"], errors="coerce")
         ub = pd.to_numeric(df["cRSI_ub"], errors="coerce")
         avail_val = crsi.notna() & lb.notna() & ub.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(crsi < lb) & avail_val] = STATE_BULL
+        out.loc[(crsi > ub) & avail_val] = STATE_BEAR
+        out.loc[~avail_val] = STATE_NA
+        state["cRSI"] = out
+
         avail_sig = avail_val & crsi.shift(1).notna() & lb.shift(1).notna() & ub.shift(1).notna()
         bull_sig = avail_sig & (crsi > lb) & (crsi.shift(1) <= lb.shift(1))
         bear_sig = avail_sig & (crsi < ub) & (crsi.shift(1) >= ub.shift(1))
-        state["cRSI"] = state_from_persistent_signals(idx, bull_sig, bear_sig, avail_val)
         state["cRSI (breakout)"] = state_from_signals(idx, bull_sig, bear_sig, avail_sig)
     else:
         state["cRSI"] = pd.Series(STATE_NA, index=idx, dtype=int)
@@ -502,6 +497,19 @@ def compute_kpi_state_map(df: pd.DataFrame, *, stoch_mtm_thresholds: dict | None
         state["PAI"] = state_from_regime(idx, pai >= 0, avail)
     else:
         state["PAI"] = pd.Series(STATE_NA, index=idx, dtype=int)
+
+    # BL11: WT_MTF — zone + cross: green when bullish cross (wt1 > wt2) in oversold zone, red when bearish cross in overbought
+    if all(c in df.columns for c in ["WT_MTF_wt1", "WT_MTF_wt2"]):
+        wt1 = pd.to_numeric(df["WT_MTF_wt1"], errors="coerce")
+        wt2 = pd.to_numeric(df["WT_MTF_wt2"], errors="coerce")
+        avail = wt1.notna() & wt2.notna()
+        out = pd.Series(STATE_NEUTRAL, index=idx, dtype=int)
+        out.loc[(wt1 < -60.0) & (wt2 < -60.0) & (wt1 > wt2) & avail] = STATE_BULL
+        out.loc[(wt1 > 60.0) & (wt2 > 60.0) & (wt1 < wt2) & avail] = STATE_BEAR
+        out.loc[~avail] = STATE_NA
+        state["WT_MTF"] = out
+    else:
+        state["WT_MTF"] = pd.Series(STATE_NA, index=idx, dtype=int)
 
     return state
 
