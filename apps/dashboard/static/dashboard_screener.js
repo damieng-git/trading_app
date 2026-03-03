@@ -32,6 +32,7 @@
       "_last_combo": function(r) { var a = r.signal_action || ""; var ip = a.indexOf("ENTRY") === 0 || a.indexOf("SCALE") === 0 || a === "HOLD"; if (!ip) return -1; return (typeof r.last_combo_bars === "number") ? (10000 - r.last_combo_bars) : -1; },
       "_recommendation": function(r) { var m = {"strong_buy": 5, "buy": 4, "hold": 3, "sell": 2, "strong_sell": 1}; return m[(r.recommendation || "").toLowerCase()] || 0; },
       "_action_tf": function(r) { var sym = String(r.symbol || "").toUpperCase(); var sc = 0; var allTFs = typeof TIMEFRAMES !== "undefined" ? TIMEFRAMES : []; var n = allTFs.length; allTFs.forEach(function(tfk, tfi) { var rec = (typeof SCREENER !== "undefined" && SCREENER && SCREENER.by_symbol && SCREENER.by_symbol[sym] && SCREENER.by_symbol[sym][tfk]) ? SCREENER.by_symbol[sym][tfk] : null; if (!rec) return; var a = rec.signal_action || ""; if (a === "ENTRY 1.5x" || a.indexOf("SCALE") === 0) sc += (n - tfi) * 1000 + 500; else if (a.indexOf("ENTRY") === 0) sc += (n - tfi) * 1000 + 400; else if (a === "HOLD") sc += (n - tfi) * 1000 + 200; else if (a.indexOf("EXIT") === 0) sc += (n - tfi) * 1000 + 100; }); return sc; },
+      "_strat_badges": function(r) { var ss = r.strat_statuses || {}; var sc = 0; var prio = {trend: 3000, swing: 2000, dip_buy: 1000}; for (var sk in ss) { var sa = ss[sk].signal_action || ""; if (sa.indexOf("ENTRY") === 0) sc += (prio[sk] || 0) + 500; else if (sa === "HOLD") sc += (prio[sk] || 0) + 300; } return sc; },
       "_price": function(r) { return (typeof r.last_close === "number") ? r.last_close : -1; },
     };
     var _getSortVal = _sortKeyMap[sortKey] || function(r) { return r[sortKey] != null ? r[sortKey] : ""; };
@@ -75,7 +76,8 @@
       ["_recommendation", "Analysts", "4%"],
       ["_conv10", "TrendScore", "9%"],
       ["_confluence", "Traffic Light", "9%"],
-      ["_action_tf", "Action", "11%"],
+      ["_action_tf", "Action", "9%"],
+      ["_strat_badges", "Strategy", "9%"],
       ["_vs_bench", "TrendScore vs Bench", "9%"],
       ["pe_vs_sector", "P/E vs Sec", "5%"],
       ["_move_group", "Group", "5%"],
@@ -88,9 +90,9 @@
       colgroup.appendChild(col);
     });
     table.appendChild(colgroup);
-    var _sortable = new Set(["symbol", "_ticker", "market_cap", "_price", "_action_tf", "_recommendation", "pe_vs_sector"]);
+    var _sortable = new Set(["symbol", "_ticker", "market_cap", "_price", "_action_tf", "_strat_badges", "_recommendation", "pe_vs_sector"]);
     var trh = document.createElement("tr");
-    var _centered = new Set(["_conv10", "_confluence", "_action_tf", "_vs_bench", "pe_vs_sector", "_recommendation"]);
+    var _centered = new Set(["_conv10", "_confluence", "_action_tf", "_strat_badges", "_vs_bench", "pe_vs_sector", "_recommendation"]);
     hdr.forEach(function(item) {
       var k = item[0], label = item[1];
       var th = document.createElement("th");
@@ -273,6 +275,41 @@
             atWrap.appendChild(cell);
           });
           td.appendChild(atWrap);
+        } else if (k === "_strat_badges") {
+          var sbWrap = document.createElement("div");
+          sbWrap.style.cssText = "display:flex;gap:3px;align-items:center;justify-content:center;";
+          var _stratDefs = [
+            {key: "trend", label: "T", color: "#c084fc", bgAlpha: "0.15"},
+            {key: "swing", label: "S", color: "#60a5fa", bgAlpha: "0.15"},
+            {key: "dip_buy", label: "D", color: "#facc15", bgAlpha: "0.18"}
+          ];
+          var ss = r.strat_statuses || {};
+          _stratDefs.forEach(function(sd) {
+            var sInfo = ss[sd.key];
+            var sAct = sInfo ? (sInfo.signal_action || "FLAT") : "FLAT";
+            var sbBadge = document.createElement("span");
+            sbBadge.style.cssText = "font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;min-width:16px;text-align:center;";
+            if (sAct.indexOf("ENTRY") === 0) {
+              sbBadge.style.background = sd.color.replace(")", "," + sd.bgAlpha + ")").replace("rgb", "rgba").replace("#", "");
+              sbBadge.style.background = "rgba(" + parseInt(sd.color.slice(1,3),16) + "," + parseInt(sd.color.slice(3,5),16) + "," + parseInt(sd.color.slice(5,7),16) + "," + sd.bgAlpha + ")";
+              sbBadge.style.color = sd.color;
+              sbBadge.textContent = sd.label;
+              sbBadge.title = sd.key.replace("_"," ") + ": " + sAct + (sInfo.bars_held != null ? " " + sInfo.bars_held + "b" : "");
+            } else if (sAct === "HOLD") {
+              sbBadge.style.background = "rgba(" + parseInt(sd.color.slice(1,3),16) + "," + parseInt(sd.color.slice(3,5),16) + "," + parseInt(sd.color.slice(5,7),16) + ",0.08)";
+              sbBadge.style.color = sd.color;
+              sbBadge.style.opacity = "0.7";
+              sbBadge.textContent = sd.label;
+              sbBadge.title = sd.key.replace("_"," ") + ": Hold" + (sInfo.bars_held != null ? " " + sInfo.bars_held + "b" : "");
+            } else {
+              sbBadge.style.color = "var(--muted)";
+              sbBadge.style.opacity = "0.3";
+              sbBadge.textContent = sd.label;
+              sbBadge.title = sd.key.replace("_"," ") + ": Flat";
+            }
+            sbWrap.appendChild(sbBadge);
+          });
+          td.appendChild(sbWrap);
         } else if (k === "_confluence") {
           var symCf = String(r.symbol || "").toUpperCase();
           var tfConf = document.createElement("div");

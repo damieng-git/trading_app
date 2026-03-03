@@ -711,22 +711,38 @@
     const v6KpiNames = strategyKpis["v6"] || [];
     const v6Slice = v6KpiNames.length ? kpiSlice(v6KpiNames) : trend;
 
-    const combo3kpis = data.combo_3_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "Volume + MA20"];
-    const combo4kpis = data.combo_4_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "GK Trend Ribbon", "cRSI"];
+    let combo3kpis = data.combo_3_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "Volume + MA20"];
+    let combo4kpis = data.combo_4_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "GK Trend Ribbon", "cRSI"];
+    let combo3pols = null, combo4pols = null;
+
+    // Override combos if a polarity_combo strategy is selected
+    const _stratSetups = (typeof STRATEGY_SETUPS !== "undefined") ? (STRATEGY_SETUPS.setups || {}) : {};
+    const _activeDef = _stratSetups[_activeStrat];
+    let _stratColor = null;
+    if (_activeDef && _activeDef.entry_type === "polarity_combo") {
+      const combos = _activeDef.combos || {};
+      const c3d = combos.c3 || {};
+      const c4d = combos.c4;
+      if (c3d.kpis) { combo3kpis = c3d.kpis; combo3pols = c3d.pols || null; }
+      if (c4d && c4d.kpis) { combo4kpis = c4d.kpis; combo4pols = c4d.pols || null; }
+      else { combo4kpis = []; }
+      _stratColor = _activeDef.color || null;
+    }
 
     let c3Active = null, c4Active = null;
     const allKpiZ = {};
     kpiNames.forEach((nm, i) => { allKpiZ[nm] = kpiZ[i]; });
 
-    function comboBool(kpiList) {
+    function comboBool(kpiList, polList) {
       const rows = [];
-      for (const k of kpiList) {
-        const row = allKpiZ[k];
+      const pols = polList || kpiList.map(() => 1);
+      for (let ki = 0; ki < kpiList.length; ki++) {
+        const row = allKpiZ[kpiList[ki]];
         if (!row) return null;
-        rows.push(row);
+        rows.push({z: row, p: pols[ki]});
       }
       if (!rows.length) return null;
-      return rows[0].map((_, ci) => rows.every(r => r[ci] === 1));
+      return rows[0].z.map((_, ci) => rows.every(r => r.z[ci] === r.p));
     }
 
     // KPI colorscale
@@ -740,15 +756,21 @@
     ];
 
     // Breakout dots (row 5) — filter by strategy, sorted to match trend heatmap order
-    const activeStratKpiNames = _activeStrat === "stoof" ? stoofKpiNames
-                              : (_activeStrat === "v6" ? v6KpiNames : null);
+    const _polStratKpiNames = (_activeDef && _activeDef.entry_type === "polarity_combo")
+      ? (strategyKpis[_activeStrat] || []) : null;
+    const activeStratKpiNames = _polStratKpiNames
+      ? _polStratKpiNames
+      : (_activeStrat === "stoof" ? stoofKpiNames
+        : (_activeStrat === "v6" ? v6KpiNames : null));
     const _brkFilteredRaw = activeStratKpiNames
       ? kpisBreakout.filter(bk => {
           const base = bk.startsWith("BO_") ? bk.slice(3) : bk;
           return activeStratKpiNames.includes(base);
         })
       : kpisBreakout.slice();
-    const _heatmapOrder = (_activeStrat === "stoof" ? stoofKpiNames : (_activeStrat === "v6" ? v6KpiNames : kpisTrend));
+    const _heatmapOrder = _polStratKpiNames
+      ? _polStratKpiNames
+      : (_activeStrat === "stoof" ? stoofKpiNames : (_activeStrat === "v6" ? v6KpiNames : kpisTrend));
     const _heatmapIdx = {};
     _heatmapOrder.forEach((k, i) => { _heatmapIdx[k] = i; });
     _brkFilteredRaw.sort((a, b) => {
@@ -778,13 +800,17 @@
     // TrendScore / StoofScore (row 4)
     let tsPad = 1;
     const isStoof = _activeStrat === "stoof";
-    const scoreSlice = isStoof ? stoofSlice : (_activeStrat === "v6" ? v6Slice : trend);
-    const scoreLabel = isStoof ? "StoofScore" : "TrendScore";
+    const isPolStrat = !!_polStratKpiNames;
+    const polStratSlice = isPolStrat ? kpiSlice(_polStratKpiNames) : null;
+    const scoreSlice = isPolStrat ? polStratSlice
+      : (isStoof ? stoofSlice : (_activeStrat === "v6" ? v6Slice : trend));
+    const scoreLabel = isPolStrat ? (_activeDef.label || _activeStrat) + " Score"
+      : (isStoof ? "StoofScore" : "TrendScore");
 
     if (scoreSlice.kk.length && scoreSlice.zz.length) {
       const tsValues = new Array(n).fill(0);
       scoreSlice.kk.forEach((k, i) => {
-        const w = isStoof ? 1 : (kpiWeights[k] != null ? kpiWeights[k] : 1);
+        const w = (isStoof || isPolStrat) ? 1 : (kpiWeights[k] != null ? kpiWeights[k] : 1);
         const row = scoreSlice.zz[i];
         for (let ci = 0; ci < n; ci++) {
           const v = row[ci];
@@ -808,17 +834,17 @@
       }
 
       const tsMax = Math.max(...tsValues.map(Math.abs), 1);
-      tsPad = isStoof ? 11 : Math.max(tsMax * 1.1, 1);
+      tsPad = (isStoof || isPolStrat) ? Math.max(scoreSlice.kk.length + 1, 5) : Math.max(tsMax * 1.1, 1);
 
-      // Combo detection (only for v6)
       if (!isStoof) {
-        c3Active = comboBool(combo3kpis);
-        c4Active = comboBool(combo4kpis);
+        c3Active = comboBool(combo3kpis, combo3pols);
+        c4Active = combo4kpis.length ? comboBool(combo4kpis, combo4pols) : null;
       }
     }
 
     // KPI Trend Heatmap (row 6) — uses scoreSlice when strategy is active
-    const heatmapSlice = isStoof ? stoofSlice : (_activeStrat === "v6" ? v6Slice : trend);
+    const heatmapSlice = isPolStrat ? polStratSlice
+      : (isStoof ? stoofSlice : (_activeStrat === "v6" ? v6Slice : trend));
     const trLabels = [];
     if (heatmapSlice.kk.length) {
       heatmapSlice.kk.forEach(k => trLabels.push(shortLabel(k)));
@@ -904,9 +930,10 @@
         const atr = rollingMean(tr, 14);
         const c3Onset = c3Active.map((v, i) => v && (i === 0 || !c3Active[i - 1]));
 
-        function bearishCount(kpis, j) {
+        function bearishCount(kpis, j, pols) {
           let nb = 0;
-          for (const k of kpis) { if (k in allKpiZ && j < allKpiZ[k].length && allKpiZ[k][j] !== 1) nb++; }
+          const pp = pols || kpis.map(() => 1);
+          for (let ki = 0; ki < kpis.length; ki++) { const k = kpis[ki]; if (k in allKpiZ && j < allKpiZ[k].length && allKpiZ[k][j] !== pp[ki]) nb++; }
           return nb;
         }
 
@@ -944,6 +971,7 @@
           const entryIdx = fillBar;
           let scaled = c4Active[i], scaleIdx = scaled ? i : null;
           let activeKpis = scaled ? combo4kpis : combo3kpis, nk = activeKpis.length;
+          let activePols = scaled ? combo4pols : combo3pols;
           let stopPrice = ep, stop = atr[i] > 0 ? stopPrice - K * atr[i] : stopPrice * 0.95;
           let barsSinceReset = 0; const stopTrail = [stop];
           let exitIdx = null, exitReason = null;
@@ -951,8 +979,8 @@
             barsSinceReset++; const cj = close[j];
             if (isNaN(cj)) { stopTrail.push(stopTrail[stopTrail.length - 1]); continue; }
             if (cj < stop) { exitIdx = j; exitReason = "ATR stop"; break; }
-            if (!scaled && c4Active[j]) { scaled = true; scaleIdx = j; activeKpis = combo4kpis; nk = activeKpis.length; }
-            const nb = bearishCount(activeKpis, j), barsHeld = j - entryIdx;
+            if (!scaled && c4Active[j]) { scaled = true; scaleIdx = j; activeKpis = combo4kpis; activePols = combo4pols; nk = activeKpis.length; }
+            const nb = bearishCount(activeKpis, j, activePols), barsHeld = j - entryIdx;
             if (barsHeld <= T) { if (nb >= nk) { exitIdx = j; exitReason = "Full invalidation"; break; } }
             else { if (nb >= 2) { exitIdx = j; exitReason = nb + "/" + nk + " KPIs bearish"; break; } }
             if (barsSinceReset >= M) { if (nb === 0) { stopPrice = cj; stop = atr[j] > 0 ? stopPrice - K * atr[j] : stopPrice * 0.95; barsSinceReset = 0; } else { exitIdx = j; exitReason = "Checkpoint exit"; break; } }
@@ -969,6 +997,16 @@
       }
 
       // --- Position shading ---
+      // Strategy-specific colors (hex to rgba helper)
+      function _hexToRgba(hex, a) {
+        if (!hex || hex[0] !== "#") return "rgba(128,128,128," + a + ")";
+        const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+        return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+      }
+      const _winC3 = _stratColor ? _hexToRgba(_stratColor, 0.13) : "rgba(250,204,21,0.13)";
+      const _winC4 = _stratColor ? _hexToRgba(_stratColor, 0.20) : "rgba(74,222,128,0.14)";
+      const _loseColor = "rgba(244,63,94,0.20)";
+
       for (const t of allTrades) {
         const ei = t.entryIdx, xi = t.exitIdx;
         if (t.scaled && t.scaleIdx != null && t.scaleIdx > ei) {
@@ -977,7 +1015,7 @@
             x0: new Date(new Date(x[ei]).getTime() - hbMs).toISOString(),
             x1: new Date(new Date(x[Math.min(t.scaleIdx, xi)]).getTime() + hbMs).toISOString(),
             y0: 0, y1: 1, yref: "y domain", xref: "x",
-            fillcolor: t.ret >= 0 ? "rgba(250,204,21,0.13)" : "rgba(244,63,94,0.20)",
+            fillcolor: t.ret >= 0 ? _winC3 : _loseColor,
             line: { width: 0 }, layer: "below", _strategy: true,
           });
           shapes.push({
@@ -985,13 +1023,13 @@
             x0: new Date(new Date(x[t.scaleIdx]).getTime() - hbMs).toISOString(),
             x1: new Date(new Date(x[xi]).getTime() + hbMs).toISOString(),
             y0: 0, y1: 1, yref: "y domain", xref: "x",
-            fillcolor: t.ret >= 0 ? "rgba(74,222,128,0.14)" : "rgba(244,63,94,0.20)",
+            fillcolor: t.ret >= 0 ? _winC4 : _loseColor,
             line: { width: 0 }, layer: "below", _strategy: true,
           });
         } else {
           const fc = t.ret >= 0
-            ? (t.scaled ? "rgba(74,222,128,0.14)" : "rgba(250,204,21,0.13)")
-            : "rgba(244,63,94,0.20)";
+            ? (t.scaled ? _winC4 : _winC3)
+            : _loseColor;
           shapes.push({
             type: "rect",
             x0: new Date(new Date(x[ei]).getTime() - hbMs).toISOString(),
@@ -1047,7 +1085,7 @@
         entryX.push(x[ei]);
         entryY.push(low[ei] - pRange * 0.03);
         entryText.push(lbl);
-        entryColors.push(t.scaled ? "#4ade80" : "#facc15");
+        entryColors.push(_stratColor ? _stratColor : (t.scaled ? "#4ade80" : "#facc15"));
         entryCustom.push(
           "<b>ENTRY " + lbl + "</b><br>" +
           "Price: " + t.ep.toFixed(2) + "<br>" +
@@ -1096,7 +1134,7 @@
       for (const t of allTrades) {
         if (t.reason === "Open") continue;
         const ret = t.ret;
-        exitColors.push(ret >= 0 ? (t.scaled ? "#4ade80" : "#facc15") : "#f43f5e");
+        exitColors.push(ret >= 0 ? (_stratColor || (t.scaled ? "#4ade80" : "#facc15")) : "#f43f5e");
         exitX.push(x[t.exitIdx]);
         exitY.push(high[t.exitIdx] + pRange * 0.025);
         const sizing = t.scaled ? "1.5x" : "1x";
@@ -1369,8 +1407,19 @@
     } else {
       // Fallback: full client-side computation (backward compat)
       if (!payload.kpi) return { trades: [], eqCurve: [], dates: x };
-      const combo3kpis = payload.combo_3_kpis || [];
-      const combo4kpis = payload.combo_4_kpis || [];
+      let combo3kpis = payload.combo_3_kpis || [];
+      let combo4kpis = payload.combo_4_kpis || [];
+      let combo3pols = null, combo4pols = null;
+      // Support polarity_combo strategies in fallback simulation
+      const _stSetups2 = (typeof STRATEGY_SETUPS !== "undefined") ? (STRATEGY_SETUPS.setups || {}) : {};
+      const _cStrat2 = (typeof window !== "undefined" && window.currentStrategy) ? window.currentStrategy : "v6";
+      const _sDef2 = _stSetups2[_cStrat2];
+      if (_sDef2 && _sDef2.entry_type === "polarity_combo") {
+        const cc = _sDef2.combos || {};
+        if (cc.c3 && cc.c3.kpis) { combo3kpis = cc.c3.kpis; combo3pols = cc.c3.pols; }
+        if (cc.c4 && cc.c4.kpis) { combo4kpis = cc.c4.kpis; combo4pols = cc.c4.pols; }
+        else { combo4kpis = []; }
+      }
       const kpiNames = payload.kpi.kpis || [];
       const kpiZRows = payload.kpi.z || [];
       const allKpiZ = {};
@@ -1379,8 +1428,10 @@
 
       const H = c.High || [], L = c.Low || [];
       let c3Active = null, c4Active = null;
-      if (combo3kpis.length) { c3Active = new Array(n).fill(true); for (const k of combo3kpis) { const z = allKpiZ[k]; if (!z) { c3Active = null; break; } for (let i = 0; i < n; i++) if (z[i] !== 1) c3Active[i] = false; } }
-      if (combo4kpis.length) { c4Active = new Array(n).fill(true); for (const k of combo4kpis) { const z = allKpiZ[k]; if (!z) { c4Active = null; break; } for (let i = 0; i < n; i++) if (z[i] !== 1) c4Active[i] = false; } }
+      const _pols3 = combo3pols || combo3kpis.map(() => 1);
+      const _pols4 = combo4pols || combo4kpis.map(() => 1);
+      if (combo3kpis.length) { c3Active = new Array(n).fill(true); for (let ki = 0; ki < combo3kpis.length; ki++) { const z = allKpiZ[combo3kpis[ki]]; if (!z) { c3Active = null; break; } for (let i = 0; i < n; i++) if (z[i] !== _pols3[ki]) c3Active[i] = false; } }
+      if (combo4kpis.length) { c4Active = new Array(n).fill(true); for (let ki = 0; ki < combo4kpis.length; ki++) { const z = allKpiZ[combo4kpis[ki]]; if (!z) { c4Active = null; break; } for (let i = 0; i < n; i++) if (z[i] !== _pols4[ki]) c4Active[i] = false; } }
       if (!c3Active) return { trades: [], eqCurve: [], dates: x };
       if (!c4Active) c4Active = new Array(n).fill(false);
 
@@ -1397,14 +1448,14 @@
       if (tfUp === "1D" || tfUp === "1W") { if (payload.sma20_ok && payload.sma20_ok.length === n) { sma200ok = payload.sma20_ok; } else if (payload.sma200_ok && payload.sma200_ok.length === n) { sma200ok = payload.sma200_ok; } else if (n >= 200) { const sma200 = new Array(n).fill(NaN), sma20 = new Array(n).fill(NaN); let s200 = 0, s20 = 0; for (let i = 0; i < n; i++) { const cv = close[i] || 0; s200 += cv; s20 += cv; if (i >= 200) s200 -= close[i - 200] || 0; if (i >= 20) s20 -= close[i - 20] || 0; if (i >= 199) sma200[i] = s200 / 200; if (i >= 19) sma20[i] = s20 / 20; } sma200ok = new Array(n); for (let i = 0; i < n; i++) { sma200ok[i] = isNaN(sma200[i]) || isNaN(sma20[i]) || sma20[i] >= sma200[i]; } } }
       let vsOk = null; if (c.Volume && c.Volume.length === n) { const vol = c.Volume.map(v => v != null ? v : 0); const vma = rollingMean(vol, 20); const sr = vol.map((v, j) => v >= 1.5 * (vma[j] || 1) ? 1 : 0); vsOk = new Array(n).fill(false); for (let i = 0; i < n; i++) { for (let lb = 0; lb < 5 && i - lb >= 0; lb++) { if (sr[i - lb]) { vsOk[i] = true; break; } } } }
       let overextOk = null; if (tfUp === "1W") { overextOk = new Array(n).fill(true); for (let i = 5; i < n; i++) { if (close[i - 5] > 0 && close[i] > close[i - 5] * 1.15) overextOk[i] = false; } }
-      function bearishCount(kpis, j) { let nb = 0; for (const k of kpis) { if (k in allKpiZ && j < allKpiZ[k].length && allKpiZ[k][j] !== 1) nb++; } return nb; }
+      function bearishCount(kpis, j, pols) { let nb = 0; const pp = pols || kpis.map(() => 1); for (let ki = 0; ki < kpis.length; ki++) { const k = kpis[ki]; if (k in allKpiZ && j < allKpiZ[k].length && allKpiZ[k][j] !== pp[ki]) nb++; } return nb; }
       let idx = 0;
       while (idx < n) {
         if (!c3Onset[idx]) { idx++; continue; } if (sma200ok && !sma200ok[idx]) { idx++; continue; } if (vsOk && !vsOk[idx]) { idx++; continue; } if (overextOk && !overextOk[idx]) { idx++; continue; }
         const fillBar = idx + 1; if (fillBar >= n) break; const ep = open[fillBar]; if (ep <= 0 || isNaN(ep)) { idx++; continue; }
-        const entryIdx = fillBar; let scaled = c4Active[idx], scaleIdx = scaled ? idx : null; let activeKpis = scaled ? combo4kpis : combo3kpis, nk = activeKpis.length;
+        const entryIdx = fillBar; let scaled = c4Active[idx], scaleIdx = scaled ? idx : null; let activeKpis = scaled ? combo4kpis : combo3kpis; let activePols = scaled ? combo4pols : combo3pols; let nk = activeKpis.length;
         let stopPrice = ep, stop = atr[idx] > 0 ? stopPrice - K * atr[idx] : stopPrice * 0.95; let barsSinceReset = 0; let exitIdx = null, exitReason = null;
-        for (let j = entryIdx + 1; j < n; j++) { barsSinceReset++; const cj = close[j]; if (isNaN(cj)) continue; if (cj < stop) { exitIdx = j; exitReason = "ATR stop"; break; } if (!scaled && c4Active[j]) { scaled = true; scaleIdx = j; activeKpis = combo4kpis; nk = activeKpis.length; } const nb = bearishCount(activeKpis, j); const barsHeld = j - entryIdx; if (barsHeld <= T) { if (nb >= nk) { exitIdx = j; exitReason = "Full invalidation"; break; } } else { if (nb >= 2) { exitIdx = j; exitReason = nb + "/" + nk + " KPIs bearish"; break; } } if (barsSinceReset >= M) { if (nb === 0) { stopPrice = cj; stop = atr[j] > 0 ? stopPrice - K * atr[j] : stopPrice * 0.95; barsSinceReset = 0; } else { exitIdx = j; exitReason = "Checkpoint exit"; break; } } }
+        for (let j = entryIdx + 1; j < n; j++) { barsSinceReset++; const cj = close[j]; if (isNaN(cj)) continue; if (cj < stop) { exitIdx = j; exitReason = "ATR stop"; break; } if (!scaled && c4Active[j]) { scaled = true; scaleIdx = j; activeKpis = combo4kpis; activePols = combo4pols; nk = activeKpis.length; } const nb = bearishCount(activeKpis, j, activePols); const barsHeld = j - entryIdx; if (barsHeld <= T) { if (nb >= nk) { exitIdx = j; exitReason = "Full invalidation"; break; } } else { if (nb >= 2) { exitIdx = j; exitReason = nb + "/" + nk + " KPIs bearish"; break; } } if (barsSinceReset >= M) { if (nb === 0) { stopPrice = cj; stop = atr[j] > 0 ? stopPrice - K * atr[j] : stopPrice * 0.95; barsSinceReset = 0; } else { exitIdx = j; exitReason = "Checkpoint exit"; break; } } }
         if (exitIdx == null) { exitIdx = n - 1; exitReason = "Open"; }
         const exitFill = (exitIdx < n - 1 && exitReason !== "Open") ? exitIdx + 1 : exitIdx; const xp = exitFill !== exitIdx ? open[exitFill] : close[exitIdx]; const cost = 0.001 + SLIPPAGE; const weight = scaled ? 1.5 : 1.0; const ret = ep > 0 ? ((xp - ep) / ep - cost) * 100 * weight : 0;
         trades.push({ entryIdx: entryIdx, exitIdx: exitIdx, ret: ret, hold: exitIdx - entryIdx, label: scaled ? "C4" : "C3", reason: exitReason, scaled: scaled, scaleIdx: scaleIdx, entryDate: x[entryIdx], exitDate: x[exitIdx] });

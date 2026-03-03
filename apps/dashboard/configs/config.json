@@ -182,6 +182,64 @@
       "threshold": 7,
       "total": 10,
       "description": "Band Light 7/10 rule — 7 of 10 indicators must agree"
+    },
+    "dip_buy": {
+      "label": "Dip Buy",
+      "entry_type": "polarity_combo",
+      "description": "1D dip-buy entry with 1W-governed exit (~2 week hold)",
+      "entry_tf": "1D",
+      "exit_tf": "1W",
+      "color": "#facc15",
+      "combos": {
+        "c3": {
+          "kpis": ["Nadaraya-Watson Smoother", "ADX & DI", "WT_LB"],
+          "pols": [1, -1, -1]
+        },
+        "c4": {
+          "kpis": ["Nadaraya-Watson Smoother", "ADX & DI", "WT_LB", "SQZMOM_LB"],
+          "pols": [1, -1, -1, -1]
+        }
+      },
+      "exit_combos": {
+        "kpis": ["Nadaraya-Watson Smoother", "ADX & DI", "Stoch_MTM"],
+        "pols": [1, -1, 1]
+      }
+    },
+    "swing": {
+      "label": "Swing",
+      "entry_type": "polarity_combo",
+      "description": "1W swing trading with momentum confirmation (4-7 week hold)",
+      "entry_tf": "1W",
+      "exit_tf": "1W",
+      "color": "#60a5fa",
+      "combos": {
+        "c3": {
+          "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI"],
+          "pols": [1, 1, 1]
+        },
+        "c4": {
+          "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
+          "pols": [1, 1, 1, 1]
+        }
+      }
+    },
+    "trend": {
+      "label": "Trend Position",
+      "entry_type": "polarity_combo",
+      "description": "1W trend-following position trading (7+ week hold)",
+      "entry_tf": "1W",
+      "exit_tf": "1W",
+      "color": "#c084fc",
+      "combos": {
+        "c3": {
+          "kpis": ["Nadaraya-Watson Smoother", "DEMA", "cRSI"],
+          "pols": [1, 1, 1]
+        },
+        "c4": {
+          "kpis": ["Nadaraya-Watson Smoother", "DEMA", "Stoch_MTM", "cRSI"],
+          "pols": [1, 1, 1, 1]
+        }
+      }
     }
   }
 }

@@ -118,6 +118,16 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _load_strategy_setups() -> dict:
+    """Load strategy_setups from config.json."""
+    _cfg_path = Path(__file__).resolve().parent / "configs" / "config.json"
+    try:
+        raw = json.loads(_cfg_path.read_text(encoding="utf-8"))
+        return raw.get("strategy_setups", {})
+    except Exception:
+        return {}
+
+
 def _sanitize_json(obj):
     """Recursively replace inf/NaN floats with None for JSON compliance."""
     if isinstance(obj, dict):
@@ -1060,6 +1070,7 @@ def _rebuild_screener_json(
             symbol_meta={},
             data_health={},
             stoch_mtm_thresholds=getattr(cfg, "stoch_mtm_thresholds", None),
+            strategy_setups=_load_strategy_setups(),
         )
         screener_summary = _sanitize_json({
             "generated_utc": run_started_utc,
@@ -1137,6 +1148,7 @@ def run_refresh_dashboard(
             symbol_meta=symbol_meta,
             data_health=data_health,
             stoch_mtm_thresholds=getattr(cfg, "stoch_mtm_thresholds", None),
+            strategy_setups=_load_strategy_setups(),
         )
 
         screener_summary = _sanitize_json(  # inf/NaN → None for JSON compliance

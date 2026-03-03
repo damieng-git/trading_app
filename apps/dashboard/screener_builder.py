@@ -8,7 +8,10 @@ from typing import Dict
 
 import pandas as pd
 
-from apps.dashboard.strategy import compute_position_status, compute_trailing_pnl
+from apps.dashboard.strategy import (
+    compute_position_status, compute_trailing_pnl,
+    compute_polarity_position_status, compute_polarity_trailing_pnl,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ def build_screener_rows(
     symbol_meta: dict,
     data_health: dict,
     stoch_mtm_thresholds: dict | None = None,
+    strategy_setups: dict | None = None,
 ) -> tuple[dict[str, list[dict]], dict[str, dict[str, dict]], dict]:
     """
     Build screener rows and state cache from enriched data.
@@ -126,6 +130,32 @@ def build_screener_rows(
 
             pos_status = compute_position_status(df, st, c3_kpis, c4_kpis, tf)
             trailing_pnl = compute_trailing_pnl(df, st, c3_kpis, c4_kpis, tf)
+
+            # Multi-strategy polarity positions
+            strat_statuses: dict[str, dict] = {}
+            _setups = strategy_setups or {}
+            for skey, sdef in _setups.items():
+                if sdef.get("entry_type") != "polarity_combo":
+                    continue
+                s_entry_tf = sdef.get("entry_tf", tf)
+                if s_entry_tf != tf:
+                    continue
+                try:
+                    ps = compute_polarity_position_status(df, st, sdef, tf)
+                    tp = compute_polarity_trailing_pnl(df, st, sdef, tf)
+                    strat_statuses[skey] = {
+                        "signal_action": ps["signal_action"],
+                        "entry_price": ps["entry_price"],
+                        "atr_stop": ps["atr_stop"],
+                        "bars_held": ps["bars_held"],
+                        "combo_bars": ps.get("combo_bars"),
+                        "c4_scaled": ps["c4_scaled"],
+                        "l12m_pnl": tp["l12m_pnl"],
+                        "l12m_trades": tp["l12m_trades"],
+                        "l12m_hit_rate": tp["l12m_hit_rate"],
+                    }
+                except Exception as e:
+                    logger.warning("Strategy %s failed for %s/%s: %s", skey, sym, tf, e)
 
             n = int(max(1, min(int(cfg_alerts_lookback_bars), len(df))))
             bull_events = 0
@@ -269,6 +299,7 @@ def build_screener_rows(
                 "c4_scaled": pos_status["c4_scaled"],
                 "last_exit_bars_ago": pos_status.get("last_exit_bars_ago"),
                 "last_exit_reason": pos_status.get("last_exit_reason"),
+                "strat_statuses": strat_statuses,
                 "l12m_pnl": trailing_pnl["l12m_pnl"],
                 "l12m_trades": trailing_pnl["l12m_trades"],
                 "l12m_hit_rate": trailing_pnl["l12m_hit_rate"],

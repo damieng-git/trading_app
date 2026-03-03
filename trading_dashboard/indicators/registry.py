@@ -435,3 +435,14 @@ register(IndicatorDef(
     },
     columns=["WT_MTF_wt1", "WT_MTF_wt2", "WT_MTF_signal", "WT_MTF_rsi"],
 ))
+
+# Tag indicators used by Phase 20C validated strategies
+_STRATEGY_KPI_MAP = {
+    "dip_buy": ["Nadaraya-Watson Smoother", "ADX & DI", "WT_LB", "SQZMOM_LB", "Stoch_MTM"],
+    "swing": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
+    "trend": ["Nadaraya-Watson Smoother", "DEMA", "cRSI", "Stoch_MTM"],
+}
+for _strat, _kpi_list in _STRATEGY_KPI_MAP.items():
+    for _defn in _REGISTRY.values():
+        if _defn.kpi_name in _kpi_list and _strat not in _defn.strategies:
+            _defn.strategies.append(_strat)
