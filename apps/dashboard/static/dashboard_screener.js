@@ -23,6 +23,10 @@
     else if (screenerFilter === "recent_combo") filtered = filtered.filter(function(r) { return typeof r.last_combo_bars === "number" && r.last_combo_bars <= 3; });
     else if (screenerFilter === "active_position") filtered = filtered.filter(function(r) { var a = r.signal_action || ""; return a.indexOf("ENTRY") === 0 || a.indexOf("SCALE") === 0 || a === "HOLD"; });
     else if (screenerFilter === "entry_signal") filtered = filtered.filter(function(r) { var a = r.signal_action || ""; return a.indexOf("ENTRY") === 0 || a.indexOf("SCALE") === 0; });
+    else if (screenerFilter === "strat_active") filtered = filtered.filter(function(r) { var ss = r.strat_statuses || {}; for (var sk in ss) { var sa = ss[sk].signal_action || ""; if (sa.indexOf("ENTRY") === 0 || sa === "HOLD") return true; } return false; });
+    else if (screenerFilter === "strat_dip") filtered = filtered.filter(function(r) { var ss = r.strat_statuses || {}; var s = ss.dip_buy; return s && (s.signal_action || "").indexOf("ENTRY") === 0; });
+    else if (screenerFilter === "strat_swing") filtered = filtered.filter(function(r) { var ss = r.strat_statuses || {}; var s = ss.swing; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
+    else if (screenerFilter === "strat_trend") filtered = filtered.filter(function(r) { var ss = r.strat_statuses || {}; var s = ss.trend; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
 
     var sortKey = wrap.dataset.sortKey || _savedScreenerSortKey;
     var sortDir = wrap.dataset.sortDir || _savedScreenerSortDir;

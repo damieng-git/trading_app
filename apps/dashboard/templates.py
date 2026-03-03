@@ -363,6 +363,12 @@ def write_lazy_dashboard_shell_html(
         <span class="filter-sep"></span>
         <span class="filter-label">Analyst:</span>
         <div class="btn" data-filter="buy" title="Analyst consensus is Buy or Strong Buy">Buy Rating</div>
+        <span class="filter-sep"></span>
+        <span class="filter-label">Strategy:</span>
+        <div class="btn" data-filter="strat_active" title="Any strategy active (entry or hold)">Any Active</div>
+        <div class="btn" data-filter="strat_dip" title="Dip Buy entry signal">Dip Buy</div>
+        <div class="btn" data-filter="strat_swing" title="Swing entry or hold">Swing</div>
+        <div class="btn" data-filter="strat_trend" title="Trend Position entry or hold">Trend</div>
       </div>
       <button id="btnAddTicker" class="btn btn-add" type="button" title="Add ticker to watchlist">+ Add</button>
       <button id="btnExport" class="btn" type="button">Export CSV</button>
