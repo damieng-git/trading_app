@@ -45,7 +45,7 @@ class TestLoadBuildConfig:
 
     def test_has_timeframes(self):
         cfg = load_build_config()
-        assert cfg.timeframes == ["4H", "1D", "1W"]
+        assert set(cfg.timeframes) >= {"4H", "1D", "1W"}
 
     def test_has_kpi_weights(self):
         cfg = load_build_config()

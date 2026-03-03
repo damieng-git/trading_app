@@ -11,6 +11,7 @@ Extracted from build_dashboard.py — provides a clean API for:
 from __future__ import annotations
 
 import logging
+import threading
 import time as _time
 from pathlib import Path
 from typing import Callable as _Callable, Dict, List, Optional, Tuple
@@ -134,6 +135,16 @@ def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     # Drop rows where Close is NaN (non-trading-day artifacts from multi-exchange batches)
     if "Close" in out.columns:
         out = out.dropna(subset=["Close"])
+    if not out.empty:
+        invalid_hl = out["High"] < out["Low"]
+        if invalid_hl.any():
+            _log.warning("Fixing %d bars where High < Low", invalid_hl.sum())
+            out.loc[invalid_hl, ["High", "Low"]] = out.loc[invalid_hl, ["Low", "High"]].values
+        if "Volume" in out.columns:
+            neg_vol = out["Volume"] < 0
+            if neg_vol.any():
+                _log.warning("Fixing %d bars with negative Volume", neg_vol.sum())
+                out.loc[neg_vol, "Volume"] = 0
     return out
 
 
@@ -448,6 +459,7 @@ def _probe_ticker(ticker: str) -> Optional[pd.DataFrame]:
 # ---------------------------------------------------------------------------
 
 _BENCHMARK_CACHE: Dict[str, pd.Series] = {}
+_BENCHMARK_LOCK = threading.Lock()
 
 
 def load_benchmark_close(
@@ -458,8 +470,9 @@ def load_benchmark_close(
     feature_store_dir: Path | None = None,
 ) -> pd.Series | None:
     """Load benchmark close prices, caching across calls within the same run."""
-    if symbol in _BENCHMARK_CACHE:
-        return _BENCHMARK_CACHE[symbol].reindex(target_index, method="ffill")
+    with _BENCHMARK_LOCK:
+        if symbol in _BENCHMARK_CACHE:
+            return _BENCHMARK_CACHE[symbol].reindex(target_index, method="ffill")
 
     bench_close: pd.Series | None = None
 
@@ -531,7 +544,8 @@ def load_benchmark_close(
             pass
 
     if bench_close is not None:
-        _BENCHMARK_CACHE[symbol] = bench_close
+        with _BENCHMARK_LOCK:
+            _BENCHMARK_CACHE[symbol] = bench_close
         return bench_close.reindex(target_index, method="ffill")
     return None
 

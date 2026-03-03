@@ -810,8 +810,8 @@ def _fetch_fx_rates_and_currencies(sector_map: dict) -> tuple[dict[str, float], 
                         fx_to_eur[c] = rate
                         if c == "GBP":
                             fx_to_eur["GBp"] = rate / 100.0
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("FX rate fetch failed for %s: %s", pair, exc)
         except Exception as exc:
             logger.warning("FX rate download failed: %s", exc)
 

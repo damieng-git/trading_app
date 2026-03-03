@@ -197,6 +197,8 @@
     const displayName = data.display_name || "";
     const n = x.length;
 
+    const _gcss = (v) => { try { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); } catch(e) { return ""; } };
+
     const traces = [];
     const shapes = [];
 
@@ -881,7 +883,7 @@
           const si = ev.scale_idx != null ? Math.max(0, Math.min(ev.scale_idx, n - 1)) : null;
           const ep = ev.entry_price;
           const xp = ev.exit_price != null ? ev.exit_price : close[xi];
-          const ret = ep > 0 ? ((xp - ep) / ep) * 100 : 0;
+          const ret = ev.ret_pct != null ? ev.ret_pct : (ep > 0 ? ((xp - ep) / ep) * 100 : 0);
           const hold = xi - ei;
           const trail = ev.stop_trail || [ep * 0.95];
           allTrades.push({
@@ -942,7 +944,7 @@
           const entryIdx = fillBar;
           let scaled = c4Active[i], scaleIdx = scaled ? i : null;
           let activeKpis = scaled ? combo4kpis : combo3kpis, nk = activeKpis.length;
-          let stopPrice = ep, stop = atr[i] > 0 ? stopPrice - K * atr[i] : -Infinity;
+          let stopPrice = ep, stop = atr[i] > 0 ? stopPrice - K * atr[i] : stopPrice * 0.95;
           let barsSinceReset = 0; const stopTrail = [stop];
           let exitIdx = null, exitReason = null;
           for (let j = entryIdx + 1; j < n; j++) {
@@ -953,7 +955,7 @@
             const nb = bearishCount(activeKpis, j), barsHeld = j - entryIdx;
             if (barsHeld <= T) { if (nb >= nk) { exitIdx = j; exitReason = "Full invalidation"; break; } }
             else { if (nb >= 2) { exitIdx = j; exitReason = nb + "/" + nk + " KPIs bearish"; break; } }
-            if (barsSinceReset >= M) { if (nb === 0) { stopPrice = cj; stop = atr[j] > 0 ? stopPrice - K * atr[j] : stop; barsSinceReset = 0; } else { exitIdx = j; exitReason = "Checkpoint exit"; break; } }
+            if (barsSinceReset >= M) { if (nb === 0) { stopPrice = cj; stop = atr[j] > 0 ? stopPrice - K * atr[j] : stopPrice * 0.95; barsSinceReset = 0; } else { exitIdx = j; exitReason = "Checkpoint exit"; break; } }
             stopTrail.push(stop);
           }
           if (exitIdx == null) { exitIdx = n - 1; exitReason = "Open"; }
@@ -1246,7 +1248,6 @@
       xRange = [xMin, xMax];
     }
 
-    const _gcss = (v) => { try { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); } catch(e) { return ""; } };
     const _gridAlpha = _gcss("--plotly-grid-alpha") || "rgba(110,115,108,0.25)";
     const _zeroLine = _gcss("--plotly-zeroline") || "rgba(110,115,108,0.40)";
     const _spikeClr = _gcss("--plotly-spike") || "rgba(224,221,213,0.70)";
@@ -1402,10 +1403,10 @@
         if (!c3Onset[idx]) { idx++; continue; } if (sma200ok && !sma200ok[idx]) { idx++; continue; } if (vsOk && !vsOk[idx]) { idx++; continue; } if (overextOk && !overextOk[idx]) { idx++; continue; }
         const fillBar = idx + 1; if (fillBar >= n) break; const ep = open[fillBar]; if (ep <= 0 || isNaN(ep)) { idx++; continue; }
         const entryIdx = fillBar; let scaled = c4Active[idx], scaleIdx = scaled ? idx : null; let activeKpis = scaled ? combo4kpis : combo3kpis, nk = activeKpis.length;
-        let stopPrice = ep, stop = atr[idx] > 0 ? stopPrice - K * atr[idx] : -Infinity; let barsSinceReset = 0; let exitIdx = null, exitReason = null;
-        for (let j = entryIdx + 1; j < n; j++) { barsSinceReset++; const cj = close[j]; if (isNaN(cj)) continue; if (cj < stop) { exitIdx = j; exitReason = "ATR stop"; break; } if (!scaled && c4Active[j]) { scaled = true; scaleIdx = j; activeKpis = combo4kpis; nk = activeKpis.length; } const nb = bearishCount(activeKpis, j); const barsHeld = j - entryIdx; if (barsHeld <= T) { if (nb >= nk) { exitIdx = j; exitReason = "Full invalidation"; break; } } else { if (nb >= 2) { exitIdx = j; exitReason = nb + "/" + nk + " KPIs bearish"; break; } } if (barsSinceReset >= M) { if (nb === 0) { stopPrice = cj; stop = atr[j] > 0 ? stopPrice - K * atr[j] : stop; barsSinceReset = 0; } else { exitIdx = j; exitReason = "Checkpoint exit"; break; } } }
+        let stopPrice = ep, stop = atr[idx] > 0 ? stopPrice - K * atr[idx] : stopPrice * 0.95; let barsSinceReset = 0; let exitIdx = null, exitReason = null;
+        for (let j = entryIdx + 1; j < n; j++) { barsSinceReset++; const cj = close[j]; if (isNaN(cj)) continue; if (cj < stop) { exitIdx = j; exitReason = "ATR stop"; break; } if (!scaled && c4Active[j]) { scaled = true; scaleIdx = j; activeKpis = combo4kpis; nk = activeKpis.length; } const nb = bearishCount(activeKpis, j); const barsHeld = j - entryIdx; if (barsHeld <= T) { if (nb >= nk) { exitIdx = j; exitReason = "Full invalidation"; break; } } else { if (nb >= 2) { exitIdx = j; exitReason = nb + "/" + nk + " KPIs bearish"; break; } } if (barsSinceReset >= M) { if (nb === 0) { stopPrice = cj; stop = atr[j] > 0 ? stopPrice - K * atr[j] : stopPrice * 0.95; barsSinceReset = 0; } else { exitIdx = j; exitReason = "Checkpoint exit"; break; } } }
         if (exitIdx == null) { exitIdx = n - 1; exitReason = "Open"; }
-        const exitFill = (exitIdx < n - 1 && exitReason !== "Open") ? exitIdx + 1 : exitIdx; const xp = exitFill !== exitIdx ? open[exitFill] : close[exitIdx]; const cost = 0.001 + SLIPPAGE; const ret = ep > 0 ? ((xp - ep) / ep - cost) * 100 : 0;
+        const exitFill = (exitIdx < n - 1 && exitReason !== "Open") ? exitIdx + 1 : exitIdx; const xp = exitFill !== exitIdx ? open[exitFill] : close[exitIdx]; const cost = 0.001 + SLIPPAGE; const weight = scaled ? 1.5 : 1.0; const ret = ep > 0 ? ((xp - ep) / ep - cost) * 100 * weight : 0;
         trades.push({ entryIdx: entryIdx, exitIdx: exitIdx, ret: ret, hold: exitIdx - entryIdx, label: scaled ? "C4" : "C3", reason: exitReason, scaled: scaled, scaleIdx: scaleIdx, entryDate: x[entryIdx], exitDate: x[exitIdx] });
         idx = exitReason !== "Open" ? exitIdx + 1 : n;
       }
@@ -1429,98 +1430,8 @@
     return { trades: trades, eqCurve: eqCurve, dates: x };
   }
 
-  // --------------- Web Worker for simulateTrades ---------------
-  const _workerSrc = `
-    function rollingMean(arr, win) {
-      const out = new Array(arr.length); let sum = 0, cnt = 0;
-      for (let i = 0; i < arr.length; i++) {
-        const v = arr[i]; if (v != null && !isNaN(v)) { sum += v; cnt++; }
-        if (i >= win) { const old = arr[i - win]; if (old != null && !isNaN(old)) { sum -= old; cnt--; } }
-        out[i] = cnt > 0 ? sum / cnt : 0;
-      }
-      return out;
-    }
-    self.onmessage = function(e) {
-      const {payload, tf, exitParams} = e.data;
-      if (!payload||!payload.c||!payload.x) { self.postMessage({trades:[],eqCurve:[],dates:[]}); return; }
-      const x=payload.x, c=payload.c, n=x.length;
-      if(n<2){self.postMessage({trades:[],eqCurve:[],dates:x});return;}
-      const C=c.Close||[];
-      const close=C.map(v=>v!=null?v:NaN);
-      const trades=[];
-
-      if(payload.position_events&&payload.position_events.length){
-        for(const ev of payload.position_events){
-          const ei=Math.max(0,Math.min(ev.entry_idx,n-1));
-          const xi=Math.max(0,Math.min(ev.exit_idx,n-1));
-          const si=ev.scale_idx!=null?Math.max(0,Math.min(ev.scale_idx,n-1)):null;
-          const ep=ev.entry_price;
-          const xp=ev.exit_price!=null?ev.exit_price:close[xi];
-          const ret=ev.ret_pct!=null?ev.ret_pct:(ep>0?((xp-ep)/ep)*100:0);
-          trades.push({entryIdx:ei,exitIdx:xi,ret:ret,hold:xi-ei,label:ev.scaled?"C4":"C3",reason:ev.exit_reason,scaled:ev.scaled,scaleIdx:si,entryDate:x[ei],exitDate:x[xi]});
-        }
-      } else {
-        if(!payload.kpi){self.postMessage({trades:[],eqCurve:[],dates:x});return;}
-        const combo3kpis=payload.combo_3_kpis||[], combo4kpis=payload.combo_4_kpis||[];
-        const kpiNames=payload.kpi.kpis||[], kpiZRows=payload.kpi.z||[];
-        const allKpiZ={}; kpiNames.forEach((nm,i)=>{allKpiZ[nm]=kpiZRows[i];});
-        if(!combo3kpis.length||!Object.keys(allKpiZ).length){self.postMessage({trades:[],eqCurve:[],dates:x});return;}
-        const H=c.High||[], L=c.Low||[];
-        let c3Active=null, c4Active=null;
-        if(combo3kpis.length){c3Active=new Array(n).fill(true);for(const k of combo3kpis){const z=allKpiZ[k];if(!z){c3Active=null;break;}for(let i=0;i<n;i++)if(z[i]!==1)c3Active[i]=false;}}
-        if(combo4kpis.length){c4Active=new Array(n).fill(true);for(const k of combo4kpis){const z=allKpiZ[k];if(!z){c4Active=null;break;}for(let i=0;i<n;i++)if(z[i]!==1)c4Active[i]=false;}}
-        if(!c3Active){self.postMessage({trades:[],eqCurve:[],dates:x});return;}
-        if(!c4Active)c4Active=new Array(n).fill(false);
-        const _EP=exitParams||{"4H":{T:4,M:48,K:4.0},"1D":{T:4,M:40,K:4.0},"1W":{T:2,M:20,K:4.0},"2W":{T:2,M:10,K:4.0},"1M":{T:1,M:6,K:4.0}};
-        const params=_EP[(tf||"1D").toUpperCase()]||_EP["1D"];
-        const T=params.T,M=params.M,K=params.K;
-        const O2=c.Open||C;const open=O2.map(v=>v!=null?v:NaN);const SLIP=0.005;
-        const prevC=[close[0],...close.slice(0,-1)];
-        const tr=close.map((_,i)=>{const h=H[i]!=null?H[i]:NaN,l=L[i]!=null?L[i]:NaN;return Math.max(h-l,Math.abs(h-prevC[i]),Math.abs(l-prevC[i]));});
-        const atr=rollingMean(tr,14);
-        const c3Onset=c3Active.map((v,i)=>v&&(i===0||!c3Active[i-1]));
-        const tfUp=(tf||"1D").toUpperCase();
-        let sma200ok=null;
-        if(tfUp==="1D"||tfUp==="1W"){if(payload.sma20_ok&&payload.sma20_ok.length===n){sma200ok=payload.sma20_ok;}else if(payload.sma200_ok&&payload.sma200_ok.length===n){sma200ok=payload.sma200_ok;}else if(n>=200){const sma200=new Array(n).fill(NaN);const sma20=new Array(n).fill(NaN);let s200=0,s20=0;for(let i=0;i<n;i++){const cv=close[i]||0;s200+=cv;s20+=cv;if(i>=200)s200-=close[i-200]||0;if(i>=20)s20-=close[i-20]||0;if(i>=199)sma200[i]=s200/200;if(i>=19)sma20[i]=s20/20;}sma200ok=new Array(n);for(let i=0;i<n;i++){sma200ok[i]=isNaN(sma200[i])||isNaN(sma20[i])||sma20[i]>=sma200[i];}}}
-        let vsOk=null;if(c.Volume&&c.Volume.length===n){const vol=c.Volume.map(v=>v!=null?v:0);const vma=rollingMean(vol,20);const sr=vol.map((v,j)=>v>=1.5*(vma[j]||1)?1:0);vsOk=new Array(n).fill(false);for(let i=0;i<n;i++){for(let lb=0;lb<5&&i-lb>=0;lb++){if(sr[i-lb]){vsOk[i]=true;break;}}}}
-        let overextOk=null;if(tfUp==="1W"){overextOk=new Array(n).fill(true);for(let i=5;i<n;i++){if(close[i-5]>0&&close[i]>close[i-5]*1.15)overextOk[i]=false;}}
-        function bearishCount(kpis,j){let nb=0;for(const k of kpis){if(k in allKpiZ&&j<allKpiZ[k].length&&allKpiZ[k][j]!==1)nb++;}return nb;}
-        let idx=0;
-        while(idx<n){if(!c3Onset[idx]){idx++;continue;}if(sma200ok&&!sma200ok[idx]){idx++;continue;}if(vsOk&&!vsOk[idx]){idx++;continue;}if(overextOk&&!overextOk[idx]){idx++;continue;}const sIdx=idx;const fBar=idx+1;if(fBar>=n)break;const ep=open[fBar];if(ep<=0||isNaN(ep)){idx++;continue;}const entryIdx=fBar;let scaled=c4Active[sIdx];let scaleIdx=scaled?sIdx:null;let activeKpis=scaled?combo4kpis:combo3kpis;let nk=activeKpis.length;let stopPrice=ep;let stop=atr[sIdx]>0?stopPrice-K*atr[sIdx]:-Infinity;let barsSinceReset=0;let exitIdx=null,exitReason=null;for(let j=entryIdx+1;j<n;j++){barsSinceReset++;const cj=close[j];if(isNaN(cj))continue;if(cj<stop){exitIdx=j;exitReason="ATR stop";break;}if(!scaled&&c4Active[j]){scaled=true;scaleIdx=j;activeKpis=combo4kpis;nk=activeKpis.length;}const nb=bearishCount(activeKpis,j);const barsHeld=j-entryIdx;if(barsHeld<=T){if(nb>=nk){exitIdx=j;exitReason="Full invalidation";break;}}else{if(nb>=2){exitIdx=j;exitReason=nb+"/"+nk+" KPIs bearish";break;}}if(barsSinceReset>=M){if(nb===0){stopPrice=cj;stop=atr[j]>0?stopPrice-K*atr[j]:stop;barsSinceReset=0;}else{exitIdx=j;exitReason="Checkpoint exit";break;}}}
-        if(exitIdx==null){exitIdx=n-1;exitReason="Open";}const eFill=(exitIdx<n-1&&exitReason!=="Open")?exitIdx+1:exitIdx;const xp=eFill!==exitIdx?open[eFill]:close[exitIdx];const cost=0.001+SLIP;const ret=ep>0?((xp-ep)/ep-cost)*100:0;trades.push({entryIdx,exitIdx,ret,hold:exitIdx-entryIdx,label:scaled?"C4":"C3",reason:exitReason,scaled,scaleIdx,entryDate:x[entryIdx],exitDate:x[exitIdx]});idx=exitReason!=="Open"?exitIdx+1:n;
-        }
-      }
-
-      trades.sort((a,b)=>a.exitIdx-b.exitIdx);
-      const eqCurve=new Array(n).fill(0);let cumRet=0;
-      for(const t of trades){const entryPrice=close[t.entryIdx];const weight=t.scaled?1.5:1.0;for(let i=t.entryIdx;i<t.exitIdx&&i<n;i++){const unrealised=entryPrice>0&&close[i]!=null?((close[i]-entryPrice)/entryPrice)*100*weight:0;eqCurve[i]=cumRet+unrealised;}cumRet+=t.ret*weight;for(let i=t.exitIdx;i<n;i++)eqCurve[i]=cumRet;}
-      self.postMessage({trades,eqCurve,dates:x});
-    };
-  `;
-
-  let _tradeWorker = null;
-  try {
-    const blob = new Blob([_workerSrc], { type: "application/javascript" });
-    _tradeWorker = new Worker(URL.createObjectURL(blob));
-  } catch (_) { /* Worker unavailable — fallback to main thread */ }
-
-  /**
-   * Async wrapper: runs simulateTrades in a Web Worker when available.
-   * Falls back to main-thread execution otherwise.
-   */
-  function simulateTradesAsync(payload, tf) {
-    const exitParams = (typeof EXIT_PARAMS_CFG !== "undefined") ? EXIT_PARAMS_CFG : null;
-    if (!_tradeWorker) return Promise.resolve(simulateTrades(payload, tf));
-    return new Promise(resolve => {
-      _tradeWorker.onmessage = e => resolve(e.data);
-      _tradeWorker.onerror = () => resolve(simulateTrades(payload, tf));
-      _tradeWorker.postMessage({ payload, tf, exitParams });
-    });
-  }
-
   // Expose globally
   window.buildFigureFromData = buildFigureFromData;
   window.simulateTrades = simulateTrades;
-  window.simulateTradesAsync = simulateTradesAsync;
 
 })();

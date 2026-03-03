@@ -64,7 +64,8 @@ def _read_config() -> dict:
     try:
         if CONFIG_JSON.exists() and CONFIG_JSON.stat().st_size > 0:
             return json.loads(CONFIG_JSON.read_text(encoding="utf-8")) or {}
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to read config: %s", exc)
         return {}
     return {}
 
@@ -96,7 +97,8 @@ def _plot_window(df: pd.DataFrame, *, tf: str) -> pd.DataFrame:
             x_end = pd.to_datetime(out.index.max())
             x_start = x_end - pd.DateOffset(months=lookback_months)
             out = out.loc[out.index >= x_start].copy()
-    except Exception:
+    except Exception as exc:
+        logger.debug("Failed to apply lookback filter for %s: %s", tf, exc)
         out = df
 
     try:
@@ -110,16 +112,17 @@ def _plot_window(df: pd.DataFrame, *, tf: str) -> pd.DataFrame:
 
 
 _VALID_SYMBOL = re.compile(r"^[A-Z0-9^._-]{1,20}$")
+_VALID_GROUP = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 _MAX_POST_BODY = 64 * 1024  # 64 KB
 
 
 def _is_any_task_running(exclude: str = "") -> bool:
-    """Check if any background task (scan/refresh/enrich) is running, excluding the caller."""
-    if exclude != "scan" and "SCAN" in globals() and SCAN.running:
+    """Check if any background task (scan/refresh/enrich) is running."""
+    if exclude != "scan" and SCAN.running:
         return True
-    if exclude != "refresh" and "REFRESH" in globals() and REFRESH.running:
+    if exclude != "refresh" and REFRESH.running:
         return True
-    if exclude != "enrich" and "ENRICH" in globals() and ENRICH.running:
+    if exclude != "enrich" and ENRICH.running:
         return True
     return False
 
@@ -275,7 +278,8 @@ class _ScanState:
                             new_tickers.append(sym)
                 else:
                     new_tickers = list(merged)
-            except Exception:
+            except Exception as exc:
+                logger.warning("Failed to filter new tickers: %s", exc)
                 new_tickers = list(merged)
 
             enriched_count = len(merged) - len(new_tickers)
@@ -820,12 +824,29 @@ def _compute_pnl_summary(group: str, tf: str) -> dict:
     }
 
 
+_CACHE_MAX_ENTRIES = 500
+
+
 class _Caches:
     def __init__(self) -> None:
         self.df_by_key: dict[tuple[str, str], tuple[float, pd.DataFrame]] = {}
         self.fig_by_key: dict[tuple[str, str], tuple[float, str]] = {}
         self._indicator_specs: list | None = None
         self._lock = threading.Lock()
+
+    def _evict_if_full(self) -> None:
+        """Remove oldest entries when cache exceeds max size. Must be called under lock."""
+        if len(self.df_by_key) > _CACHE_MAX_ENTRIES:
+            excess = len(self.df_by_key) - _CACHE_MAX_ENTRIES
+            oldest = sorted(self.df_by_key, key=lambda k: self.df_by_key[k][0])[:excess]
+            for k in oldest:
+                self.df_by_key.pop(k, None)
+                self.fig_by_key.pop(k, None)
+        if len(self.fig_by_key) > _CACHE_MAX_ENTRIES:
+            excess = len(self.fig_by_key) - _CACHE_MAX_ENTRIES
+            oldest = sorted(self.fig_by_key, key=lambda k: self.fig_by_key[k][0])[:excess]
+            for k in oldest:
+                self.fig_by_key.pop(k, None)
 
     def _find_data_file(self, symbol: str, tf: str) -> Path | None:
         dataset_dir = _dataset_dir()
@@ -880,6 +901,7 @@ class _Caches:
         with self._lock:
             self.df_by_key[key] = (mt, df)
             self.fig_by_key.pop(key, None)
+            self._evict_if_full()
         return df
 
     def load_fig_json(self, symbol: str, tf: str) -> str:
@@ -922,21 +944,53 @@ CACHE = _Caches()
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _check_auth(self) -> bool:
+        """Optional Basic Auth. Set AUTH_USER and AUTH_PASS env vars to enable."""
+        user = os.environ.get("AUTH_USER", "")
+        passwd = os.environ.get("AUTH_PASS", "")
+        if not user:
+            return True
+        import base64
+        auth = self.headers.get("Authorization", "")
+        if not auth.startswith("Basic "):
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="Dashboard"')
+            self.end_headers()
+            return False
+        try:
+            decoded = base64.b64decode(auth[6:]).decode("utf-8")
+            provided_user, provided_pass = decoded.split(":", 1)
+            if provided_user == user and provided_pass == passwd:
+                return True
+        except Exception:
+            pass
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Dashboard"')
+        self.end_headers()
+        return False
+
     def _send(self, status: int, body: bytes, *, content_type: str) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", os.environ.get("CORS_ORIGIN", "*"))
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Content-Security-Policy",
+                         "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+                         "style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self) -> None:  # noqa: N802
+        if not self._check_auth():
+            return
         self._send(HTTPStatus.OK, b"", content_type="text/plain")
 
     def do_GET(self) -> None:  # noqa: N802
+        if not self._check_auth():
+            return
         u = urlparse(self.path)
         path = u.path or "/"
 
@@ -1055,8 +1109,8 @@ class Handler(BaseHTTPRequestHandler):
                     fx_cache = DASHBOARD_ARTIFACTS_DIR / "fx_rates.json"
                     if fx_cache.exists():
                         fx_to_eur = json.loads(fx_cache.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Failed to load symbol display / FX data: %s", exc)
 
                 payload = {
                     "symbols": symbols,
@@ -1113,6 +1167,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.NOT_FOUND, b"Not found", content_type="text/plain; charset=utf-8")
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._check_auth():
+            return
         u = urlparse(self.path)
         path = u.path or "/"
 
@@ -1124,12 +1180,18 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 raw = self.rfile.read(length) if length else b"{}"
                 data = json.loads(raw)
-                ticker = str(data.get("ticker", "")).strip()
+                ticker = str(data.get("ticker", "")).strip().upper()
                 from_group = str(data.get("from", "")).strip()
                 to_group = str(data.get("to", "")).strip()
                 if not ticker or not from_group or not to_group:
                     body = json.dumps({"error": "Missing ticker, from, or to"}).encode("utf-8")
                     self._send(HTTPStatus.BAD_REQUEST, body, content_type="application/json")
+                    return
+                if not _VALID_SYMBOL.match(ticker):
+                    self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Invalid ticker"}).encode(), content_type="application/json")
+                    return
+                if not _VALID_GROUP.match(from_group) or not _VALID_GROUP.match(to_group):
+                    self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Invalid group name"}).encode(), content_type="application/json")
                     return
 
                 from trading_dashboard.symbols.manager import SymbolManager
@@ -1186,6 +1248,12 @@ class Handler(BaseHTTPRequestHandler):
                 group = str(data.get("group", "watchlist")).strip() or "watchlist"
                 if not ticker:
                     self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Missing ticker"}).encode(), content_type="application/json")
+                    return
+                if not _VALID_SYMBOL.match(ticker):
+                    self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Invalid ticker"}).encode(), content_type="application/json")
+                    return
+                if not _VALID_GROUP.match(group):
+                    self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Invalid group name"}).encode(), content_type="application/json")
                     return
                 result = _add_symbol_to_group(ticker, group)
                 status = HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST
@@ -1260,6 +1328,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/trades/close":
             try:
                 length = int(self.headers.get("Content-Length", 0))
+                if length > _MAX_POST_BODY:
+                    self._send(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, b"Body too large", content_type="text/plain")
+                    return
                 raw = self.rfile.read(length) if length else b"{}"
                 data = json.loads(raw)
                 from apps.dashboard.trades import close_trade
@@ -1281,6 +1352,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/trades/update":
             try:
                 length = int(self.headers.get("Content-Length", 0))
+                if length > _MAX_POST_BODY:
+                    self._send(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, b"Body too large", content_type="text/plain")
+                    return
                 raw = self.rfile.read(length) if length else b"{}"
                 data = json.loads(raw)
                 from apps.dashboard.trades import update_trade
@@ -1299,6 +1373,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/trades/delete":
             try:
                 length = int(self.headers.get("Content-Length", 0))
+                if length > _MAX_POST_BODY:
+                    self._send(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, b"Body too large", content_type="text/plain")
+                    return
                 raw = self.rfile.read(length) if length else b"{}"
                 data = json.loads(raw)
                 from apps.dashboard.trades import delete_trade
@@ -1323,6 +1400,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not ticker:
                     body = json.dumps({"error": "Missing ticker"}).encode("utf-8")
                     self._send(HTTPStatus.BAD_REQUEST, body, content_type="application/json")
+                    return
+                if not _VALID_SYMBOL.match(ticker):
+                    self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Invalid ticker"}).encode(), content_type="application/json")
+                    return
+                if group and not _VALID_GROUP.match(group):
+                    self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Invalid group name"}).encode(), content_type="application/json")
                     return
 
                 from trading_dashboard.symbols.manager import SymbolManager
@@ -1358,6 +1441,9 @@ class Handler(BaseHTTPRequestHandler):
     @staticmethod
     def _purge_ticker_data(ticker: str) -> int:
         """Remove enriched data and chart assets for a ticker."""
+        if not _VALID_SYMBOL.match(ticker):
+            logger.warning("_purge_ticker_data: rejected invalid ticker %r", ticker)
+            return 0
         import shutil
         purged = 0
         stock_dir = OUTPUT_STOCK_DATA_DIR
@@ -1368,7 +1454,7 @@ class Handler(BaseHTTPRequestHandler):
                     p.unlink()
                     purged += 1
         asset_dir = DASHBOARD_ARTIFACTS_DIR / "dashboard_assets" / ticker
-        if asset_dir.is_dir():
+        if asset_dir.is_dir() and asset_dir.resolve().parent == (DASHBOARD_ARTIFACTS_DIR / "dashboard_assets").resolve():
             shutil.rmtree(asset_dir, ignore_errors=True)
             purged += 1
         return purged

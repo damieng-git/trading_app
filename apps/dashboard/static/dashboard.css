@@ -65,6 +65,22 @@
       --info: #4a82b8;
       --success: #4a9055;
       --danger: #c04040;
+      --action-entry-bg: #1b5e20;
+      --action-entry-fg: #a5d6a7;
+      --action-scale-bg: #e65100;
+      --action-scale-fg: #ffe0b2;
+      --action-hold-bg: #1a237e;
+      --action-hold-fg: #90caf9;
+      --action-exit-bg: #b71c1c;
+      --action-exit-fg: #ef9a9a;
+      --rating-good-bg: rgba(16,185,129,0.15);
+      --rating-good-fg: #10b981;
+      --rating-neutral-bg: rgba(148,163,184,0.15);
+      --rating-neutral-fg: #94a3b8;
+      --rating-bad-bg: rgba(239,68,68,0.15);
+      --rating-bad-fg: #ef4444;
+      --loader-accent: rgba(59,130,246,0.85);
+      --combo-tooltip-bg: rgba(0,120,60,0.92);
       --shadow-overlay: rgba(42,37,32,0.12);
 
       --trade-c3-win: #c8a030;
@@ -145,6 +161,22 @@
       --combo-c3-fg: #a0dfaa;
       --combo-c4-bg: #8a7030;
       --combo-c4-fg: #f0e8d0;
+      --action-entry-bg: #1b5e20;
+      --action-entry-fg: #a5d6a7;
+      --action-scale-bg: #e65100;
+      --action-scale-fg: #ffe0b2;
+      --action-hold-bg: #1a237e;
+      --action-hold-fg: #90caf9;
+      --action-exit-bg: #b71c1c;
+      --action-exit-fg: #ef9a9a;
+      --rating-good-bg: rgba(16,185,129,0.20);
+      --rating-good-fg: #10b981;
+      --rating-neutral-bg: rgba(148,163,184,0.20);
+      --rating-neutral-fg: #94a3b8;
+      --rating-bad-bg: rgba(239,68,68,0.20);
+      --rating-bad-fg: #ef4444;
+      --loader-accent: rgba(59,130,246,0.85);
+      --combo-tooltip-bg: rgba(0,120,60,0.92);
     }
     /* Global scrollbar theming */
     * {
@@ -307,6 +339,17 @@
     .btn:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px var(--accent-focus-ring);
+      border-color: var(--accent-focus-border);
+    }
+    .tab-group-trigger:focus-visible,
+    .tab-tf-btn:focus-visible,
+    .eur-toggle:focus-visible,
+    .scan-btn:focus-visible,
+    .chip:focus-visible,
+    .modal-close:focus-visible,
+    .pnl-sub-tab:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--accent-focus-ring);
       border-color: var(--accent-focus-border);
     }
     .btn.active {
@@ -604,7 +647,7 @@
       width: 18px;
       height: 18px;
       border: 2px solid var(--border-strong);
-      border-top-color: rgba(59,130,246,0.85);
+      border-top-color: var(--loader-accent);
       border-radius: 999px;
       animation: spin 0.8s linear infinite;
     }
@@ -621,7 +664,7 @@
       font-weight: 600;
       line-height: 1.5;
       white-space: nowrap;
-      background: rgba(0,120,60,0.92);
+      background: var(--combo-tooltip-bg);
       color: var(--on-accent);
       box-shadow: 0 2px 8px var(--shadow-overlay);
       display: none;
@@ -648,7 +691,7 @@
       color: var(--fg);
     }
     #screenerBox {
-      overflow-x: hidden;
+      overflow-x: auto;
       border: 1px solid var(--border);
       border-radius: var(--radius);
     }
@@ -708,21 +751,6 @@
       font-size: 12px;
       display: none;
     }
-    .panel-toggle {
-      position: relative;
-      z-index: 3;
-      cursor: pointer; user-select: none;
-      font-size: 12px; font-weight: 600; color: var(--muted);
-      padding: 6px 12px; margin: 4px 0;
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 6px; letter-spacing: 0.3px;
-      transition: background 0.15s;
-    }
-    .panel-toggle:hover { background: var(--border); }
-    .panel-toggle .panel-arrow {
-      display: inline-block; transition: transform 0.2s; font-size: 10px; margin-right: 4px;
-    }
-    .panel-toggle[data-state="closed"] .panel-arrow { transform: rotate(-90deg); }
     #stockTitle {
       text-align: center; font-size: 24px; font-weight: 700;
       color: var(--fg); padding: 14px 0 8px; letter-spacing: 0.3px;
@@ -759,18 +787,18 @@
       font-size: 10px; font-weight: 700; padding: 2px 8px;
       border-radius: 999px; letter-spacing: 0.3px; margin-left: 4px;
     }
-    .sc-action-entry { background: #1b5e20; color: #a5d6a7; }
-    .sc-action-scale { background: #e65100; color: #ffe0b2; }
-    .sc-action-hold { background: #1a237e; color: #90caf9; }
-    .sc-action-exit { background: #b71c1c; color: #ef9a9a; }
+    .sc-action-entry { background: var(--action-entry-bg); color: var(--action-entry-fg); }
+    .sc-action-scale { background: var(--action-scale-bg); color: var(--action-scale-fg); }
+    .sc-action-hold { background: var(--action-hold-bg); color: var(--action-hold-fg); }
+    .sc-action-exit { background: var(--action-exit-bg); color: var(--action-exit-fg); }
     /* Analyst rating badges */
     .rating-badge {
       display: inline-block; font-size: 10px; font-weight: 700;
       padding: 1px 7px; border-radius: 999px; letter-spacing: 0.3px;
     }
-    .rating-buy { background: rgba(16,185,129,0.15); color: #10b981; }
-    .rating-hold { background: rgba(148,163,184,0.15); color: #94a3b8; }
-    .rating-sell { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .rating-buy { background: var(--rating-good-bg); color: var(--rating-good-fg); }
+    .rating-hold { background: var(--rating-neutral-bg); color: var(--rating-neutral-fg); }
+    .rating-sell { background: var(--rating-bad-bg); color: var(--rating-bad-fg); }
     /* Sidebar sort controls */
     #sidebarSort {
       display: flex;
@@ -864,14 +892,6 @@
       padding: 3px 10px;
       font-size: 11px;
       font-weight: 700;
-    }
-    .filter-label {
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-left: 2px;
     }
     .filter-sep {
       width: 1px;
@@ -1227,7 +1247,7 @@
 .scan-bar {
   display: flex; align-items: center; gap: 10px;
   padding: 5px 16px;
-  background: var(--panel-bg); border-bottom: 1px solid var(--border);
+  background: var(--panel); border-bottom: 1px solid var(--border);
   font-size: 12px; color: var(--fg);
   overflow: hidden;
   transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
@@ -1274,7 +1294,7 @@
 
 /* Add button */
     .btn-add {
-      background: var(--success) !important; color: #fff !important;
+      background: var(--success) !important; color: var(--on-accent) !important;
       font-weight: 700;
     }
     .btn-add:hover { opacity: 0.85; }
@@ -1306,7 +1326,7 @@
     }
     .modal-field input, .modal-field select {
       width: 100%; padding: 6px 8px; font-size: 12px;
-      background: var(--bg-card); border: 1px solid var(--border);
+      background: var(--card-bg); border: 1px solid var(--border);
       border-radius: 4px; color: var(--fg); box-sizing: border-box;
     }
     .modal-row { display: flex; gap: 10px; }
@@ -1317,13 +1337,13 @@
       margin-bottom: 6px; cursor: pointer; transition: background 0.15s;
       display: flex; justify-content: space-between; align-items: center;
     }
-    .modal-result-item:hover { background: var(--bg-card); }
+    .modal-result-item:hover { background: var(--card-bg); }
     .modal-result-info { font-size: 12px; }
     .modal-result-info strong { color: var(--fg); }
     .modal-result-info small { color: var(--muted); }
     .modal-result-btn {
       font-size: 10px; padding: 3px 10px; border-radius: 3px;
-      background: var(--success); color: #fff; border: none;
+      background: var(--success); color: var(--on-accent); border: none;
       font-weight: 700; cursor: pointer; white-space: nowrap;
       align-self: center;
     }
@@ -1341,7 +1361,7 @@
 /* Add Ticker — staging list */
     .add-staging {
       margin-top: 10px; padding: 8px; border: 1px solid var(--border);
-      border-radius: 6px; background: var(--bg-sidebar);
+      border-radius: 6px; background: var(--panel);
     }
     .add-staging-header {
       display: flex; justify-content: space-between; align-items: center;
@@ -1352,7 +1372,7 @@
     .add-staging-chip {
       display: inline-flex; align-items: center; gap: 4px;
       padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
-      background: var(--bg-card); border: 1px solid var(--border); color: var(--fg);
+      background: var(--card-bg); border: 1px solid var(--border); color: var(--fg);
     }
     .add-staging-chip .chip-x {
       cursor: pointer; opacity: 0.6; font-size: 13px; line-height: 1;
@@ -1360,7 +1380,7 @@
     .add-staging-chip .chip-x:hover { opacity: 1; color: var(--danger); }
     .btn-confirm {
       font-size: 13px; padding: 8px 10px; border-radius: var(--radius);
-      background: var(--warning) !important; color: #000 !important;
+      background: var(--warning) !important; color: var(--fg) !important;
       border: 1px solid var(--warning); font-weight: 700; cursor: pointer;
       box-shadow: var(--shadow-sm);
     }
@@ -1370,7 +1390,7 @@
       border-color: var(--border-strong); opacity: 0.7; pointer-events: none;
     }
     .btn-search {
-      background: var(--warning) !important; color: #000 !important;
+      background: var(--warning) !important; color: var(--fg) !important;
       font-weight: 700; border-color: var(--warning);
     }
     .btn-search:hover { filter: brightness(1.1); }
@@ -1390,7 +1410,7 @@
     }
     .pnl-sub-tab:hover { color: var(--fg); }
     .pnl-sub-tab.active {
-      color: var(--fg); background: var(--bg-card);
+      color: var(--fg); background: var(--card-bg);
       border-color: var(--border-strong);
     }
 
@@ -1404,7 +1424,7 @@
     }
     .trades-stat {
       display: flex; flex-direction: column; align-items: center;
-      padding: 4px 12px; background: var(--bg-card); border-radius: 4px;
+      padding: 4px 12px; background: var(--card-bg); border-radius: 4px;
       border: 1px solid var(--border);
     }
     .trades-stat-val { font-size: 14px; font-weight: 700; }
@@ -1420,7 +1440,7 @@
     .trades-table td {
       padding: 6px 8px; border-bottom: 1px solid var(--border);
     }
-    .trades-table tr:hover td { background: var(--bg-card); }
+    .trades-table tr:hover td { background: var(--card-bg); }
     .trade-pnl-pos { color: var(--candle-up); font-weight: 700; }
     .trade-pnl-neg { color: var(--candle-down); font-weight: 700; }
     .trade-btn {
@@ -1430,12 +1450,6 @@
     }
     .trade-btn.close-btn { border-color: var(--danger); color: var(--danger); }
     .trade-btn.delete-btn { border-color: var(--muted); color: var(--muted); }
-
-/* ── Strategy Dropdown ────────────────────────────────────────────── */
-.filter-sep {
-  display: inline-block; width: 1px; height: 18px;
-  background: var(--border); margin: 0 8px; vertical-align: middle;
-}
 
 /* ── Stoof Score Bar ─────────────────────────────────────────────── */
 .stoof-score-badge {

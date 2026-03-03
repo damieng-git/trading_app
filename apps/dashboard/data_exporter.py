@@ -120,8 +120,8 @@ def export_symbol_data(
         from trading_dashboard.indicators.registry import get_kpi_trend_order, get_strategies
         for strat in get_strategies():
             strategy_kpis[strat] = get_kpi_trend_order(strat)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to load strategy KPI registry: %s", exc)
 
     out: dict = {
         "symbol": symbol,

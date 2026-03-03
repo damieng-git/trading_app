@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
@@ -185,6 +186,7 @@ class SymbolManager:
         self._all: Set[str] = set()
         self._groups: Dict[str, Set[str]] = {}
         self._display_names: Dict[str, str] = {}
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Factory methods
@@ -334,21 +336,22 @@ class SymbolManager:
         if not sym:
             return False
 
-        removed = False
-        if group:
-            g = self._groups.get(group)
-            if g and sym in g:
-                g.discard(sym)
-                removed = True
-        else:
-            for g in self._groups.values():
-                if sym in g:
+        with self._lock:
+            removed = False
+            if group:
+                g = self._groups.get(group)
+                if g and sym in g:
                     g.discard(sym)
                     removed = True
+            else:
+                for g in self._groups.values():
+                    if sym in g:
+                        g.discard(sym)
+                        removed = True
 
-        in_any = any(sym in g for g in self._groups.values())
-        if not in_any:
-            self._all.discard(sym)
+            in_any = any(sym in g for g in self._groups.values())
+            if not in_any:
+                self._all.discard(sym)
 
         return removed
 
@@ -363,20 +366,21 @@ class SymbolManager:
         sym = normalize_symbol(symbol)
         if not sym:
             return False
-        src = self._groups.get(from_group)
-        if not src or sym not in src:
-            return False
-        src.discard(sym)
-        self._groups.setdefault(to_group, set()).add(sym)
-        self._all.add(sym)
+        with self._lock:
+            src = self._groups.get(from_group)
+            if not src or sym not in src:
+                return False
+            src.discard(sym)
+            self._groups.setdefault(to_group, set()).add(sym)
+            self._all.add(sym)
 
-        if to_group in self._EXCLUSIVE_GROUPS:
-            for rival in self._EXCLUSIVE_GROUPS - {to_group}:
-                rival_set = self._groups.get(rival)
-                if rival_set and sym in rival_set:
-                    rival_set.discard(sym)
-                    logger.info("Dedup: removed %s from '%s' (moved to '%s')",
-                                sym, rival, to_group)
+            if to_group in self._EXCLUSIVE_GROUPS:
+                for rival in self._EXCLUSIVE_GROUPS - {to_group}:
+                    rival_set = self._groups.get(rival)
+                    if rival_set and sym in rival_set:
+                        rival_set.discard(sym)
+                        logger.info("Dedup: removed %s from '%s' (moved to '%s')",
+                                    sym, rival, to_group)
         return True
 
     # ------------------------------------------------------------------

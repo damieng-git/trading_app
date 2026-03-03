@@ -5,8 +5,11 @@ HTML/CSS/JS template functions for dashboard output.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from trading_dashboard.indicators.registry import (
     DIMENSIONS,
@@ -25,7 +28,8 @@ def _load_config_field(field: str, default: Any = None) -> Any:
     try:
         cfg = json.loads((_CONFIGS_DIR / "config.json").read_text(encoding="utf-8"))
         return cfg.get(field, default)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to load config field %r: %s", field, exc)
         return default
 
 
@@ -114,8 +118,8 @@ def write_lazy_dashboard_shell_html(
     try:
         for strat in _get_strategies():
             _strategy_kpis_map[strat] = _get_kpi_trend_order(strat)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to build strategy KPI map: %s", exc)
     strategy_setups_payload = json.dumps({
         "setups": _strategy_setups_raw,
         "kpis_by_strategy": _strategy_kpis_map,

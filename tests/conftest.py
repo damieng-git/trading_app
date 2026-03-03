@@ -49,3 +49,26 @@ def sample_ohlcv_short() -> pd.DataFrame:
 @pytest.fixture
 def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture
+def ohlcv_with_nans(sample_ohlcv):
+    """OHLCV data with NaN values for edge case testing."""
+    df = sample_ohlcv.copy()
+    df.iloc[10, df.columns.get_loc("Close")] = float("nan")
+    df.iloc[20, df.columns.get_loc("Volume")] = float("nan")
+    df.iloc[30, df.columns.get_loc("High")] = float("nan")
+    return df
+
+
+@pytest.fixture
+def empty_ohlcv():
+    """Empty OHLCV DataFrame."""
+    return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+
+
+@pytest.fixture
+def ohlcv_missing_columns():
+    """OHLCV data missing required columns."""
+    dates = pd.date_range("2020-01-01", periods=100, freq="D")
+    return pd.DataFrame({"Close": np.random.randn(100).cumsum() + 100}, index=dates)

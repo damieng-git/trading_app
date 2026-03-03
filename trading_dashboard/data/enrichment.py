@@ -149,6 +149,10 @@ def translate_and_compute_indicators(
     -------
     (enriched_df, specs) — the enriched DataFrame and list of IndicatorSpec.
     """
+    required_cols = {"Open", "High", "Low", "Close", "Volume"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing required OHLCV columns: {missing}")
     # Use a no-op config path if none provided
     _cfg_path = indicator_config_path or Path("/dev/null")
 
@@ -446,15 +450,15 @@ def translate_and_compute_indicators(
     _mrs_candidates: list[str] = []
     if symbol:
         try:
-            from apps.dashboard.sector_map import get_national_index
+            from trading_dashboard.data.benchmark import get_national_index
             _mrs_candidates.append(get_national_index(symbol))
         except Exception as exc:
             logger.debug("Failed to get national index for Mansfield RS (symbol=%s): %s", symbol, exc)
             pass
     if sector_info:
         try:
-            from apps.dashboard.sector_map import get_benchmark_etf
-            _sector_etf = get_benchmark_etf(
+            from trading_dashboard.data.benchmark import get_benchmark_etf_from_sector
+            _sector_etf = get_benchmark_etf_from_sector(
                 sector_info.get("sector", ""),
                 sector_info.get("industry", ""),
                 sector_info.get("geo", "US"),

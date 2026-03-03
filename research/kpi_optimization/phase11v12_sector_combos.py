@@ -22,6 +22,7 @@ import pandas as pd
 REPO_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_DIR))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "legacy"))
 
 from trading_dashboard.kpis.catalog import compute_kpi_state_map
 from trading_dashboard.kpis.rules import STATE_BULL

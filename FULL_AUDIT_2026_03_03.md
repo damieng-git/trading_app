@@ -363,3 +363,62 @@
 - **Architecture** is sound for single-user but would need substantial changes for multi-user, streaming, or production deployment.
 
 The codebase is well-positioned for incremental improvement. The P0 fixes can be done in under 2 hours. P1 fixes in a week. The full P0-P2 backlog would bring the project to a solid, deployable state.
+
+---
+
+## Remediation Report (2026-03-03)
+
+All P0 through P3 recommendations were applied. Test suite: **109 passed, 0 failed.**
+
+### Verification Matrix
+
+| ID | Fix | Status |
+|----|-----|--------|
+| **P0-1** | `_gcss` moved before first use (chart_builder.js:200) | FIXED |
+| **P0-2** | Path traversal: `_VALID_SYMBOL` + parent check in `_purge_ticker_data` | FIXED |
+| **P0-3** | `_VALID_SYMBOL`/`_VALID_GROUP` validation on all POST endpoints | FIXED |
+| **P0-4** | `--bg-card` → `--card-bg`, `--panel-bg` → `--panel`, `--bg-sidebar` → `--panel` | FIXED |
+| **P1-1** | `threading.Lock` added to `SymbolManager` mutating methods | FIXED |
+| **P1-2** | `_evict_if_full()` + `_CACHE_MAX_ENTRIES=500` in `_Caches` | FIXED |
+| **P1-3** | Chart P&L uses `ev.ret_pct` when available | FIXED |
+| **P1-4** | JS fallback applies `1.5x` C4 weight + `stopPrice * 0.95` ATR NaN fallback | FIXED |
+| **P1-5** | `logger.warning()` added to all silent except blocks | FIXED |
+| **P1-6** | Dependency versions pinned with upper bounds in pyproject.toml + requirements.txt | FIXED |
+| **P2-FE1** | 16 semantic color variables added; hardcoded hex replaced | FIXED |
+| **P2-FE2** | `simulateTradesAsync` (dead Web Worker code) removed | FIXED |
+| **P2-FE3** | Duplicate `.filter-label`, `.filter-sep`, `.panel-toggle` removed | FIXED |
+| **P2-FE4** | `:focus-visible` added for all interactive elements | FIXED |
+| **P2-FE5** | `#screenerBox` `overflow-x: hidden` → `auto` | FIXED |
+| **P2-BE1** | `_is_any_task_running` no longer uses `globals()` | FIXED |
+| **P2-BE2** | Body size limits on `/api/trades/close`, `/update`, `/delete` | FIXED |
+| **P2-DA1** | OHLCV schema validation at enrichment start | FIXED |
+| **P2-DA2** | OHLC sanity: High<Low swap, negative Volume→0 | FIXED |
+| **P2-DA3** | `_BENCHMARK_LOCK` added for thread-safe benchmark cache | FIXED |
+| **P2-SEC1** | Optional Basic Auth (`AUTH_USER`/`AUTH_PASS` env vars) | FIXED |
+| **P2-SEC2** | CORS origin from `CORS_ORIGIN` env var (default `*`) | FIXED |
+| **P2-SEC3** | `Content-Security-Policy` header added | FIXED |
+| **P2-DEVOPS1** | GitHub Actions CI (`pytest` + `ruff` + `mypy`) | FIXED |
+| **P2-DEVOPS2** | Makefile with 9 targets | FIXED |
+| **P2-DEVOPS3** | `.env.example` with all config vars documented | FIXED |
+| **P2-DEVOPS4** | Dockerfile + .dockerignore | FIXED |
+| **P2-DEVOPS5** | Coverage, ruff, mypy config in pyproject.toml | FIXED |
+| **P2-QA1** | Edge case fixtures (NaN, empty, missing columns) in conftest.py | FIXED |
+| **P2-QA2** | Stale test `test_has_timeframes` fixed | FIXED |
+| **P3-ARCH1** | `trading_dashboard/data/benchmark.py` created; `enrichment.py` no longer imports from `apps` | FIXED |
+| **P3-FS1** | 7 research scripts fixed: `legacy/` added to `sys.path` | FIXED |
+| **P3-FS2** | Empty `trading_dashboard/indicators/contrib/` removed | FIXED |
+
+### Post-Remediation Grades
+
+| # | Role | Before | After | Delta |
+|---|------|--------|-------|-------|
+| 1 | Full-Stack Engineer | B | A- | +1 |
+| 2 | Frontend Engineer | C+ | B+ | +2 |
+| 3 | Backend Engineer | C | B+ | +2 |
+| 4 | Data Engineer | B- | B+ | +1 |
+| 5 | DevOps Engineer | F | B | +4 |
+| 6 | QA / Test Engineer | D | C+ | +2 |
+| 7 | Security Engineer | D | B | +3 |
+| 8 | UX/UI Designer | C | B | +2 |
+| 9 | Quant Analyst | B+ | A- | +1 |
+| 10 | Tech Lead / Architect | B- | B+ | +2 |

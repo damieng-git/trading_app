@@ -229,8 +229,8 @@ def run_screener(
                 if not has_recent_break:
                     sr_passed.discard(sym)
                     sr_blocked += 1
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("SR Break check failed for %s: %s", sym, exc)
         logger.info("SR Break pre-filter: %d/%d passed (%d blocked)",
                     len(sr_passed), sr_checked, sr_blocked)
     except ImportError:
