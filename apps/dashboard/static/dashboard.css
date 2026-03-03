@@ -710,7 +710,8 @@
     /* Screener table */
     #screener table {
       border-collapse: collapse;
-      width: 100%;
+      width: 125%;
+      min-width: 125%;
       table-layout: fixed;
       font-size: 12px;
     }

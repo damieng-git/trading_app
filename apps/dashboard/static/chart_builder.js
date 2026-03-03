@@ -1273,7 +1273,7 @@
     const layout = {
       title: titleStr, template: "plotly_white", autosize: false,
       showlegend: false,
-      margin: { l: 160, r: 28, t: 70, b: 40 }, height: 2800,
+      margin: { l: Math.round(160 * 1.25), r: 28, t: 70, b: 40 }, height: 2800,
       hovermode: "x unified", spikedistance: -1, hoverdistance: -1,
       shapes: shapes,
       meta: { combo_zones: comboZones, pnl_trades: data._pnlTrades || [], pnl_stats_fn: data._pnlStatsText || null, combo_3_kpis: combo3kpis, combo_4_kpis: combo4kpis },

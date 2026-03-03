@@ -1246,3 +1246,165 @@ Located in `build_dashboard.py`. Steps:
 6. Update `sector_map.json` with fundamentals
 7. Rebuild `screener_summary.json` (merges new + existing enriched data)
 8. Report progress via callback (used by SSE)
+
+---
+
+## 16. Multi-Strategy Trading System (Phase 20C)
+
+### 16.1 Strategy Matrix
+
+Three validated trading strategies operate across two timeframes:
+
+| Trading Style | Entry TF | Exit TF | Frequency | Avg Hold | Validation |
+|---|---|---|---|---|---|
+| **Dip Buy** | 1D | 1W | Daily scan | ~2 weeks | P20C (1D onset + 1W exit) |
+| **Swing** | 1W | 1W | Weekly scan | 4–7 weeks | P20B READY (4/4 folds) |
+| **Trend Position** | 1W | 1W | Weekly scan | 7+ weeks | P20B READY (4/4 folds) |
+
+**Priority** (for conflicts): Trend Position > Swing > Dip Buy.
+
+**TF mapping in the dashboard**:
+- Screener TF `1D`: shows 1D entry signals with 1W-governed exit
+- Screener TF `1W`: shows 1W entry/exit (self-contained swing + trend)
+- Screener TF `4H`: unchanged (v6/Stoof only, kept for intraday visual)
+
+### 16.2 Validated Combo Registry
+
+All combos use **mixed polarity** — each KPI has a polarity (`+1` = bullish, `-1` = bearish).
+
+#### Dip Buy (1D entry + 1W exit)
+
+| # | Entry Combo (1D) | Polarities | Trades | HR | PF | Avg Ret |
+|---|---|---|---|---|---|---|
+| 1 | NWSm + ADX + WT + SQZ + MACD | +1, −1, −1, −1, −1 | 404 | 90.1% | 15.4 | 5.67% |
+| 2 | NWSm + ADX + WT + SQZ | +1, −1, −1, −1 | 488 | 85.9% | 9.3 | 5.15% |
+| 3 | NWSm + ADX + WT | +1, −1, −1 | 958 | 73.1% | 3.6 | 3.13% |
+
+Exit managed by 1W `NWSm(+)+ADX(−)+Stoch(+)` exit KPIs + ATR trailing stop.
+
+#### Swing (1W self-contained)
+
+| # | Combo (1W) | Polarities | 4-fold | Score |
+|---|---|---|---|---|
+| 1 | NWSm + Stoch + cRSI | +1, +1, +1 | 4/4 | 1207 |
+| 2 | NWSm + cRSI + Vol>MA | +1, +1, +1 | 4/4 | 974 |
+| 3 | NWSm + DEMA + Stoch + cRSI | +1, +1, +1, +1 | 4/4 | 900 |
+
+#### Trend Position (1W self-contained)
+
+| # | Combo (1W) | Polarities | 4-fold | Score |
+|---|---|---|---|---|
+| 1 | NWSm + DEMA + cRSI | +1, +1, +1 | 4/4 | 928 |
+| 2 | NWSm + DEMA + Stoch | +1, +1, +1 | 4/4 | 912 |
+
+### 16.3 Polarity-Aware Position Engine
+
+The position engine (`strategy.py`) supports mixed-polarity combos:
+
+- `_kpi_match(st, kpi_name, polarity, idx)` → checks `state == polarity` (not hardcoded `== 1`)
+- `_all_match(st, kpis, pols, idx)` → all KPIs match their expected polarity
+- Onset detection: combo transitions from inactive → active (polarity-aware)
+- Exit KPI invalidation: uses the same polarity-aware check
+
+### 16.4 Config Format (`config.json`)
+
+```json
+"strategy_setups": {
+  "v6": { ... },
+  "stoof": { ... },
+  "dip_buy": {
+    "label": "Dip Buy",
+    "entry_type": "polarity_combo",
+    "description": "1D dip-buy entry with 1W-governed exit (~2 week hold)",
+    "entry_tf": "1D",
+    "exit_tf": "1W",
+    "combos": {
+      "c3": {
+        "kpis": ["Nadaraya-Watson Smoother", "ADX & DI", "WT_LB"],
+        "pols": [1, -1, -1]
+      },
+      "c4": {
+        "kpis": ["Nadaraya-Watson Smoother", "ADX & DI", "WT_LB", "SQZMOM_LB"],
+        "pols": [1, -1, -1, -1]
+      }
+    },
+    "exit_combos": {
+      "kpis": ["Nadaraya-Watson Smoother", "ADX & DI", "Stoch_MTM"],
+      "pols": [1, -1, 1]
+    }
+  },
+  "swing": {
+    "label": "Swing",
+    "entry_type": "polarity_combo",
+    "description": "1W swing trading with momentum confirmation (4-7 week hold)",
+    "entry_tf": "1W",
+    "exit_tf": "1W",
+    "combos": {
+      "c3": {
+        "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI"],
+        "pols": [1, 1, 1]
+      },
+      "c4": {
+        "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
+        "pols": [1, 1, 1, 1]
+      }
+    }
+  },
+  "trend": {
+    "label": "Trend Position",
+    "entry_type": "polarity_combo",
+    "description": "1W trend-following position trading (7+ week hold)",
+    "entry_tf": "1W",
+    "exit_tf": "1W",
+    "combos": {
+      "c3": {
+        "kpis": ["Nadaraya-Watson Smoother", "DEMA", "cRSI"],
+        "pols": [1, 1, 1]
+      },
+      "c4": {
+        "kpis": ["Nadaraya-Watson Smoother", "DEMA", "Stoch_MTM", "cRSI"],
+        "pols": [1, 1, 1, 1]
+      }
+    }
+  }
+}
+```
+
+### 16.5 Screener Multi-Strategy Display
+
+Each stock row shows a **compact multi-strategy badge** column:
+
+| Badge | Color | Meaning |
+|---|---|---|
+| `D` | Gold | Dip Buy entry or hold |
+| `S` | Blue | Swing entry or hold |
+| `T` | Purple | Trend Position entry or hold |
+| `—` | Muted | No active position for this strategy |
+
+When a stock has multiple active strategies, all relevant badges appear.
+Priority for sorting: T > S > D (matching user preference for longer TF exits).
+
+### 16.6 Position Conflict Resolution
+
+Multiple strategies can be active on the same stock simultaneously.
+Display all independently — the user decides which to follow based on their
+trading preference. The priority ordering (T > S > D) only affects default
+sort order in the screener, not trade execution.
+
+### 16.7 Chart Integration
+
+- **Combo shading**: different colors per strategy (gold = Dip Buy, blue = Swing, purple = Trend)
+- **Entry markers**: triangle-up with strategy label (D/S/T)
+- **Exit markers**: triangle-down with same strategy color
+- **KPI heatmap**: filtered to show only the active strategy's KPIs
+- **TrendScore bar**: strategy-aware scoring
+
+### 16.8 Adding New KPIs/Strategies — Checklist
+
+When adding a new strategy:
+
+1. Add the strategy definition to `config.json` → `strategy_setups` with `entry_type: "polarity_combo"`, KPI lists, and polarities
+2. Register its KPIs in `indicator_config.json` if new
+3. The polarity-aware position engine handles the rest automatically
+4. The strategy dropdown, screener badges, and chart integration all read from `strategy_setups`
+5. Rebuild the dashboard: `python -m trading_dashboard.cli dashboard build`

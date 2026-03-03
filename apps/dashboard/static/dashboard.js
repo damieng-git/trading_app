@@ -1462,7 +1462,7 @@
       lowerLayout.yaxis  = cleanAxis(layout.yaxis5, {domain: [_brBot, _brTop], anchor: "x"});
       lowerLayout.yaxis2 = cleanAxis(layout.yaxis6, {domain: [_trBot, _trTop], anchor: "x2"});
       lowerLayout.autosize = false;
-      const _kpiRowPx = 30;
+      const _kpiRowPx = Math.round(30 * 1.25); // +25% heatmap row size
       const _lowerH = Math.max(200, (_nBr + _nTr) * _kpiRowPx + 80);
       lowerLayout.height = _lowerH;
       _chartHeights.chartLower = _lowerH;

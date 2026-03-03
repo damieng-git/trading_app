@@ -61,6 +61,12 @@
 
     var table = document.createElement("table");
     var thead = document.createElement("thead");
+    var COL_SCALE = 1.25; // +25% requested
+    function scalePct(pct) {
+      var n = parseFloat(String(pct).replace("%", ""));
+      if (!isFinite(n)) return pct;
+      return (n * COL_SCALE).toFixed(2).replace(/\.00$/, "") + "%";
+    }
     var hdr = [
       ["symbol", "Name", "10%"],
       ["_ticker", "Ticker", "5%"],
@@ -76,7 +82,11 @@
       ["_delete", "", "3%"],
     ];
     var colgroup = document.createElement("colgroup");
-    hdr.forEach(function(item) { var col = document.createElement("col"); col.style.width = item[2]; colgroup.appendChild(col); });
+    hdr.forEach(function(item) {
+      var col = document.createElement("col");
+      col.style.width = scalePct(item[2]);
+      colgroup.appendChild(col);
+    });
     table.appendChild(colgroup);
     var _sortable = new Set(["symbol", "_ticker", "market_cap", "_price", "_action_tf", "_recommendation", "pe_vs_sector"]);
     var trh = document.createElement("tr");
@@ -113,7 +123,7 @@
         var td = document.createElement("td");
         if (_centered.has(k)) td.style.textAlign = "center";
         if (k === "symbol") {
-          td.style.maxWidth = "140px";
+          td.style.maxWidth = "175px";
           td.style.overflow = "hidden";
           td.style.textOverflow = "ellipsis";
           var fullName = r.name || r.symbol || "";
