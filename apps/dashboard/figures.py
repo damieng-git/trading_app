@@ -12,7 +12,6 @@ from plotly.subplots import make_subplots
 
 from trading_dashboard.data.enrichment import IndicatorSpec
 
-from .figures_layout import _safe_plotly_json_dumps, _sanitize_for_json
 from .figures_indicators import (
     _add_combo_overlay,
     _add_exit_flow_overlay,
@@ -1337,9 +1336,7 @@ if __name__ == "__main__":
     import sys
     try:
         from apps.dashboard.figures import (
-            build_figure_for_symbol_timeframe,
             compute_kpi_timeline_matrix,
-            _safe_plotly_json_dumps,
         )
         print("figures module verification OK: build_figure_for_symbol_timeframe, compute_kpi_timeline_matrix, _safe_plotly_json_dumps", file=sys.stderr)
     except Exception as e:

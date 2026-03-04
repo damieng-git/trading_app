@@ -104,8 +104,8 @@ def compute_position_events(
 
     T, M, K = params["T"], params["M"], params["K"]
     cl = df["Close"].to_numpy(float)
-    hi = df["High"].to_numpy(float)
-    lo = df["Low"].to_numpy(float)
+    df["High"].to_numpy(float)
+    df["Low"].to_numpy(float)
     op = df["Open"].to_numpy(float) if "Open" in df.columns else cl.copy()
     atr = compute_atr(df, ATR_PERIOD).to_numpy(float)
     n = len(df)
@@ -329,7 +329,7 @@ def _status_from_events(
     nb_now = sum(1 for kk in kpis if not _kpi_bull(kk, n - 1))
     stage = "lenient" if bars_held <= T else "strict"
 
-    atr_last = atr[n - 1] if n - 1 < len(atr) else np.nan
+    atr[n - 1] if n - 1 < len(atr) else np.nan
     stop_trail = last.get("stop_trail", [])
     stop = stop_trail[-1] if stop_trail else None
     if stop is None:
@@ -450,8 +450,8 @@ def compute_polarity_position_events(
 
     T, M, K = params["T"], params["M"], params["K"]
     cl = df["Close"].to_numpy(float)
-    hi = df["High"].to_numpy(float)
-    lo = df["Low"].to_numpy(float)
+    df["High"].to_numpy(float)
+    df["Low"].to_numpy(float)
     op = df["Open"].to_numpy(float) if "Open" in df.columns else cl.copy()
     atr = compute_atr(df, ATR_PERIOD).to_numpy(float)
     n = len(df)

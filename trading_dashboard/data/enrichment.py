@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
+from trading_dashboard.data.downloader import load_benchmark_close
 from trading_dashboard.indicators import (
     adx_di,
     atr_stop_loss_finder,
@@ -24,20 +25,18 @@ from trading_dashboard.indicators import (
     breakout_targets,
     cci_chop_bb,
     crsi,
-    donchian_trend_ribbon,
     dema,
+    donchian_trend_ribbon,
     gk_trend_ribbon,
+    gmma,
     ichimoku,
     impulse_trend_levels,
     luxalgo_normalized,
-    madrid_ma_ribbon_state,
-    gmma,
-    macd,
     ma_ribbon,
+    macd,
+    madrid_ma_ribbon_state,
     mansfield_relative_strength,
     nadaraya_watson_endpoint,
-    nadaraya_watson_envelope_luxalgo,
-    nadaraya_watson_envelope_luxalgo_std,
     nadaraya_watson_repainting,
     nwe_color_and_arrows,
     obv_oscillator,
@@ -45,17 +44,16 @@ from trading_dashboard.indicators import (
     parabolic_sar,
     price_action_index,
     risk_indicator,
+    rsi_strength_consolidation_zeiierman,
     squeeze_momentum_lazybear,
+    sr_breaks_retests,
     stoch_momentum_index,
     supertrend,
-    rsi_strength_consolidation_zeiierman,
-    sr_breaks_retests,
     turtle_trade_channels,
     ut_bot_alert,
     wavetrend_lazybear,
     wt_mtf_signal,
 )
-from trading_dashboard.data.downloader import load_benchmark_close
 
 logger = logging.getLogger(__name__)
 

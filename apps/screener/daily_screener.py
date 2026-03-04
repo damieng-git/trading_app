@@ -34,6 +34,7 @@ from apps.dashboard.config_loader import (
     OHLCV_CACHE_DIR,
     VALID_TIMEFRAMES,
 )
+
 _CONFIGS_DIR = Path(__file__).resolve().parent / "configs"
 _OUTPUT_PATH = DASHBOARD_ARTIFACTS_DIR / "daily_screener.json"
 
@@ -105,18 +106,18 @@ def run_screener(
 
     Returns a dict with c3_hits, c4_hits, and metadata.
     """
+    from apps.screener.lean_enrichment import compute_lean_indicators
     from apps.screener.universe import (
+        DEFAULT_MIN_BARS,
+        DEFAULT_MIN_DOLLAR_VOLUME,
+        DEFAULT_MIN_MARKET_CAP,
+        DEFAULT_MIN_PRICE,
         apply_quality_filters,
         exclude_indices_and_leveraged,
         load_universe,
-        DEFAULT_MIN_PRICE,
-        DEFAULT_MIN_DOLLAR_VOLUME,
-        DEFAULT_MIN_MARKET_CAP,
-        DEFAULT_MIN_BARS,
     )
-    from apps.screener.lean_enrichment import compute_lean_indicators
     from trading_dashboard.data.downloader import download_daily_batch
-    from trading_dashboard.kpis.catalog import compute_kpi_state_map, KPI_TREND_ORDER
+    from trading_dashboard.kpis.catalog import KPI_TREND_ORDER, compute_kpi_state_map
 
     t0 = time.perf_counter()
     out_path = output_path or _OUTPUT_PATH
@@ -224,7 +225,7 @@ def run_screener(
                 sr_df = sr_breaks_retests(df_raw, lookback=20, atr_len=200)
                 sr_state = sr_df["SR_state"].to_numpy()
                 tail = sr_state[-_SR_BREAK_LOOKBACK:]
-                prev = sr_state[max(0, len(sr_state) - _SR_BREAK_LOOKBACK - 1):-_SR_BREAK_LOOKBACK] if len(sr_state) > _SR_BREAK_LOOKBACK else sr_state[:0]
+                sr_state[max(0, len(sr_state) - _SR_BREAK_LOOKBACK - 1):-_SR_BREAK_LOOKBACK] if len(sr_state) > _SR_BREAK_LOOKBACK else sr_state[:0]
                 has_recent_break = False
                 for j in range(len(tail)):
                     abs_idx = len(sr_state) - _SR_BREAK_LOOKBACK + j

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-from apps.dashboard.strategy import EXIT_PARAMS as _EXIT_FLOW_V4_PARAMS, ATR_PERIOD as _ATR_PERIOD
+from apps.dashboard.strategy import EXIT_PARAMS as _EXIT_FLOW_V4_PARAMS
 
 
 def compute_kpi_timeline_matrix(df: pd.DataFrame, *, precomputed_state: dict | None = None) -> dict:
@@ -32,8 +30,19 @@ def compute_kpi_timeline_matrix(df: pd.DataFrame, *, precomputed_state: dict | N
         return {"kpis": [], "z": [], "custom": []}
 
     # Single-source KPI rules + ordering
-    from trading_dashboard.kpis.catalog import KPI_BREAKOUT_ORDER, KPI_ORDER, KPI_TREND_ORDER, compute_kpi_state_map  # local import
-    from trading_dashboard.kpis.rules import STATE_BEAR, STATE_BULL, STATE_NA, STATE_NEUTRAL, state_from_signals  # local import
+    from trading_dashboard.kpis.catalog import (  # local import
+        KPI_BREAKOUT_ORDER,
+        KPI_ORDER,
+        KPI_TREND_ORDER,
+        compute_kpi_state_map,
+    )
+    from trading_dashboard.kpis.rules import (  # local import
+        STATE_BEAR,
+        STATE_BULL,
+        STATE_NA,
+        STATE_NEUTRAL,
+        state_from_signals,
+    )
 
     kpi_trend_order = KPI_TREND_ORDER
     kpi_breakout_order = KPI_BREAKOUT_ORDER
@@ -118,7 +127,7 @@ def _add_exit_flow_overlay(
     """
     tf_key = timeframe.upper()
     params = _EXIT_FLOW_V4_PARAMS.get(tf_key, _EXIT_FLOW_V4_PARAMS["1D"])
-    T, M, K = int(params["T"]), int(params["M"]), float(params["K"])
+    T, M, _K = int(params["T"]), int(params["M"]), float(params["K"])
     n_bars = len(df)
     if n_bars < 20:
         return
@@ -126,7 +135,7 @@ def _add_exit_flow_overlay(
     close = df["Close"].to_numpy(dtype=float)
     high = df["High"].to_numpy(dtype=float)
     low_arr = df["Low"].to_numpy(dtype=float)
-    open_arr = df["Open"].to_numpy(dtype=float) if "Open" in df.columns else close.copy()
+    df["Open"].to_numpy(dtype=float) if "Open" in df.columns else close.copy()
     price_lo, price_hi = float(np.nanmin(low_arr)), float(np.nanmax(high))
     price_range = max(price_hi - price_lo, 1.0)
 

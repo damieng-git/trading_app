@@ -9,8 +9,10 @@ from typing import Dict
 import pandas as pd
 
 from apps.dashboard.strategy import (
-    compute_position_status, compute_trailing_pnl,
-    compute_polarity_position_status, compute_polarity_trailing_pnl,
+    compute_polarity_position_status,
+    compute_polarity_trailing_pnl,
+    compute_position_status,
+    compute_trailing_pnl,
 )
 
 logger = logging.getLogger(__name__)
@@ -221,7 +223,8 @@ def build_screener_rows(
 
             # Per-dimension aggregates for spider charts
             try:
-                from trading_dashboard.indicators.registry import get_dimension_map as _gdm, DIMENSIONS as _DIMS
+                from trading_dashboard.indicators.registry import DIMENSIONS as _DIMS
+                from trading_dashboard.indicators.registry import get_dimension_map as _gdm
                 _dmap = _gdm()
                 dim_bull: Dict[str, int] = {d: 0 for d in _DIMS}
                 dim_bear: Dict[str, int] = {d: 0 for d in _DIMS}

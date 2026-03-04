@@ -2,41 +2,44 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from trading_dashboard.indicators import (
-    sma, ema, rma, dema, wma, atr, true_range,
-    highest, lowest, stdev, hlc3, rsi_wilder,
-    supertrend,
-    bollinger_bands,
-    macd,
     adx_di,
-    wavetrend_lazybear,
-    obv_oscillator,
-    obv_oscillator_dual_ema,
-    squeeze_momentum_lazybear,
-    stoch_momentum_index,
-    ut_bot_alert,
-    turtle_trade_channels,
+    atr,
     atr_stop_loss_finder,
-    parabolic_sar,
-    gmma,
-    ma_ribbon,
+    bollinger_bands,
+    cci_chop_bb,
     crsi,
+    dema,
     donchian_trend_ribbon,
+    ema,
+    gmma,
+    ichimoku,
+    luxalgo_normalized,
+    ma_ribbon,
+    macd,
     madrid_ma_ribbon_state,
+    mansfield_relative_strength,
     nadaraya_watson_endpoint,
     nadaraya_watson_repainting,
     nwe_color_and_arrows,
-    ichimoku,
-    mansfield_relative_strength,
-    sr_breaks_retests,
-    cci_chop_bb,
-    luxalgo_normalized,
-    risk_indicator,
+    obv_oscillator,
+    obv_oscillator_dual_ema,
+    parabolic_sar,
     price_action_index,
+    risk_indicator,
+    rma,
+    rsi_wilder,
+    sma,
+    squeeze_momentum_lazybear,
+    sr_breaks_retests,
+    stoch_momentum_index,
+    supertrend,
+    true_range,
+    turtle_trade_channels,
+    ut_bot_alert,
+    wavetrend_lazybear,
 )
 
 
@@ -179,8 +182,8 @@ class TestNadarayaWatson:
 
 class TestKPIStates:
     def test_compute_kpi_state_map(self, sample_ohlcv):
-        from trading_dashboard.kpis.catalog import compute_kpi_state_map
         from trading_dashboard.data.enrichment import translate_and_compute_indicators
+        from trading_dashboard.kpis.catalog import compute_kpi_state_map
 
         enriched, _ = translate_and_compute_indicators(sample_ohlcv)
         states = compute_kpi_state_map(enriched)
@@ -193,7 +196,7 @@ class TestKPIStates:
 
 class TestEdgeCases:
     def test_empty_dataframe(self):
-        empty = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+        pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
         result = sma(pd.Series(dtype=float), 10)
         assert len(result) == 0
 
@@ -376,8 +379,8 @@ class TestStoofKPIStates:
     """Integration: Stoof KPI states from enriched data."""
 
     def test_stoof_states_valid(self, sample_ohlcv):
-        from trading_dashboard.kpis.catalog import compute_kpi_state_map
         from trading_dashboard.data.enrichment import translate_and_compute_indicators
+        from trading_dashboard.kpis.catalog import compute_kpi_state_map
 
         enriched, _ = translate_and_compute_indicators(sample_ohlcv)
         states = compute_kpi_state_map(enriched)

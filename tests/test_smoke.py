@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import json
 
-import numpy as np
 import pandas as pd
-import pytest
 
 
 class TestScreenerBuilder:
     def test_build_screener_rows(self, sample_ohlcv):
-        from trading_dashboard.data.enrichment import translate_and_compute_indicators
         from apps.dashboard.screener_builder import build_screener_rows
+        from trading_dashboard.data.enrichment import translate_and_compute_indicators
 
         enriched, _ = translate_and_compute_indicators(sample_ohlcv)
         all_data = {"TEST": {"1D": enriched}}
@@ -36,8 +34,8 @@ class TestScreenerBuilder:
         assert isinstance(row["kpi_states"], dict)
 
     def test_screener_row_has_position_status(self, sample_ohlcv):
-        from trading_dashboard.data.enrichment import translate_and_compute_indicators
         from apps.dashboard.screener_builder import build_screener_rows
+        from trading_dashboard.data.enrichment import translate_and_compute_indicators
 
         enriched, _ = translate_and_compute_indicators(sample_ohlcv)
         rows_by_tf, _, _ = build_screener_rows(
@@ -59,8 +57,8 @@ class TestScreenerBuilder:
 
 class TestDataExporter:
     def test_export_symbol_data(self, sample_ohlcv):
-        from trading_dashboard.data.enrichment import translate_and_compute_indicators
         from apps.dashboard.data_exporter import export_symbol_data
+        from trading_dashboard.data.enrichment import translate_and_compute_indicators
 
         enriched, _ = translate_and_compute_indicators(sample_ohlcv)
         result = export_symbol_data("TEST", "1D", enriched, display_name="Test Corp")
@@ -72,8 +70,8 @@ class TestDataExporter:
         assert len(result["x"]) == len(enriched)
 
     def test_export_json_serializable(self, sample_ohlcv):
-        from trading_dashboard.data.enrichment import translate_and_compute_indicators
         from apps.dashboard.data_exporter import export_symbol_data_json
+        from trading_dashboard.data.enrichment import translate_and_compute_indicators
 
         enriched, _ = translate_and_compute_indicators(sample_ohlcv)
         json_str = export_symbol_data_json("TEST", "1D", enriched)
@@ -89,8 +87,8 @@ class TestDataExporter:
 
 class TestKPITimeline:
     def test_compute_kpi_timeline_matrix(self, sample_ohlcv):
-        from trading_dashboard.data.enrichment import translate_and_compute_indicators
         from apps.dashboard.figures import compute_kpi_timeline_matrix
+        from trading_dashboard.data.enrichment import translate_and_compute_indicators
 
         enriched, _ = translate_and_compute_indicators(sample_ohlcv)
         result = compute_kpi_timeline_matrix(enriched)

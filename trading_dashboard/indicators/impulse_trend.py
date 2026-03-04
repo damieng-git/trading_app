@@ -11,7 +11,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
-from ._base import ema as _ema, sma as _sma
+from ._base import ema as _ema
+from ._base import sma as _sma
 
 
 def impulse_trend_levels(

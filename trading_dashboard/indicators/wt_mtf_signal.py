@@ -198,8 +198,8 @@ def wt_mtf_signal(
                     and bear_slope and bear_spread and rsi_bear_ok and macd_bear_ok)
 
         # Onset (not true on previous bar — simplified: first bar of raw signal)
-        prev_in_deep_os = wt1_arr[i - 1] < os_level1 and wt2_arr[i - 1] < os_level1
-        prev_in_deep_ob = wt1_arr[i - 1] > ob_level1 and wt2_arr[i - 1] > ob_level1
+        wt1_arr[i - 1] < os_level1 and wt2_arr[i - 1] < os_level1
+        wt1_arr[i - 1] > ob_level1 and wt2_arr[i - 1] > ob_level1
 
         # Cooldown
         bull_cooldown_ok = (i - last_bull_bar) > cooldown_bars

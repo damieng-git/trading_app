@@ -7,7 +7,6 @@ import pandas as pd
 
 from ._base import rma, sma
 
-
 AdxSmoothing = Literal["SMA", "RMA"]
 
 

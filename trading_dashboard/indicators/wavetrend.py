@@ -6,7 +6,6 @@ import pandas as pd
 
 from ._base import ema, hlc3, sma
 
-
 WTSource = Literal["hlc3", "close"]
 
 

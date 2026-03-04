@@ -11,7 +11,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
-from ._base import ema as _ema, atr as _atr
+from ._base import atr as _atr
+from ._base import ema as _ema
 
 
 def gk_trend_ribbon(

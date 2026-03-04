@@ -52,7 +52,14 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
-ignore = ["E501"]
+ignore = ["E501", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"apps/dashboard/serve_dashboard.py" = ["E402"]
+"apps/dashboard/data_exporter.py" = ["E402"]
+"apps/dashboard/templates.py" = ["E402"]
+"apps/screener/daily_screener.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.11"

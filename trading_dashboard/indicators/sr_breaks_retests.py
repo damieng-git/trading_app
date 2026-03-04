@@ -12,7 +12,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from . import atr as calc_atr, highest, lowest
+from . import atr as calc_atr
+from . import highest, lowest
 
 
 def _delta_volume(df: pd.DataFrame) -> pd.Series:

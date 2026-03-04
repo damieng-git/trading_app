@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from ._base import sma, highest, lowest
+from ._base import highest, lowest, sma
 
 
 def luxalgo_normalized(

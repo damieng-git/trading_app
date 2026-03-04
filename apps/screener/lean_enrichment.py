@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
@@ -48,8 +48,8 @@ def compute_lean_indicators(
 
     Returns a new DataFrame with the original OHLCV columns plus indicator columns.
     """
+    from trading_dashboard.indicators import crsi, gk_trend_ribbon, madrid_ma_ribbon_state
     from trading_dashboard.indicators.nadaraya_watson import _nw_kernel, nwe_color_and_arrows
-    from trading_dashboard.indicators import madrid_ma_ribbon_state, gk_trend_ribbon, crsi
 
     cfg = indicator_config_path
 

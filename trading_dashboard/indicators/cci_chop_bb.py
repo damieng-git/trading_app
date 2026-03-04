@@ -14,7 +14,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
-from ._base import sma, ema, stdev, highest, lowest, hlc3 as _hlc3
+from ._base import ema, highest, lowest, sma, stdev
+from ._base import hlc3 as _hlc3
 
 
 def cci_chop_bb(

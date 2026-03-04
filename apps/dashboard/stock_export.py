@@ -15,7 +15,6 @@ import sys
 
 from .build_dashboard import main
 
-
 if __name__ == "__main__":
     raise SystemExit(main(["--mode", "stock_export", *sys.argv[1:]]))
 

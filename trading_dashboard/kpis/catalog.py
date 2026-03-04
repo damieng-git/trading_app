@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-import numpy as np
 import pandas as pd
 
 from .rules import (
@@ -20,11 +19,12 @@ from .rules import (
     state_from_signals,
 )
 
-
 try:
     from trading_dashboard.indicators.registry import (
-        get_kpi_trend_order as _reg_trend,
         get_kpi_breakout_order as _reg_breakout,
+    )
+    from trading_dashboard.indicators.registry import (
+        get_kpi_trend_order as _reg_trend,
     )
     KPI_TREND_ORDER: List[str] = _reg_trend()
     KPI_BREAKOUT_ORDER: List[str] = _reg_breakout()

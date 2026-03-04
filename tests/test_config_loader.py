@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from apps.dashboard.config_loader import (
+    TIMEFRAME_REGISTRY,
     BuildConfig,
     BuildPaths,
-    TIMEFRAME_REGISTRY,
     get_timeframe,
     load_build_config,
     resolve_paths,

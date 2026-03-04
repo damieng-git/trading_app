@@ -7,13 +7,11 @@ Provides CRUD operations and summary statistics.
 
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
 import threading
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from apps.dashboard.config_loader import DATA_DIR

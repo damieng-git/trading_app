@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 
 from apps.dashboard.strategy import (
-    EXIT_PARAMS,
     ATR_PERIOD,
+    EXIT_PARAMS,
     compute_atr,
     compute_position_events,
     compute_position_status,
@@ -92,7 +92,7 @@ class TestComputePositionStatus:
 
     def test_entry_detected(self, strategy_ohlcv):
         """All C3 KPIs bullish from bar 200 onward should trigger an entry."""
-        n = len(strategy_ohlcv)
+        len(strategy_ohlcv)
         st = {
             "K1": _make_kpi_series(strategy_ohlcv, bull_from=200),
             "K2": _make_kpi_series(strategy_ohlcv, bull_from=200),

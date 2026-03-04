@@ -6,7 +6,6 @@ import pandas as pd
 
 from ._base import ema, sma
 
-
 SignalMA = Literal["SMA", "EMA"]
 
 

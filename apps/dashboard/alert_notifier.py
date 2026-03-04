@@ -34,13 +34,13 @@ from __future__ import annotations
 import json
 import os
 import smtplib
-import urllib.request
 import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pandas as pd
 

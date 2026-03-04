@@ -26,74 +26,40 @@ Notes on performance/RAM
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
-import time
-import threading
-import argparse
-import shutil
-import zipfile
-import sys
 import platform
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+import shutil
+import sys
+import time
+import zipfile
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-
-from trading_dashboard.utils.pine_rtf import extract_pine_source_from_rtf
-from trading_dashboard.data.downloader import (
-    download_daily_ohlcv,
-    download_hourly_ohlcv,
-    download_daily_batch,
-    download_hourly_batch,
-    resample_to_weekly,
-    resample_to_biweekly,
-    resample_to_monthly,
-    resample_to_4h,
-    maybe_load_tradingview_ohlcv,
-    resolve_yfinance_ticker as _resolve_yfinance_ticker_impl,
-)
-from trading_dashboard.data.store import DataStore
-from trading_dashboard.data.incremental import IncrementalUpdater
-from trading_dashboard.data.health import summarize_df_health
-from trading_dashboard.data.enrichment import (
-    IndicatorSpec,
-    apply_mtf_overlay,
-    translate_and_compute_indicators,
-)
-from apps.dashboard.templates import (
-    write_lazy_dashboard_shell_html,
-    write_mapping_doc,
-    write_readme,
-)
-from apps.dashboard.signal_logger import export_alerts, append_combo_signal_log, dispatch_notifications
 from apps.dashboard.config_loader import (
     CONFIG_JSON,
-    DASHBOARD_ARTIFACTS_DIR,
     DASHBOARD_ASSETS_DIR,
     DASHBOARD_SHELL_HTML,
-    DATA_DIR,
     DATA_HEALTH_JSON,
-    FEATURE_STORE_ENRICHED_DIR,
-    DOCS_DIR,
     END_DATE,
+    FEATURE_STORE_ENRICHED_DIR,
     INDICATOR_CONFIG_JSON_DEFAULT,
     LEGACY_OUTPUT_STOCK_DATA_DIR,
     LEGACY_PINESCRIPTS_DIR,
     OHLCV_CACHE_DIR,
     PINESCRIPTS_DIR,
     PROJECT_DIR,
-    README_DIR,
     RUN_METADATA_JSON,
     SCREENER_SUMMARY_JSON,
     SCRIPT_DIR,
     START_DATE,
-    SUPPORT_DIR,
     SYMBOL_DISPLAY_OVERRIDES_JSON,
     TIMEFRAME_REGISTRY,
     TRADINGVIEW_DATA_DIR,
@@ -105,6 +71,35 @@ from apps.dashboard.config_loader import (
     load_build_config,
     resolve_paths,
 )
+from apps.dashboard.signal_logger import append_combo_signal_log, dispatch_notifications, export_alerts
+from apps.dashboard.templates import (
+    write_lazy_dashboard_shell_html,
+    write_mapping_doc,
+    write_readme,
+)
+from trading_dashboard.data.downloader import (
+    download_daily_batch,
+    download_daily_ohlcv,
+    download_hourly_batch,
+    download_hourly_ohlcv,
+    maybe_load_tradingview_ohlcv,
+    resample_to_4h,
+    resample_to_biweekly,
+    resample_to_monthly,
+    resample_to_weekly,
+)
+from trading_dashboard.data.downloader import (
+    resolve_yfinance_ticker as _resolve_yfinance_ticker_impl,
+)
+from trading_dashboard.data.enrichment import (
+    IndicatorSpec,
+    apply_mtf_overlay,
+    translate_and_compute_indicators,
+)
+from trading_dashboard.data.health import summarize_df_health
+from trading_dashboard.data.incremental import IncrementalUpdater
+from trading_dashboard.data.store import DataStore
+from trading_dashboard.utils.pine_rtf import extract_pine_source_from_rtf
 
 logger = logging.getLogger(__name__)
 
@@ -417,7 +412,7 @@ def _enrich_one_task(args: tuple) -> tuple:
     try:
         enriched, specs = _compute_indicators(df_trim, ind_cfg_path, timeframe=tf, symbol=sym, sector_info=sector_info)
         return sym, tf, enriched, specs
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to compute indicators for %s/%s", sym, tf)
         return sym, tf, None, []
 
@@ -1128,8 +1123,8 @@ def run_refresh_dashboard(
     screener_summary: dict = {"rows_by_tf": {}, "by_symbol": {}, "alerts_lookback_bars": int(cfg.alerts_lookback_bars), "generated_utc": run_started_utc}
     state_cache: dict = {}
     try:
-        from trading_dashboard.kpis.catalog import KPI_BREAKOUT_ORDER
         from apps.dashboard.screener_builder import build_screener_rows
+        from trading_dashboard.kpis.catalog import KPI_BREAKOUT_ORDER
 
         try:
             paths.alert_files_dir.mkdir(parents=True, exist_ok=True)
@@ -1444,7 +1439,7 @@ def main(argv: list[str] | None = None, _on_export_progress=None) -> int:
     )
     args, _ = parser.parse_known_args(argv)
     mode = str(getattr(args, "mode", "all") or "all").strip().lower()
-    archive_version = str(getattr(args, "archive_version", "") or "").strip()
+    str(getattr(args, "archive_version", "") or "").strip()
     indicator_config_path_raw = str(getattr(args, "indicator_config_path", "") or "").strip()
     export_phase = str(getattr(args, "export_phase", "all") or "all").strip().lower()
     force_recompute_indicators = bool(getattr(args, "force_recompute_indicators", False))

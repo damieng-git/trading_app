@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from ._base import sma, stdev, highest, lowest
+from ._base import highest, lowest, sma, stdev
 
 
 def _stochastic(src: pd.Series, high: pd.Series, low: pd.Series, length: int) -> pd.Series:

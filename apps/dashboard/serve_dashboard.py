@@ -39,7 +39,7 @@ import os
 import re
 import threading
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -70,8 +70,8 @@ def _configure_logging():
 
 from apps.dashboard.config_loader import (
     CONFIG_JSON,
-    DATA_DIR,
     DASHBOARD_ARTIFACTS_DIR,
+    DATA_DIR,
     FEATURE_STORE_ENRICHED_DIR,
     PROJECT_ROOT,
     VALID_TIMEFRAMES,
@@ -280,7 +280,7 @@ class _ScanState:
             _progress("init", 0, "Starting scan\u2026")
 
             try:
-                from apps.screener.daily_screener import run_screener, inject_screener_groups
+                from apps.screener.daily_screener import inject_screener_groups, run_screener
                 result = run_screener(on_progress=_on_screener_progress)
             except Exception as exc:
                 logger.exception("Screener failed")
@@ -744,10 +744,10 @@ def _add_symbol_to_group(ticker: str, group: str) -> dict:
 
 def _compute_pnl_summary(group: str, tf: str) -> dict:
     """Compute portfolio-level backtest P&L for all symbols in a group."""
-    from trading_dashboard.symbols.manager import SymbolManager
-    from trading_dashboard.kpis.catalog import compute_kpi_state_map
-    from apps.dashboard.strategy import compute_position_events
     from apps.dashboard.config_loader import load_build_config
+    from apps.dashboard.strategy import compute_position_events
+    from trading_dashboard.kpis.catalog import compute_kpi_state_map
+    from trading_dashboard.symbols.manager import SymbolManager
 
     sm = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
     cfg = load_build_config()
@@ -762,8 +762,8 @@ def _compute_pnl_summary(group: str, tf: str) -> dict:
     c4_kpis = combo_cfg.get("combo_4", cfg.combo_4_kpis)
 
     try:
-        from apps.dashboard.sector_map import load_sector_map
         from apps.dashboard.build_dashboard import _derive_symbol_display
+        from apps.dashboard.sector_map import load_sector_map
         smap = load_sector_map()
         sym_display = _derive_symbol_display(smap)
     except Exception as exc:
@@ -978,7 +978,7 @@ class _Caches:
             if cached and cached[0] == mt:
                 return cached[1]
 
-        from apps.dashboard.figures import build_figure_for_symbol_timeframe, _safe_plotly_json_dumps
+        from apps.dashboard.figures import _safe_plotly_json_dumps, build_figure_for_symbol_timeframe
 
         cfg = _read_config()
         tf_combos = cfg.get("combo_kpis_by_tf", {}).get(tf, {})
@@ -1566,7 +1566,7 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return False
 
-        is_new = SCAN.start()
+        SCAN.start()
 
         snapshot, notify = SCAN.subscribe()
         try:

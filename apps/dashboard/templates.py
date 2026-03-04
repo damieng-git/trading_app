@@ -7,18 +7,24 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
 from trading_dashboard.indicators.registry import (
-    DIMENSIONS,
     DIMENSION_ORDER,
-    get_dimension_map,
+    DIMENSIONS,
     get_dimension_label,
+    get_dimension_map,
+)
+from trading_dashboard.indicators.registry import (
     get_all as _get_all_indicators,
-    get_strategies as _get_strategies,
+)
+from trading_dashboard.indicators.registry import (
     get_kpi_trend_order as _get_kpi_trend_order,
+)
+from trading_dashboard.indicators.registry import (
+    get_strategies as _get_strategies,
 )
 
 _CONFIGS_DIR = Path(__file__).resolve().parent / "configs"

@@ -42,7 +42,7 @@ def _create_handler_and_run(request_data: bytes, client_address: tuple = ("127.0
     def run_handler():
         try:
             server = MagicMock()
-            handler = Handler(server_sock, client_address, server)
+            Handler(server_sock, client_address, server)
         except Exception as e:
             err.append(e)
         finally:

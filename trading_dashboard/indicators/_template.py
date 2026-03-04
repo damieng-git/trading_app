@@ -16,11 +16,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-import numpy as np
 import pandas as pd
 
-from ._base import sma, ema, atr  # import whatever primitives you need
-
+from ._base import sma  # import whatever primitives you need
 
 # ---------------------------------------------------------------------------
 # Metadata — used by the registry for auto-discovery
@@ -63,7 +61,7 @@ def compute(df: pd.DataFrame, config: Dict[str, Any] | None = None) -> pd.DataFr
     """
     cfg = {**INDICATOR_META["config_defaults"], **(config or {})}
     length = int(cfg["length"])
-    mult = float(cfg["multiplier"])
+    float(cfg["multiplier"])
 
     # --- Your indicator logic here ---
     result = sma(df["Close"], length)

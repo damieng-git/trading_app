@@ -14,7 +14,8 @@ import logging
 import threading
 import time as _time
 from pathlib import Path
-from typing import Callable as _Callable, Dict, List, Optional, Tuple
+from typing import Callable as _Callable
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import yfinance as yf
@@ -46,7 +47,8 @@ _DOWNLOAD_TIMEOUT = 60
 
 def _download_with_timeout(**kwargs) -> pd.DataFrame:
     """Wraps _yf_download_with_retry with a thread-based timeout."""
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FuturesTimeout
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_yf_download_with_retry, **kwargs)
         try:
@@ -166,7 +168,8 @@ def download_daily_batch(
     for i in range(0, total, chunk_size):
         chunk = tickers[i : i + chunk_size]
         try:
-            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+            from concurrent.futures import ThreadPoolExecutor
+            from concurrent.futures import TimeoutError as FuturesTimeout
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(
                     _yf_download_with_retry,
@@ -231,7 +234,8 @@ def download_hourly_batch(
         for i in range(0, len(remaining), chunk_size):
             chunk = remaining[i : i + chunk_size]
             try:
-                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+                from concurrent.futures import ThreadPoolExecutor
+                from concurrent.futures import TimeoutError as FuturesTimeout
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(
                         _yf_download_with_retry,

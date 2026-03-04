@@ -21,7 +21,6 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 _DEFAULT_CONFIGS_DIR = Path("apps/dashboard/configs")
@@ -212,8 +211,9 @@ def _cmd_screener(args: argparse.Namespace) -> int:
         seed_universe()
         return 0
 
-    from apps.screener.daily_screener import run_screener, inject_screener_groups
     from pathlib import Path as _Path
+
+    from apps.screener.daily_screener import inject_screener_groups, run_screener
 
     ind_cfg = _Path(args.indicator_config) if args.indicator_config else None
     uni_csv = _Path(args.universe) if args.universe else None

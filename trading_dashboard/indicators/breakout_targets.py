@@ -11,7 +11,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
-from ._base import atr as _atr, ema as _ema, wma as _wma
+from ._base import ema as _ema
+from ._base import wma as _wma
 
 
 def breakout_targets(
