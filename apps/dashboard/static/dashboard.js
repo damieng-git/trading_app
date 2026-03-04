@@ -39,19 +39,19 @@
       } catch (e) {}
     }
 
-    const _st0 = loadState();
-    let currentSymbol = (typeof _st0.symbol === "string" && SYMBOLS.includes(_st0.symbol.toUpperCase())) ? _st0.symbol.toUpperCase() : DEFAULT_SYMBOL;
-    let currentTF = (typeof _st0.tf === "string" && TIMEFRAMES.includes(_st0.tf.toUpperCase())) ? _st0.tf.toUpperCase() : DEFAULT_TF;
-    let currentTab = (typeof _st0.tab === "string" && ["chart", "strategy", "screener", "info", "pnl"].includes(_st0.tab)) ? _st0.tab : "screener";
-    let currentGroup = (typeof _st0.group === "string") ? _st0.group : "all";
-    let _savedScreenerFilter = _st0.screenerFilter || "all";
-    let _savedScreenerSortKey = _st0.screenerSortKey || "_action_tf";
-    let _savedScreenerSortDir = _st0.screenerSortDir || "desc";
+    var _st0 = loadState();
+    var currentSymbol = (typeof _st0.symbol === "string" && SYMBOLS.includes(_st0.symbol.toUpperCase())) ? _st0.symbol.toUpperCase() : DEFAULT_SYMBOL;
+    var currentTF = (typeof _st0.tf === "string" && TIMEFRAMES.includes(_st0.tf.toUpperCase())) ? _st0.tf.toUpperCase() : DEFAULT_TF;
+    var currentTab = (typeof _st0.tab === "string" && ["chart", "strategy", "screener", "info", "pnl"].includes(_st0.tab)) ? _st0.tab : "screener";
+    var currentGroup = (typeof _st0.group === "string") ? _st0.group : "all";
+    var _savedScreenerFilter = _st0.screenerFilter || "all";
+    var _savedScreenerSortKey = _st0.screenerSortKey || "_action_tf";
+    var _savedScreenerSortDir = _st0.screenerSortDir || "desc";
 
-    let figCache = {};
-    let currentFig = null;
-    let indicatorKeys = [];
-    let selectedIndicators = new Set(Array.isArray(_st0.indicators) ? _st0.indicators : []);
+    var figCache = {};
+    var currentFig = null;
+    var indicatorKeys = [];
+    var selectedIndicators = new Set(Array.isArray(_st0.indicators) ? _st0.indicators : []);
     let _upperShapesStrategy = [];
     let _upperShapesCharts = [];
     let currentStrategy = (typeof _st0.strategy === "string") ? _st0.strategy : "v6";
