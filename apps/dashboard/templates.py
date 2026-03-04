@@ -280,7 +280,7 @@ def write_lazy_dashboard_shell_html(
         <div class="filter-group">
           <div class="filter-label">Strategy</div>
           <div id="strategyDropdown" class="tab-group-dropdown" data-scope="chart">
-            <div id="strategyTrigger" class="tab-group-trigger">Strategy v6 &#9662;</div>
+            <div id="strategyTrigger" class="tab-group-trigger">Trend Position &#9662;</div>
             <div id="strategyMenu" class="tab-group-menu group-menu"></div>
           </div>
         </div>
@@ -372,8 +372,8 @@ def write_lazy_dashboard_shell_html(
         <span class="filter-sep"></span>
         <span class="filter-label">Strategy:</span>
         <div class="btn" data-filter="strat_active" title="Any strategy active (entry or hold)">Any Active</div>
-        <div class="btn" data-filter="strat_dip" title="Dip Buy entry signal">Dip Buy</div>
-        <div class="btn" data-filter="strat_swing" title="Swing entry or hold">Swing</div>
+        <div class="btn" data-filter="strat_dip" title="Buy Dip entry signal">Buy Dip</div>
+        <div class="btn" data-filter="strat_swing" title="Swing Trading entry or hold">Swing Trading</div>
         <div class="btn" data-filter="strat_trend" title="Trend Position entry or hold">Trend</div>
       </div>
       <button id="btnAddTicker" class="btn btn-add" type="button" title="Add ticker to watchlist">+ Add</button>

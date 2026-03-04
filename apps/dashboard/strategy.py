@@ -648,7 +648,17 @@ def compute_polarity_position_status(
         "last_exit_bars_ago": None, "last_exit_reason": None,
     }
 
-    combos = setup.get("combos", {})
+    entry_tf = setup.get("entry_tf", tf)
+    exit_tf = setup.get("exit_tf", tf)
+
+    if entry_tf != tf:
+        return flat_result
+
+    # TF-specific combos take precedence over global combos
+    combos_by_tf = setup.get("combos_by_tf", {})
+    tf_combos = combos_by_tf.get(tf, {})
+    combos = tf_combos if tf_combos else setup.get("combos", {})
+
     c3_def = combos.get("c3", {})
     c4_def = combos.get("c4")
 
@@ -656,12 +666,6 @@ def compute_polarity_position_status(
     c3_pols = c3_def.get("pols", [])
     c4_kpis = c4_def.get("kpis") if c4_def else None
     c4_pols = c4_def.get("pols") if c4_def else None
-
-    entry_tf = setup.get("entry_tf", tf)
-    exit_tf = setup.get("exit_tf", tf)
-
-    if entry_tf != tf:
-        return flat_result
 
     exit_def = setup.get("exit_combos")
     exit_kpis = exit_def.get("kpis") if exit_def else None
@@ -810,18 +814,23 @@ def compute_polarity_trailing_pnl(
 ) -> dict:
     """Trailing 12-month P&L for a polarity_combo strategy."""
     empty = {"l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None}
-    combos = setup.get("combos", {})
+
+    entry_tf = setup.get("entry_tf", tf)
+    exit_tf = setup.get("exit_tf", tf)
+    if entry_tf != tf:
+        return empty
+
+    # TF-specific combos take precedence over global combos
+    combos_by_tf = setup.get("combos_by_tf", {})
+    tf_combos = combos_by_tf.get(tf, {})
+    combos = tf_combos if tf_combos else setup.get("combos", {})
+
     c3_def = combos.get("c3", {})
     c4_def = combos.get("c4")
     c3_kpis = c3_def.get("kpis", [])
     c3_pols = c3_def.get("pols", [])
     c4_kpis = c4_def.get("kpis") if c4_def else None
     c4_pols = c4_def.get("pols") if c4_def else None
-
-    entry_tf = setup.get("entry_tf", tf)
-    exit_tf = setup.get("exit_tf", tf)
-    if entry_tf != tf:
-        return empty
 
     exit_def = setup.get("exit_combos")
     exit_kpis = exit_def.get("kpis") if exit_def else None

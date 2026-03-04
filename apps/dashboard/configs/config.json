@@ -171,20 +171,16 @@
     }
   },
   "strategy_setups": {
-    "v6": {
-      "label": "Strategy v6",
-      "entry_type": "combo",
-      "description": "C3/C4 combo-based entry with onset gates"
-    },
     "stoof": {
       "label": "Stoof",
       "entry_type": "threshold",
       "threshold": 7,
       "total": 10,
+      "color": "#fb923c",
       "description": "Band Light 7/10 rule — 7 of 10 indicators must agree"
     },
     "dip_buy": {
-      "label": "Dip Buy",
+      "label": "Buy Dip",
       "entry_type": "polarity_combo",
       "description": "1D dip-buy entry with 1W-governed exit (~2 week hold)",
       "entry_tf": "1D",
@@ -206,7 +202,7 @@
       }
     },
     "swing": {
-      "label": "Swing",
+      "label": "Swing Trading",
       "entry_type": "polarity_combo",
       "description": "1W swing trading with momentum confirmation (4-7 week hold)",
       "entry_tf": "1W",
@@ -226,9 +222,7 @@
     "trend": {
       "label": "Trend Position",
       "entry_type": "polarity_combo",
-      "description": "1W trend-following position trading (7+ week hold)",
-      "entry_tf": "1W",
-      "exit_tf": "1W",
+      "description": "Multi-TF trend-following strategy using v6 combos per timeframe",
       "color": "#c084fc",
       "combos": {
         "c3": {
@@ -236,8 +230,60 @@
           "pols": [1, 1, 1]
         },
         "c4": {
-          "kpis": ["Nadaraya-Watson Smoother", "DEMA", "Stoch_MTM", "cRSI"],
+          "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
           "pols": [1, 1, 1, 1]
+        }
+      },
+      "combos_by_tf": {
+        "4H": {
+          "c3": {
+            "kpis": ["Nadaraya-Watson Smoother", "DEMA", "Stoch_MTM"],
+            "pols": [1, 1, 1]
+          },
+          "c4": {
+            "kpis": ["Nadaraya-Watson Smoother", "Madrid Ribbon", "GK Trend Ribbon", "cRSI"],
+            "pols": [1, 1, 1, 1]
+          }
+        },
+        "1D": {
+          "c3": {
+            "kpis": ["Nadaraya-Watson Smoother", "Madrid Ribbon", "Volume + MA20"],
+            "pols": [1, 1, 1]
+          },
+          "c4": {
+            "kpis": ["Nadaraya-Watson Smoother", "Madrid Ribbon", "GK Trend Ribbon", "cRSI"],
+            "pols": [1, 1, 1, 1]
+          }
+        },
+        "1W": {
+          "c3": {
+            "kpis": ["Nadaraya-Watson Smoother", "DEMA", "cRSI"],
+            "pols": [1, 1, 1]
+          },
+          "c4": {
+            "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
+            "pols": [1, 1, 1, 1]
+          }
+        },
+        "2W": {
+          "c3": {
+            "kpis": ["Nadaraya-Watson Smoother", "DEMA", "cRSI"],
+            "pols": [1, 1, 1]
+          },
+          "c4": {
+            "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
+            "pols": [1, 1, 1, 1]
+          }
+        },
+        "1M": {
+          "c3": {
+            "kpis": ["Nadaraya-Watson Smoother", "DEMA", "cRSI"],
+            "pols": [1, 1, 1]
+          },
+          "c4": {
+            "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
+            "pols": [1, 1, 1, 1]
+          }
         }
       }
     }

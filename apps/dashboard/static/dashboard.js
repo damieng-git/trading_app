@@ -54,7 +54,7 @@
     var selectedIndicators = new Set(Array.isArray(_st0.indicators) ? _st0.indicators : []);
     let _upperShapesStrategy = [];
     let _upperShapesCharts = [];
-    let currentStrategy = (typeof _st0.strategy === "string") ? _st0.strategy : "v6";
+    let currentStrategy = (typeof _st0.strategy === "string") ? _st0.strategy : "trend";
     window.currentStrategy = currentStrategy;
 
     window.Dashboard = window.Dashboard || {};
