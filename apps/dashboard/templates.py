@@ -387,8 +387,8 @@ def write_lazy_dashboard_shell_html(
   <div id="infoWrap" style="display:none;">
     <div class="info-panel">
 
-      <h2 class="info-h2">Trading Strategy — Entry v6 + Exit Flow v4</h2>
-      <p class="info-sub">Status: Locked (v15) — Feb 2026 &nbsp;|&nbsp; PF-optimized combos (Phase 16) &nbsp;|&nbsp; Backtest: ~295 stocks, out-of-sample (last 30%)</p>
+      <h2 class="info-h2">Trading Strategy — Trend Position + Exit Flow v4</h2>
+      <p class="info-sub">Status: Locked (v15) — Feb 2026 &nbsp;|&nbsp; PF-optimized combos (Phase 20) &nbsp;|&nbsp; Backtest: ~295 stocks, out-of-sample (last 30%)</p>
 
       <!-- ═══════════════════════════════════════════════ -->
       <!--  SECTION 1 — Full Strategy Workflow Chart      -->
@@ -784,7 +784,7 @@ def write_lazy_dashboard_shell_html(
         <div class="filter-group">
           <div class="filter-label">Strategy</div>
           <div class="tab-group-dropdown strategy-placeholder" data-scope="pnl">
-            <div class="tab-group-trigger">Strategy v6 &#9662;</div>
+            <div class="tab-group-trigger">Trend Position &#9662;</div>
             <div class="tab-group-menu group-menu"></div>
           </div>
         </div>
