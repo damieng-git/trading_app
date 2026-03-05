@@ -954,13 +954,13 @@
         _pushEvents(_peByStrat[_activeStrat], _activeStrat);
       } else if (_useAllOverlay) {
         if (data.position_events && data.position_events.length) {
-          _pushEvents(data.position_events, "v6");
+          _pushEvents(data.position_events, "trend");
         }
         for (const sk in _peByStrat) {
           _pushEvents(_peByStrat[sk], sk);
         }
       } else if (data.position_events && data.position_events.length) {
-        _pushEvents(data.position_events, "v6");
+        _pushEvents(data.position_events, "trend");
       } else if (c3Active && Object.keys(allKpiZ).length) {
         // Fallback: compute from payload data (backward compat)
         if (!c4Active) c4Active = new Array(n).fill(false);
@@ -1197,7 +1197,7 @@
       if (data.sma200_vals && data.sma200_vals.length === n) {
         traces.push(mkTrace({
           type: "scatter", x: x, y: data.sma200_vals, mode: "lines",
-          line: { color: "rgba(59,130,246,0.6)", width: 1.3, dash: "dot" },
+          line: { color: "rgba(120,120,120,0.75)", width: 1 },
           hovertemplate: "<b>SMA200</b>: %{y:.2f}<extra></extra>",
           name: "SMA200",
         }, 1, LABEL.Price, true));
@@ -1205,7 +1205,7 @@
       if (data.sma20_vals && data.sma20_vals.length === n) {
         traces.push(mkTrace({
           type: "scatter", x: x, y: data.sma20_vals, mode: "lines",
-          line: { color: "rgba(251,191,36,0.6)", width: 1.1, dash: "dot" },
+          line: { color: "rgba(185,185,185,0.65)", width: 1 },
           hovertemplate: "<b>SMA20</b>: %{y:.2f}<extra></extra>",
           name: "SMA20",
         }, 1, LABEL.Price, true));
@@ -1529,7 +1529,7 @@
 
     // --- Prefer pre-computed events (strategy-aware) ---
     const _peByStrat2 = payload.position_events_by_strategy || {};
-    const _cStrat2a = (typeof window !== "undefined" && window.currentStrategy) ? window.currentStrategy : "v6";
+    const _cStrat2a = (typeof window !== "undefined" && window.currentStrategy) ? window.currentStrategy : "trend";
     const _stSetups2a = (typeof STRATEGY_SETUPS !== "undefined") ? (STRATEGY_SETUPS.setups || {}) : {};
     const _sDef2a = _stSetups2a[_cStrat2a];
     const _isPolStrat2 = _sDef2a && _sDef2a.entry_type === "polarity_combo";
@@ -1560,7 +1560,7 @@
       let combo3pols = null, combo4pols = null;
       // Support polarity_combo strategies in fallback simulation
       const _stSetups2 = (typeof STRATEGY_SETUPS !== "undefined") ? (STRATEGY_SETUPS.setups || {}) : {};
-      const _cStrat2 = (typeof window !== "undefined" && window.currentStrategy) ? window.currentStrategy : "v6";
+      const _cStrat2 = (typeof window !== "undefined" && window.currentStrategy) ? window.currentStrategy : "trend";
       const _sDef2 = _stSetups2[_cStrat2];
       if (_sDef2 && _sDef2.entry_type === "polarity_combo") {
         const cc = _sDef2.combos || {};

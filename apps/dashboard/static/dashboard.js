@@ -1270,7 +1270,6 @@
           try {
             if (ev && ev.points && ev.points.length) {
               _setCrosshair(ev.points[0].x, gd.id);
-              if (gd.id === "chartUpper") _updateComboTooltip(ev.points[0].x, ev.event);
             }
           } catch (e) {}
         });

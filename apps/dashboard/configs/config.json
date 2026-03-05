@@ -171,14 +171,6 @@
     }
   },
   "strategy_setups": {
-    "stoof": {
-      "label": "Stoof",
-      "entry_type": "threshold",
-      "threshold": 7,
-      "total": 10,
-      "color": "#fb923c",
-      "description": "Band Light 7/10 rule — 7 of 10 indicators must agree"
-    },
     "dip_buy": {
       "label": "Buy Dip",
       "entry_type": "polarity_combo",
@@ -220,7 +212,7 @@
       }
     },
     "trend": {
-      "label": "Trend Position",
+      "label": "Trend",
       "entry_type": "polarity_combo",
       "description": "Multi-TF trend-following strategy using v6 combos per timeframe",
       "color": "#c084fc",
@@ -286,6 +278,14 @@
           }
         }
       }
+    },
+    "stoof": {
+      "label": "Stoof",
+      "entry_type": "threshold",
+      "threshold": 7,
+      "total": 10,
+      "color": "#fb923c",
+      "description": "Band Light 7/10 rule — 7 of 10 indicators must agree"
     }
   }
 }
