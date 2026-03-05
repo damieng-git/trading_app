@@ -70,6 +70,7 @@ def export_symbol_data(
     sma200_vals: list[float | None] | None = None,
     sma20_vals: list[float | None] | None = None,
     position_events: list[dict] | None = None,
+    position_events_by_strategy: dict[str, list[dict]] | None = None,
 ) -> dict:
     """
     Convert an enriched DataFrame into a JSON-serialisable dict.
@@ -145,6 +146,8 @@ def export_symbol_data(
         out["sma20_vals"] = sma20_vals
     if position_events is not None:
         out["position_events"] = position_events
+    if position_events_by_strategy:
+        out["position_events_by_strategy"] = position_events_by_strategy
     return out
 
 

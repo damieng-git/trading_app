@@ -2,9 +2,8 @@
 (function(D) {
   "use strict";
   if (!D) return;
-  var screenerFilter = (typeof _savedScreenerFilter !== "undefined") ? _savedScreenerFilter : "all";
-
   function buildScreener() {
+    var screenerFilter = (typeof _savedScreenerFilter !== "undefined") ? _savedScreenerFilter : "all";
     var wrap = DOM.screener;
     if (!wrap) return;
     wrap.innerHTML = "";
@@ -35,7 +34,7 @@
       "_conviction": function(r) { var ts = r.trend_score; var mx = (typeof MAX_TREND_SCORE === "number" && MAX_TREND_SCORE > 0) ? MAX_TREND_SCORE : 28.2; return typeof ts === "number" ? ts / mx : -9999; },
       "_last_combo": function(r) { var a = r.signal_action || ""; var ip = a.indexOf("ENTRY") === 0 || a.indexOf("SCALE") === 0 || a === "HOLD"; if (!ip) return -1; return (typeof r.last_combo_bars === "number") ? (10000 - r.last_combo_bars) : -1; },
       "_recommendation": function(r) { var m = {"strong_buy": 5, "buy": 4, "hold": 3, "sell": 2, "strong_sell": 1}; return m[(r.recommendation || "").toLowerCase()] || 0; },
-      "_action_tf": function(r) { var sym = String(r.symbol || "").toUpperCase(); var sc = 0; var allTFs = typeof TIMEFRAMES !== "undefined" ? TIMEFRAMES : []; var n = allTFs.length; allTFs.forEach(function(tfk, tfi) { var rec = (typeof SCREENER !== "undefined" && SCREENER && SCREENER.by_symbol && SCREENER.by_symbol[sym] && SCREENER.by_symbol[sym][tfk]) ? SCREENER.by_symbol[sym][tfk] : null; if (!rec) return; var a = rec.signal_action || ""; if (a === "ENTRY 1.5x" || a.indexOf("SCALE") === 0) sc += (n - tfi) * 1000 + 500; else if (a.indexOf("ENTRY") === 0) sc += (n - tfi) * 1000 + 400; else if (a === "HOLD") sc += (n - tfi) * 1000 + 200; else if (a.indexOf("EXIT") === 0) sc += (n - tfi) * 1000 + 100; }); return sc; },
+      "_action_tf": function(r) { var _cs = (typeof window.currentStrategy === "string") ? window.currentStrategy : "v6"; var _ssd = (typeof STRATEGY_SETUPS !== "undefined" && STRATEGY_SETUPS && STRATEGY_SETUPS.setups) ? STRATEGY_SETUPS.setups[_cs] : null; var _isPol = _ssd && _ssd.entry_type === "polarity_combo"; var sym = String(r.symbol || "").toUpperCase(); var sc = 0; var allTFs = typeof TIMEFRAMES !== "undefined" ? TIMEFRAMES : []; var n = allTFs.length; allTFs.forEach(function(tfk, tfi) { var rec = (typeof SCREENER !== "undefined" && SCREENER && SCREENER.by_symbol && SCREENER.by_symbol[sym] && SCREENER.by_symbol[sym][tfk]) ? SCREENER.by_symbol[sym][tfk] : null; if (!rec) return; var a; if (_isPol) { var _ss = rec.strat_statuses || {}; var _si = _ss[_cs]; a = _si ? (_si.signal_action || "") : ""; } else { a = rec.signal_action || ""; } if (a === "ENTRY 1.5x" || a.indexOf("SCALE") === 0) sc += (n - tfi) * 1000 + 500; else if (a.indexOf("ENTRY") === 0) sc += (n - tfi) * 1000 + 400; else if (a === "HOLD") sc += (n - tfi) * 1000 + 200; else if (a.indexOf("EXIT") === 0) sc += (n - tfi) * 1000 + 100; }); return sc; },
       "_strat_badges": function(r) { var ss = r.strat_statuses || {}; var sc = 0; var prio = {trend: 3000, swing: 2000, dip_buy: 1000}; for (var sk in ss) { var sa = ss[sk].signal_action || ""; if (sa.indexOf("ENTRY") === 0) sc += (prio[sk] || 0) + 500; else if (sa === "HOLD") sc += (prio[sk] || 0) + 300; } return sc; },
       "_price": function(r) { return (typeof r.last_close === "number") ? r.last_close : -1; },
     };
@@ -80,7 +79,7 @@
       ["_recommendation", "Analysts", "4%"],
       ["_conv10", "TrendScore", "9%"],
       ["_confluence", "Traffic Light", "9%"],
-      ["_action_tf", "Action", "9%"],
+      ["_action_tf", (function() { var _cs = (typeof window.currentStrategy === "string") ? window.currentStrategy : "v6"; var _ssd = (typeof STRATEGY_SETUPS !== "undefined" && STRATEGY_SETUPS && STRATEGY_SETUPS.setups) ? STRATEGY_SETUPS.setups[_cs] : null; return (_ssd && _ssd.entry_type === "polarity_combo") ? (_ssd.label || _cs) : "Action"; })(), "9%"],
       ["_strat_badges", "Strategy", "9%"],
       ["_vs_bench", "TrendScore vs Bench", "9%"],
       ["pe_vs_sector", "P/E vs Sec", "5%"],
@@ -244,10 +243,22 @@
           var symAt = String(r.symbol || "").toUpperCase();
           var atWrap = document.createElement("div");
           atWrap.style.cssText = "display:flex;gap:3px;align-items:center;justify-content:center;";
+          var _curStrat = (typeof window.currentStrategy === "string") ? window.currentStrategy : "v6";
+          var _stratSetupsDef = (typeof STRATEGY_SETUPS !== "undefined" && STRATEGY_SETUPS && STRATEGY_SETUPS.setups) ? STRATEGY_SETUPS.setups[_curStrat] : null;
+          var _isPolarity = _stratSetupsDef && _stratSetupsDef.entry_type === "polarity_combo";
+          var _stratColorHex = _isPolarity ? (_stratSetupsDef.color || "#facc15") : null;
           (typeof TIMEFRAMES !== "undefined" ? TIMEFRAMES : []).forEach(function(tfk) {
             var rec = (typeof SCREENER !== "undefined" && SCREENER && SCREENER.by_symbol && SCREENER.by_symbol[symAt] && SCREENER.by_symbol[symAt][tfk]) ? SCREENER.by_symbol[symAt][tfk] : null;
-            var act = rec ? (rec.signal_action || "FLAT") : "FLAT";
-            var cb = rec ? (rec.combo_bars != null ? rec.combo_bars : rec.bars_held) : null;
+            var act, cb;
+            if (_isPolarity && rec) {
+              var _ss = rec.strat_statuses || {};
+              var _sInfo = _ss[_curStrat];
+              act = _sInfo ? (_sInfo.signal_action || "FLAT") : "FLAT";
+              cb = _sInfo ? _sInfo.bars_held : null;
+            } else {
+              act = rec ? (rec.signal_action || "FLAT") : "FLAT";
+              cb = rec ? (rec.combo_bars != null ? rec.combo_bars : rec.bars_held) : null;
+            }
             var cell = document.createElement("span");
             cell.style.cssText = "display:inline-flex;flex-direction:column;align-items:center;";
             var lbl = document.createElement("span");
@@ -257,22 +268,37 @@
             var badge = document.createElement("span");
             badge.style.cssText = "font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;";
             var hoverText = act;
-            if (act === "ENTRY 1.5x" || act.indexOf("SCALE") === 0) {
-              badge.style.background = "var(--combo-c4-bg)"; badge.style.color = "var(--combo-c4-fg)"; badge.textContent = "E1.5";
-              hoverText = (act.indexOf("SCALE") === 0 ? "Scale 1.5x" : "Entry 1.5x") + (cb != null ? " " + cb + "b" : "");
-            } else if (act.indexOf("ENTRY") === 0) {
-              badge.style.background = "var(--combo-c3-bg)"; badge.style.color = "var(--combo-c3-fg)"; badge.textContent = "E1";
-              hoverText = "Entry 1x" + (cb != null ? " " + cb + "b" : "");
-            } else if (act === "HOLD") {
-              badge.style.background = "rgba(74,130,184,0.18)"; badge.style.color = "var(--info)"; badge.textContent = "HLD";
-              hoverText = "Hold" + (cb != null ? " " + cb + "b" : "");
-            } else if (act.indexOf("EXIT") === 0 || (act === "FLAT" && rec && rec.last_exit_bars_ago != null && rec.last_exit_bars_ago <= 2)) {
-              badge.style.background = "var(--trade-loss-bg)"; badge.style.color = "var(--danger)"; badge.textContent = "EXT";
-              var eb = rec ? rec.last_exit_bars_ago : null;
-              hoverText = "Exit" + (eb != null ? " " + eb + "b" : "");
+            if (_isPolarity) {
+              if (act.indexOf("ENTRY") === 0) {
+                badge.style.background = "rgba(" + parseInt(_stratColorHex.slice(1,3),16) + "," + parseInt(_stratColorHex.slice(3,5),16) + "," + parseInt(_stratColorHex.slice(5,7),16) + ",0.18)";
+                badge.style.color = _stratColorHex; badge.textContent = "E";
+                hoverText = _curStrat.replace("_"," ") + " Entry" + (cb != null ? " " + cb + "b" : "");
+              } else if (act === "HOLD") {
+                badge.style.background = "rgba(" + parseInt(_stratColorHex.slice(1,3),16) + "," + parseInt(_stratColorHex.slice(3,5),16) + "," + parseInt(_stratColorHex.slice(5,7),16) + ",0.10)";
+                badge.style.color = _stratColorHex; badge.textContent = "H";
+                hoverText = _curStrat.replace("_"," ") + " Hold" + (cb != null ? " " + cb + "b" : "");
+              } else {
+                badge.style.color = "var(--muted)"; badge.textContent = "—";
+                hoverText = _curStrat.replace("_"," ") + " Flat";
+              }
             } else {
-              badge.style.color = "var(--muted)"; badge.textContent = "—";
-              hoverText = "Flat";
+              if (act === "ENTRY 1.5x" || act.indexOf("SCALE") === 0) {
+                badge.style.background = "var(--combo-c4-bg)"; badge.style.color = "var(--combo-c4-fg)"; badge.textContent = "E1.5";
+                hoverText = (act.indexOf("SCALE") === 0 ? "Scale 1.5x" : "Entry 1.5x") + (cb != null ? " " + cb + "b" : "");
+              } else if (act.indexOf("ENTRY") === 0) {
+                badge.style.background = "var(--combo-c3-bg)"; badge.style.color = "var(--combo-c3-fg)"; badge.textContent = "E1";
+                hoverText = "Entry 1x" + (cb != null ? " " + cb + "b" : "");
+              } else if (act === "HOLD") {
+                badge.style.background = "rgba(74,130,184,0.18)"; badge.style.color = "var(--info)"; badge.textContent = "HLD";
+                hoverText = "Hold" + (cb != null ? " " + cb + "b" : "");
+              } else if (act.indexOf("EXIT") === 0 || (act === "FLAT" && rec && rec.last_exit_bars_ago != null && rec.last_exit_bars_ago <= 2)) {
+                badge.style.background = "var(--trade-loss-bg)"; badge.style.color = "var(--danger)"; badge.textContent = "EXT";
+                var eb = rec ? rec.last_exit_bars_ago : null;
+                hoverText = "Exit" + (eb != null ? " " + eb + "b" : "");
+              } else {
+                badge.style.color = "var(--muted)"; badge.textContent = "—";
+                hoverText = "Flat";
+              }
             }
             badge.title = tfk + ": " + hoverText;
             cell.appendChild(badge);
@@ -485,16 +511,16 @@
   D.exportCSV = exportCSV;
 
   D.initScreener = function() {
-    screenerFilter = (typeof _savedScreenerFilter !== "undefined") ? _savedScreenerFilter : "all";
+    var _initFilter = (typeof _savedScreenerFilter !== "undefined") ? _savedScreenerFilter : "all";
     var searchEl = document.getElementById("screenerSearch");
     var exportBtn = document.getElementById("btnExport");
     if (searchEl) searchEl.addEventListener("input", _debounce(function() { D.buildScreener(); }, 200));
     if (exportBtn) exportBtn.addEventListener("click", function() { D.exportCSV(); });
     document.querySelectorAll("#screenerFilters .btn").forEach(function(b) {
-      if (b.dataset.filter === screenerFilter) b.classList.add("active");
+      if (b.dataset.filter === _initFilter) b.classList.add("active");
       b.addEventListener("click", function() {
-        screenerFilter = b.dataset.filter || "all";
-        saveState({ screenerFilter: screenerFilter });
+        _savedScreenerFilter = b.dataset.filter || "all";
+        saveState({ screenerFilter: _savedScreenerFilter });
         document.querySelectorAll("#screenerFilters .btn").forEach(function(x) { x.classList.toggle("active", x === b); });
         D.buildScreener();
       });

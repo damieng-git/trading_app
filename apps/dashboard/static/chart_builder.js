@@ -745,6 +745,12 @@
       return rows[0].z.map((_, ci) => rows.every(r => r.z[ci] === r.p));
     }
 
+    function _hexToRgba(hex, a) {
+      if (!hex || hex[0] !== "#") return "rgba(128,128,128," + a + ")";
+      const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+      return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+    }
+
     // KPI colorscale
     const eps = 1e-6;
     const colorscale = [
@@ -807,18 +813,32 @@
     const scoreLabel = isPolStrat ? (_activeDef.label || _activeStrat) + " Score"
       : (isStoof ? "StoofScore" : "TrendScore");
 
+    // Build polarity map for polarity strategies: KPI name → expected polarity
+    const _polMap = {};
+    if (isPolStrat && _activeDef && _activeDef.combos) {
+      const _cc = _activeDef.combos;
+      ["c3", "c4"].forEach(ck => {
+        const cd = _cc[ck];
+        if (cd && cd.kpis && cd.pols) {
+          cd.kpis.forEach((kn, ki) => { _polMap[kn] = cd.pols[ki]; });
+        }
+      });
+    }
+
     if (scoreSlice.kk.length && scoreSlice.zz.length) {
       const tsValues = new Array(n).fill(0);
       scoreSlice.kk.forEach((k, i) => {
         const w = (isStoof || isPolStrat) ? 1 : (kpiWeights[k] != null ? kpiWeights[k] : 1);
+        const expectedPol = (isPolStrat && _polMap[k] != null) ? _polMap[k] : 1;
         const row = scoreSlice.zz[i];
         for (let ci = 0; ci < n; ci++) {
           const v = row[ci];
-          if (v === 1) tsValues[ci] += w;
-          else if (v === -1) tsValues[ci] -= w;
+          if (v === expectedPol) tsValues[ci] += w;
+          else if (v === -expectedPol) tsValues[ci] -= w;
         }
       });
-      const tsColors = tsValues.map(v => v > 0 ? "rgba(34,197,94,0.8)" : (v < 0 ? "rgba(239,68,68,0.8)" : "rgba(148,163,184,0.5)"));
+      const _tsUpColor = (isPolStrat && _stratColor) ? _hexToRgba(_stratColor, 0.8) : "rgba(34,197,94,0.8)";
+      const tsColors = tsValues.map(v => v > 0 ? _tsUpColor : (v < 0 ? "rgba(239,68,68,0.8)" : "rgba(148,163,184,0.5)"));
       traces.push(mkTrace({
         type: "bar", x: x, y: tsValues, marker: { color: tsColors },
         hovertemplate: "<b>" + scoreLabel + "</b>: %{y:.1f}<br>%{x}<extra></extra>",
@@ -902,8 +922,16 @@
       const pRange = Math.max(pHi - pLo, 1);
 
       // --- Build trade list from pre-computed events or fallback ---
-      if (data.position_events && data.position_events.length) {
-        for (const ev of data.position_events) {
+      const _peByStrat = data.position_events_by_strategy || {};
+      const _isAllStrats = _activeStrat === "all";
+      const _useStratEvents = isPolStrat && _peByStrat[_activeStrat] && _peByStrat[_activeStrat].length;
+      const _useAllOverlay = _isAllStrats && Object.keys(_peByStrat).length > 0;
+
+      function _pushEvents(evList, stratKey) {
+        const _sSetup = _stratSetups[stratKey];
+        const _sColor = _sSetup ? (_sSetup.color || null) : null;
+        const _sLabel = _sSetup ? (_sSetup.label || stratKey) : stratKey;
+        for (const ev of evList) {
           const ei = Math.max(0, Math.min(ev.entry_idx, n - 1));
           const xi = Math.max(0, Math.min(ev.exit_idx, n - 1));
           const si = ev.scale_idx != null ? Math.max(0, Math.min(ev.scale_idx, n - 1)) : null;
@@ -917,8 +945,22 @@
             label: ev.scaled ? "C4" : "C3", reason: ev.exit_reason,
             scaled: ev.scaled, scaleIdx: si, stopTrail: trail, ep: ep,
             entryDate: x[ei], exitDate: x[xi],
+            _stratKey: stratKey, _stratColor: _sColor, _stratLabel: _sLabel,
           });
         }
+      }
+
+      if (_useStratEvents) {
+        _pushEvents(_peByStrat[_activeStrat], _activeStrat);
+      } else if (_useAllOverlay) {
+        if (data.position_events && data.position_events.length) {
+          _pushEvents(data.position_events, "v6");
+        }
+        for (const sk in _peByStrat) {
+          _pushEvents(_peByStrat[sk], sk);
+        }
+      } else if (data.position_events && data.position_events.length) {
+        _pushEvents(data.position_events, "v6");
       } else if (c3Active && Object.keys(allKpiZ).length) {
         // Fallback: compute from payload data (backward compat)
         if (!c4Active) c4Active = new Array(n).fill(false);
@@ -997,25 +1039,20 @@
       }
 
       // --- Position shading ---
-      // Strategy-specific colors (hex to rgba helper)
-      function _hexToRgba(hex, a) {
-        if (!hex || hex[0] !== "#") return "rgba(128,128,128," + a + ")";
-        const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
-        return "rgba(" + r + "," + g + "," + b + "," + a + ")";
-      }
-      const _winC3 = _stratColor ? _hexToRgba(_stratColor, 0.13) : "rgba(250,204,21,0.13)";
-      const _winC4 = _stratColor ? _hexToRgba(_stratColor, 0.20) : "rgba(74,222,128,0.14)";
       const _loseColor = "rgba(244,63,94,0.20)";
 
       for (const t of allTrades) {
         const ei = t.entryIdx, xi = t.exitIdx;
+        const _tc = t._stratColor || null;
+        const _tWinC3 = _tc ? _hexToRgba(_tc, 0.13) : "rgba(250,204,21,0.13)";
+        const _tWinC4 = _tc ? _hexToRgba(_tc, 0.20) : "rgba(74,222,128,0.14)";
         if (t.scaled && t.scaleIdx != null && t.scaleIdx > ei) {
           shapes.push({
             type: "rect",
             x0: new Date(new Date(x[ei]).getTime() - hbMs).toISOString(),
             x1: new Date(new Date(x[Math.min(t.scaleIdx, xi)]).getTime() + hbMs).toISOString(),
             y0: 0, y1: 1, yref: "y domain", xref: "x",
-            fillcolor: t.ret >= 0 ? _winC3 : _loseColor,
+            fillcolor: t.ret >= 0 ? _tWinC3 : _loseColor,
             line: { width: 0 }, layer: "below", _strategy: true,
           });
           shapes.push({
@@ -1023,12 +1060,12 @@
             x0: new Date(new Date(x[t.scaleIdx]).getTime() - hbMs).toISOString(),
             x1: new Date(new Date(x[xi]).getTime() + hbMs).toISOString(),
             y0: 0, y1: 1, yref: "y domain", xref: "x",
-            fillcolor: t.ret >= 0 ? _winC4 : _loseColor,
+            fillcolor: t.ret >= 0 ? _tWinC4 : _loseColor,
             line: { width: 0 }, layer: "below", _strategy: true,
           });
         } else {
           const fc = t.ret >= 0
-            ? (t.scaled ? _winC4 : _winC3)
+            ? (t.scaled ? _tWinC4 : _tWinC3)
             : _loseColor;
           shapes.push({
             type: "rect",
@@ -1081,13 +1118,14 @@
       const entryX = [], entryY = [], entryText = [], entryCustom = [], entryColors = [];
       for (const t of allTrades) {
         const ei = t.entryIdx;
-        const lbl = (t.scaled && t.scaleIdx === ei) ? "1.5x" : "1x";
+        const _eColor = t._stratColor || (t.scaled ? "#4ade80" : "#facc15");
+        const _eLbl = t._stratLabel ? t._stratLabel : (t.scaled ? "1.5x" : "1x");
         entryX.push(x[ei]);
         entryY.push(low[ei] - pRange * 0.03);
-        entryText.push(lbl);
-        entryColors.push(_stratColor ? _stratColor : (t.scaled ? "#4ade80" : "#facc15"));
+        entryText.push(_eLbl);
+        entryColors.push(_eColor);
         entryCustom.push(
-          "<b>ENTRY " + lbl + "</b><br>" +
+          "<b>" + (t._stratLabel || "ENTRY") + " " + (t.scaled ? "C4" : "C3") + "</b><br>" +
           "Price: " + t.ep.toFixed(2) + "<br>" +
           "ATR stop: " + (t.stopTrail[0] != null ? t.stopTrail[0].toFixed(2) : "N/A") + "<br>" +
           "Date: " + x[ei].slice(0, 10)
@@ -1134,13 +1172,14 @@
       for (const t of allTrades) {
         if (t.reason === "Open") continue;
         const ret = t.ret;
-        exitColors.push(ret >= 0 ? (_stratColor || (t.scaled ? "#4ade80" : "#facc15")) : "#f43f5e");
+        const _xColor = t._stratColor || (t.scaled ? "#4ade80" : "#facc15");
+        exitColors.push(ret >= 0 ? _xColor : "#f43f5e");
         exitX.push(x[t.exitIdx]);
         exitY.push(high[t.exitIdx] + pRange * 0.025);
         const sizing = t.scaled ? "1.5x" : "1x";
         const stage = t.hold <= T ? "Lenient" : "Strict";
         exitCustom.push(
-          "<b>EXIT (" + sizing + "): " + (ret >= 0 ? "+" : "") + ret.toFixed(1) + "%</b><br>" +
+          "<b>" + (t._stratLabel || "EXIT") + " (" + sizing + "): " + (ret >= 0 ? "+" : "") + ret.toFixed(1) + "%</b><br>" +
           "Reason: " + t.reason + "<br>" +
           "Stage: " + stage + " (T=" + T + ", M=" + M + ")<br>" +
           "Hold: " + t.hold + " bars<br>" +
@@ -1217,7 +1256,10 @@
           return Math.max(t1 - t0, 3600000);
         });
         const barY = trades.map(t => t.ret * (t.scaled ? 1.5 : 1.0));
-        const barColors = trades.map(t => t.ret >= 0 ? "rgba(34,197,94,0.75)" : "rgba(239,68,68,0.75)");
+        const barColors = trades.map(t => {
+          if (t._stratColor && t.ret >= 0) return _hexToRgba(t._stratColor, 0.75);
+          return t.ret >= 0 ? "rgba(34,197,94,0.75)" : "rgba(239,68,68,0.75)";
+        });
         traces.push(mkTrace({
           type: "bar", x: barX, y: barY, width: barW,
           marker: { color: barColors, line: { width: 0 } },
@@ -1388,9 +1430,18 @@
     const close = C.map(v => v != null ? v : NaN);
     const trades = [];
 
-    // --- Prefer pre-computed events ---
-    if (payload.position_events && payload.position_events.length) {
-      for (const ev of payload.position_events) {
+    // --- Prefer pre-computed events (strategy-aware) ---
+    const _peByStrat2 = payload.position_events_by_strategy || {};
+    const _cStrat2a = (typeof window !== "undefined" && window.currentStrategy) ? window.currentStrategy : "v6";
+    const _stSetups2a = (typeof STRATEGY_SETUPS !== "undefined") ? (STRATEGY_SETUPS.setups || {}) : {};
+    const _sDef2a = _stSetups2a[_cStrat2a];
+    const _isPolStrat2 = _sDef2a && _sDef2a.entry_type === "polarity_combo";
+    const _stratEvents2 = _isPolStrat2 ? _peByStrat2[_cStrat2a] : null;
+    const _useEvents2 = (_stratEvents2 && _stratEvents2.length) ? _stratEvents2
+      : (payload.position_events && payload.position_events.length ? payload.position_events : null);
+
+    if (_useEvents2) {
+      for (const ev of _useEvents2) {
         const ei = Math.max(0, Math.min(ev.entry_idx, n - 1));
         const xi = Math.max(0, Math.min(ev.exit_idx, n - 1));
         const si = ev.scale_idx != null ? Math.max(0, Math.min(ev.scale_idx, n - 1)) : null;

@@ -1384,27 +1384,82 @@ Each stock row shows a **compact multi-strategy badge** column:
 When a stock has multiple active strategies, all relevant badges appear.
 Priority for sorting: T > S > D (matching user preference for longer TF exits).
 
-### 16.6 Position Conflict Resolution
+### 16.6 Strategy Dropdown → Screener Integration
+
+When the user selects a `polarity_combo` strategy (Dip Buy, Swing, Trend) from the strategy dropdown:
+
+1. **Action column switches to strategy-specific signals**: instead of v6 ENTRY/HOLD/EXIT per TF, the Action column shows the selected strategy's `strat_statuses.signal_action` for each TF. Badges use the strategy's color. Falls back to `—` if the strategy has no data for that TF (e.g., Dip Buy on 1W since `entry_tf` is 1D).
+2. **Auto-filter**: the screener automatically activates the matching strategy filter pill (strat_dip / strat_swing / strat_trend).
+3. **Sort**: default sort switches to `_strat_badges` descending (active strategy positions first).
+4. **Screener rebuilds**: `buildScreener()` is called on every strategy dropdown change.
+
+When "All Strategies" or a non-polarity strategy (v6, Stoof) is selected, the Action column reverts to the standard v6 signal display.
+
+### 16.7 Position Conflict Resolution
 
 Multiple strategies can be active on the same stock simultaneously.
 Display all independently — the user decides which to follow based on their
 trading preference. The priority ordering (T > S > D) only affects default
 sort order in the screener, not trade execution.
 
-### 16.7 Chart Integration
+### 16.8 Chart Integration — Per-Strategy Position Events
 
-- **Combo shading**: different colors per strategy (gold = Dip Buy, blue = Swing, purple = Trend)
-- **Entry markers**: triangle-up with strategy label (D/S/T)
-- **Exit markers**: triangle-down with same strategy color
+Each strategy's entry/exit points are **pre-computed at build time** and stored
+in the `.js` asset payload as `position_events_by_strategy`:
+
+```json
+{
+  "position_events": [...],
+  "position_events_by_strategy": {
+    "dip_buy": [...],
+    "swing": [...],
+    "trend": [...]
+  }
+}
+```
+
+**Data flow:**
+
+1. `build_dashboard.py` calls `compute_polarity_position_events()` for each
+   `polarity_combo` strategy in `config.json → strategy_setups`.
+2. `data_exporter.py` serializes both `position_events` (v6) and
+   `position_events_by_strategy` into the asset `.js` file.
+3. `chart_builder.js` reads `position_events_by_strategy[currentStrategy]`
+   when a polarity strategy is selected. For v6/Stoof it falls back to
+   `position_events`. For "All Strategies" mode it merges all.
+
+**Visual behavior per strategy:**
+
+| Strategy | Color | Entry label | Position shading |
+|---|---|---|---|
+| v6 (default) | Gold `#facc15` / Green `#4ade80` | 1x / 1.5x | Gold/green |
+| Dip Buy | Gold `#facc15` | Dip Buy | Gold |
+| Swing | Blue `#60a5fa` | Swing | Blue |
+| Trend Position | Purple `#c084fc` | Trend Position | Purple |
+
+**Chart elements that change per strategy:**
+
+- **Position shading** (vertical bars): strategy-specific color
+- **Entry markers** (triangle-up): strategy color + label
+- **Exit markers** (triangle-down): strategy color on win, red on loss
+- **P&L equity curve**: computed from the selected strategy's trades
+- **TrendScore bars**: polarity-aware scoring — KPIs score `+1` when matching
+  their expected polarity (e.g., ADX bearish = `+1` for Dip Buy where
+  `pols: [-1]`)
 - **KPI heatmap**: filtered to show only the active strategy's KPIs
-- **TrendScore bar**: strategy-aware scoring
 
-### 16.8 Adding New KPIs/Strategies — Checklist
+**"All Strategies" mode:**
+
+When "All Strategies" is selected, all strategies' trades overlay
+simultaneously. Each trade retains its strategy color so overlapping
+positions from different strategies are visually distinct.
+
+### 16.9 Adding New KPIs/Strategies — Checklist
 
 When adding a new strategy:
 
 1. Add the strategy definition to `config.json` → `strategy_setups` with `entry_type: "polarity_combo"`, KPI lists, and polarities
 2. Register its KPIs in `indicator_config.json` if new
-3. The polarity-aware position engine handles the rest automatically
+3. `build_dashboard.py` automatically computes position events for the new strategy
 4. The strategy dropdown, screener badges, and chart integration all read from `strategy_setups`
-5. Rebuild the dashboard: `python -m trading_dashboard.cli dashboard build`
+5. Rebuild the dashboard: `python3 -m apps.dashboard.build_dashboard --mode rebuild_ui`

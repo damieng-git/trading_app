@@ -1265,32 +1265,66 @@ def run_refresh_dashboard(
             sym, tf, df_full, df_plot, plot_offset, disp_name, kpi_st, c3_kpis, c4_kpis, sma200_ok, sma200_vals, sma20_vals = task
 
             # Compute position events on FULL data (single source of truth)
+            n_plot = len(df_plot) if df_plot is not None else len(df_full)
+
+            def _remap_events(raw_events):
+                out = []
+                for ev in raw_events:
+                    mapped = dict(ev)
+                    mapped["signal_idx"] -= plot_offset
+                    mapped["entry_idx"] -= plot_offset
+                    mapped["exit_idx"] -= plot_offset
+                    if mapped["scale_idx"] is not None:
+                        mapped["scale_idx"] -= plot_offset
+                    if mapped["exit_idx"] < 0:
+                        continue
+                    if mapped["entry_idx"] >= n_plot:
+                        continue
+                    mapped["signal_idx"] = max(mapped["signal_idx"], 0)
+                    mapped["entry_idx"] = max(mapped["entry_idx"], 0)
+                    out.append(mapped)
+                return out
+
             pos_events = None
             try:
                 from apps.dashboard.strategy import compute_position_events
                 if kpi_st and df_full is not None and not df_full.empty:
                     raw_events = compute_position_events(
                         df_full, kpi_st, c3_kpis, c4_kpis, tf)
-                    # Remap bar indices to plot-window coordinates
-                    n_plot = len(df_plot) if df_plot is not None else len(df_full)
-                    pos_events = []
-                    for ev in raw_events:
-                        mapped = dict(ev)
-                        mapped["signal_idx"] -= plot_offset
-                        mapped["entry_idx"] -= plot_offset
-                        mapped["exit_idx"] -= plot_offset
-                        if mapped["scale_idx"] is not None:
-                            mapped["scale_idx"] -= plot_offset
-                        # Keep events that overlap the plot window
-                        if mapped["exit_idx"] < 0:
-                            continue
-                        if mapped["entry_idx"] >= n_plot:
-                            continue
-                        mapped["signal_idx"] = max(mapped["signal_idx"], 0)
-                        mapped["entry_idx"] = max(mapped["entry_idx"], 0)
-                        pos_events.append(mapped)
+                    pos_events = _remap_events(raw_events)
             except Exception as exc:
                 logger.warning("Position events failed for %s/%s: %s", sym, tf, exc)
+
+            pos_events_by_strategy: dict[str, list[dict]] = {}
+            try:
+                from apps.dashboard.strategy import compute_polarity_position_events
+                _strat_setups = _load_strategy_setups()
+                if kpi_st and df_full is not None and not df_full.empty:
+                    for skey, sdef in _strat_setups.items():
+                        if sdef.get("entry_type") != "polarity_combo":
+                            continue
+                        combos = sdef.get("combos", {})
+                        c3d = combos.get("c3", {})
+                        c4d = combos.get("c4")
+                        s_c3_kpis = c3d.get("kpis", [])
+                        s_c3_pols = c3d.get("pols", [])
+                        s_c4_kpis = c4d.get("kpis") if c4d else None
+                        s_c4_pols = c4d.get("pols") if c4d else None
+                        exit_def = sdef.get("exit_combos")
+                        ex_kpis = exit_def.get("kpis") if exit_def else None
+                        ex_pols = exit_def.get("pols") if exit_def else None
+                        try:
+                            raw = compute_polarity_position_events(
+                                df_full, kpi_st,
+                                s_c3_kpis, s_c3_pols,
+                                s_c4_kpis, s_c4_pols, tf,
+                                exit_kpis=ex_kpis, exit_pols=ex_pols,
+                            )
+                            pos_events_by_strategy[skey] = _remap_events(raw)
+                        except Exception as exc:
+                            logger.debug("Polarity events failed for %s/%s/%s: %s", sym, tf, skey, exc)
+            except Exception as exc:
+                logger.warning("Strategy position events failed for %s/%s: %s", sym, tf, exc)
 
             from apps.dashboard.data_exporter import export_symbol_data_json
             data_json = export_symbol_data_json(
@@ -1304,6 +1338,7 @@ def run_refresh_dashboard(
                 sma200_vals=sma200_vals,
                 sma20_vals=sma20_vals,
                 position_events=pos_events,
+                position_events_by_strategy=pos_events_by_strategy,
             )
             return sym, tf, data_json
 

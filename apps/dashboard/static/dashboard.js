@@ -1922,13 +1922,13 @@
       const kpisByStrategy = setups.kpis_by_strategy || {};
 
       function _getLabel(key) {
-        if (key === "all") return "All Indicators";
+        if (key === "all") return "All Strategies";
         return (setupDefs[key] || {}).label || key;
       }
 
       function _build() {
         menu.innerHTML = "";
-        const entries = [["all", "All Indicators"]];
+        const entries = [["all", "All Strategies"]];
         Object.keys(setupDefs).forEach(k => entries.push([k, setupDefs[k].label || k]));
         entries.forEach(([key, label]) => {
           const item = document.createElement("div");
@@ -1943,11 +1943,34 @@
             _closeAllGroupMenus();
             _updateAllStrategyDropdowns();
             _build();
+            _syncStrategyFilter();
             renderChart();
           });
           menu.appendChild(item);
         });
       }
+
+      function _syncStrategyFilter() {
+        const _ssd = (typeof STRATEGY_SETUPS !== "undefined" && STRATEGY_SETUPS && STRATEGY_SETUPS.setups) ? STRATEGY_SETUPS.setups[currentStrategy] : null;
+        const _isPol = _ssd && _ssd.entry_type === "polarity_combo";
+        if (_isPol) {
+          const filterMap = {dip_buy: "strat_dip", swing: "strat_swing", trend: "strat_trend"};
+          const targetFilter = filterMap[currentStrategy] || "strat_active";
+          _savedScreenerFilter = targetFilter;
+          saveState({ screenerFilter: targetFilter });
+          document.querySelectorAll("#screenerFilters .btn").forEach(b => {
+            b.classList.toggle("active", b.dataset.filter === targetFilter);
+          });
+        } else {
+          _savedScreenerFilter = "all";
+          saveState({ screenerFilter: "all" });
+          document.querySelectorAll("#screenerFilters .btn").forEach(b => {
+            b.classList.toggle("active", b.dataset.filter === "all");
+          });
+        }
+        if (typeof Dashboard !== "undefined" && Dashboard.buildScreener) Dashboard.buildScreener();
+      }
+
       _build();
       trigger.innerHTML = _getLabel(currentStrategy) + " &#9662;";
 
@@ -1976,7 +1999,7 @@
 
         function _buildPlaceholder() {
           phMenu.innerHTML = "";
-          const entries2 = [["all", "All Indicators"]];
+          const entries2 = [["all", "All Strategies"]];
           Object.keys(setupDefs).forEach(k => entries2.push([k, setupDefs[k].label || k]));
           entries2.forEach(([key, label]) => {
             const item = document.createElement("div");
@@ -1992,6 +2015,7 @@
               _updateAllStrategyDropdowns();
               _build();
               _buildPlaceholder();
+              _syncStrategyFilter();
               renderChart();
             });
             phMenu.appendChild(item);
