@@ -1,7 +1,0 @@
-{
-  "base_indicator_config_source_of_truth": "scripts/indicator_config.json",
-  "base_indicator_config_snapshot": "research/indicator_config_optimiser/inputs/indicator_config_base.json",
-  "kpi_optimiser_results_root": "output_data/kpi_optimisation",
-  "notes": "The optimiser config builder reads KPI optimiser results from output_data/kpi_optimisation/*/results.json. Those results are shared with the KPI optimiser pipeline and remain in output_data/."
-}
-
