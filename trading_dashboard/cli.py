@@ -287,6 +287,7 @@ def _cmd_screener(args: argparse.Namespace) -> int:
 
 def _cmd_research_sample(args: argparse.Namespace) -> int:
     from research.optimization.sampler import draw_sample, save_sample
+
     from trading_dashboard.symbols.manager import SymbolManager
 
     config_path = Path(args.config) if args.config else _DEFAULT_CONFIG
