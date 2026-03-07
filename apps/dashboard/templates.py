@@ -261,6 +261,16 @@ def write_lazy_dashboard_shell_html(
       <div class="topbar-sep"></div>
       <button id="eurToggle" class="eur-toggle" title="Toggle prices to EUR">Local</button>
       <div class="topbar-sep"></div>
+      <select id="scanStrategy" class="scan-select" title="Strategy to scan">
+        <option value="">Select strategy…</option>
+      </select>
+      <select id="scanTimeframe" class="scan-select" title="Timeframe to scan">
+        <option value="1D">1D</option>
+        <option value="1W">1W</option>
+        <option value="4H">4H</option>
+        <option value="2W">2W</option>
+        <option value="1M">1M</option>
+      </select>
       <button id="scanBtn" class="scan-btn" title="Run stock screener">&#9881; Scan</button>
       <button id="refreshBtn" class="scan-btn" title="Re-download &amp; re-enrich all data">&#8635; Refresh</button>
     </div>

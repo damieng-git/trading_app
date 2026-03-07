@@ -129,20 +129,6 @@
       ]
     }
   },
-  "research": {
-    "horizons_bars": [
-      1,
-      2,
-      4,
-      8
-    ],
-    "time_slices": 4,
-    "allow_repainting_indicators": true,
-    "combo_max_k": 8,
-    "combo_candidate_kpis": 0,
-    "combo_max_per_k": 300,
-    "combo_min_occurrences": 80
-  },
   "exit_params": {
     "4H": {
       "T": 4,
@@ -174,9 +160,19 @@
     "dip_buy": {
       "label": "Buy Dip",
       "entry_type": "polarity_combo",
-      "description": "1D dip-buy entry with 1W-governed exit (~2 week hold)",
+      "description": "1D dip-buy: entry on oversold KPIs, exits via dedicated exit_combos (~2 week hold). entry_tf/exit_tf are both 1D — the engine always runs on entry-TF data and params.",
+      "scan_filters": {
+        "sma20_gt_sma200": false,
+        "volume_spike": false,
+        "sr_break": false
+      },
       "entry_tf": "1D",
-      "exit_tf": "1W",
+      "exit_tf": "1D",
+      "entry_gates": {
+        "sma20_gt_sma200": false,
+        "volume_spike": false,
+        "overextension": false
+      },
       "color": "#facc15",
       "combos": {
         "c3": {
@@ -197,8 +193,18 @@
       "label": "Swing Trading",
       "entry_type": "polarity_combo",
       "description": "1W swing trading with momentum confirmation (4-7 week hold)",
+      "scan_filters": {
+        "sma20_gt_sma200": true,
+        "volume_spike": true,
+        "sr_break": true
+      },
       "entry_tf": "1W",
       "exit_tf": "1W",
+      "entry_gates": {
+        "sma20_gt_sma200": false,
+        "volume_spike": false,
+        "overextension": false
+      },
       "color": "#60a5fa",
       "combos": {
         "c3": {
@@ -215,6 +221,11 @@
       "label": "Trend",
       "entry_type": "polarity_combo",
       "description": "Multi-TF trend-following strategy using v6 combos per timeframe",
+      "scan_filters": {
+        "sma20_gt_sma200": true,
+        "volume_spike": true,
+        "sr_break": true
+      },
       "color": "#c084fc",
       "combos": {
         "c3": {
@@ -283,9 +294,10 @@
       "label": "Stoof",
       "entry_type": "threshold",
       "threshold": 7,
-      "total": 10,
+      "total": 11,
       "color": "#fb923c",
-      "description": "Band Light 7/10 rule — 7 of 10 indicators must agree"
+      "description": "Band Light 7/11 rule — 7 of 11 indicators must agree",
+      "scan_filters": {}
     }
   }
 }

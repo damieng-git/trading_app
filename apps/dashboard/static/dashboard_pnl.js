@@ -9,24 +9,29 @@ let _pnlBuilding = false;
 let _pnlApiData = null;
 let _pnlCacheGroup = null;
 let _pnlCacheTF = null;
+let _pnlCacheStrategy = null;
 let _pnlTableSortCol = "return";
 let _pnlTableSortAsc = false;
 
 async function buildPnlTab() {
   if (_pnlBuilding) return;
-  if (_pnlCacheGroup === currentGroup && _pnlCacheTF === currentTF && _pnlApiData) {
+  // BUG-PL3 fix: include strategy in cache key
+  const _pnlStrat = (typeof window.currentStrategy === "string") ? window.currentStrategy : "legacy";
+  if (_pnlCacheGroup === currentGroup && _pnlCacheTF === currentTF && _pnlCacheStrategy === _pnlStrat && _pnlApiData) {
     _renderPnlFromApi(_pnlApiData);
     return;
   }
   _pnlBuilding = true;
   _pnlCacheGroup = currentGroup;
   _pnlCacheTF = currentTF;
+  _pnlCacheStrategy = _pnlStrat;
   const prog = document.getElementById("pnlProgress");
   if (prog) prog.textContent = "Loading…";
 
   try {
     var url = "/api/pnl-summary?group=" + encodeURIComponent(currentGroup) +
-              "&tf=" + encodeURIComponent(currentTF);
+              "&tf=" + encodeURIComponent(currentTF) +
+              "&strategy=" + encodeURIComponent(_pnlStrat);
     var r = await fetch(url, { cache: "no-store" });
     var envelope = await r.json();
     var data = (envelope && envelope.data !== undefined) ? envelope.data : envelope;

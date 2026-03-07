@@ -17,14 +17,12 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-import os
 import re
-import sys
 import textwrap
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 REPO = Path(__file__).resolve().parent
 APPS = REPO / "apps" / "dashboard"
@@ -171,7 +169,7 @@ def audit_architecture(r: AuditReport) -> None:
         if "research" in rel:
             continue
         if re.search(r"from\s+research\b", text):
-            r.add(S, WARNING, f"App imports research module",
+            r.add(S, WARNING, "App imports research module",
                   f"{rel} imports from research/ — violates layer boundary.",
                   file=rel)
 
@@ -370,9 +368,9 @@ def audit_performance(r: AuditReport) -> None:
         size_mb = html_path.stat().st_size / (1024 * 1024)
         r.add(S, WARNING if size_mb > 5 else INFO,
               f"Dashboard HTML: {size_mb:.1f} MB",
-              f"Plotly JS (~3.5 MB) is inlined via get_plotlyjs(). "
-              f"Consider loading Plotly from CDN or async <script> "
-              f"to halve initial load time.")
+              "Plotly JS (~3.5 MB) is inlined via get_plotlyjs(). "
+              "Consider loading Plotly from CDN or async <script> "
+              "to halve initial load time.")
 
     # ── asset directory size ───────────────────────────────────────
     assets_dir = DATA / "dashboard_artifacts" / "dashboard_assets"
@@ -677,7 +675,7 @@ def audit_code_quality(r: AuditReport) -> None:
         if rel in allowed_yf:
             continue
         if re.search(r"import\s+yfinance|from\s+yfinance", _read(p)):
-            r.add(S, WARNING, f"yfinance imported outside abstraction layer",
+            r.add(S, WARNING, "yfinance imported outside abstraction layer",
                   f"{rel} imports yfinance directly. Route through downloader.py.",
                   file=rel)
 
@@ -687,7 +685,7 @@ def audit_code_quality(r: AuditReport) -> None:
         wrong = re.findall(r"Scripts/\w+\.py", text)
         if wrong:
             r.add(S, WARNING, f"Wrong path in JS: '{wrong[0]}'",
-                  f"Should be 'python -m apps.dashboard.serve_dashboard'",
+                  "Should be 'python -m apps.dashboard.serve_dashboard'",
                   file=_rel(js_file))
 
 
@@ -722,7 +720,7 @@ def audit_repo_hygiene(r: AuditReport) -> None:
         missing = [(p, r_) for p, r_ in should_have if p not in gi_text]
         if missing:
             detail = "\n".join(f"  {p} ({r_})" for p, r_ in missing)
-            r.add(S, WARNING, f"Missing .gitignore entries",
+            r.add(S, WARNING, "Missing .gitignore entries",
                   f"Consider adding:\n{detail}")
     else:
         r.add(S, CRITICAL, "No .gitignore", "Data and caches will be committed.")

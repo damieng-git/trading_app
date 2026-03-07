@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Test TF filter synchronization across Screener, Charts, and P&L tabs."""
 import asyncio
-import json
 from pathlib import Path
 
 from playwright.async_api import async_playwright

@@ -260,8 +260,10 @@ def compute_position_events(
         xp = float(op[exit_fill]) if exit_fill != exit_idx else float(cl[exit_idx])
         hold = exit_idx - entry_idx
         cost = COMMISSION + SLIPPAGE
-        weight = 1.5 if scaled else 1.0
-        ret_pct = (((xp - entry_price) / entry_price - cost) * 100 * weight
+        # BUG-PL1 fix: ret_pct stores the raw price return (no position-size weight).
+        # Consumers that need weighted totals (C4 = 1.5x) apply weight themselves.
+        # The "scaled" flag tells consumers when to apply the 1.5x multiplier.
+        ret_pct = (((xp - entry_price) / entry_price - cost) * 100
                    if entry_price > 0 and not is_open else None)
 
         events.append({
@@ -430,6 +432,7 @@ def compute_polarity_position_events(
     exit_kpis: list[str] | None = None,
     exit_pols: list[int] | None = None,
     scan_start: int | None = None,
+    entry_gates: dict | None = None,
 ) -> list[dict]:
     """Polarity-aware position engine for mixed-polarity combos.
 
@@ -438,9 +441,13 @@ def compute_polarity_position_events(
 
     Parameters
     ----------
-    exit_kpis/exit_pols : optional separate exit KPI set (for cross-TF strategies
-                          like dip_buy where entry and exit use different KPIs).
-                          If None, uses the entry combo for exit checks.
+    exit_kpis/exit_pols : optional separate exit KPI set.  If None, uses the
+                          entry combo for exit checks.
+    entry_gates : optional dict controlling which v5 entry gates are active.
+                  Keys: "sma20_gt_sma200", "volume_spike", "overextension".
+                  Default None → all gates enabled (legacy behaviour).
+                  Set a key to False to disable that gate for this strategy.
+                  Example: Buy Dip disables all gates to catch oversold entries.
     """
     params = EXIT_PARAMS.get(tf)
     if not params or df is None or df.empty or len(df) < 20 or not c3_kpis:
@@ -461,15 +468,21 @@ def compute_polarity_position_events(
 
     c4_avail = c4_kpis and c4_pols and all(st.get(k) is not None for k in c4_kpis)
 
+    # BUG-D4: resolve which gates are active from entry_gates config
+    _gates = entry_gates or {}
+    _gate_sma = _gates.get("sma20_gt_sma200", True)
+    _gate_vol = _gates.get("volume_spike", True)
+    _gate_overext = _gates.get("overextension", True)
+
     # v5 gates: SMA20 > SMA200
     sma_gate = None
-    if tf in ("1D", "1W") and n >= 200:
+    if _gate_sma and tf in ("1D", "1W") and n >= 200:
         sma200 = pd.Series(cl).rolling(200, min_periods=200).mean().to_numpy()
         sma20 = pd.Series(cl).rolling(20, min_periods=20).mean().to_numpy()
         sma_gate = sma20 >= sma200
 
     overext_filter = None
-    if tf in ("1D", "1W") and n > _OVEREXT_LOOKBACK:
+    if _gate_overext and tf in ("1D", "1W") and n > _OVEREXT_LOOKBACK:
         ref = np.empty(n, dtype=float)
         ref[:_OVEREXT_LOOKBACK] = np.nan
         ref[_OVEREXT_LOOKBACK:] = cl[:-_OVEREXT_LOOKBACK]
@@ -478,7 +491,7 @@ def compute_polarity_position_events(
         overext_filter = ~(pct_chg > _OVEREXT_PCT)
 
     vol_spike_ok = None
-    if "Volume" in df.columns:
+    if _gate_vol and "Volume" in df.columns:
         vol = df["Volume"].to_numpy(float)
         vol_ma20 = pd.Series(vol).rolling(20, min_periods=20).mean().to_numpy()
         with np.errstate(invalid="ignore"):
@@ -605,8 +618,8 @@ def compute_polarity_position_events(
         xp = float(op[exit_fill]) if exit_fill != exit_idx else float(cl[exit_idx])
         hold = exit_idx - entry_idx
         cost = COMMISSION + SLIPPAGE
-        weight = 1.5 if scaled else 1.0
-        ret_pct = (((xp - entry_price) / entry_price - cost) * 100 * weight
+        # BUG-PL1 fix: unweighted return; callers apply 1.5x for scaled trades.
+        ret_pct = (((xp - entry_price) / entry_price - cost) * 100
                    if entry_price > 0 and not is_open else None)
 
         events.append({
@@ -670,17 +683,21 @@ def compute_polarity_position_status(
     exit_def = setup.get("exit_combos")
     exit_kpis = exit_def.get("kpis") if exit_def else None
     exit_pols = exit_def.get("pols") if exit_def else None
+    entry_gates = setup.get("entry_gates")
 
-    params = EXIT_PARAMS.get(exit_tf)
+    # BUG-D1/D2 fix: always use the entry TF's exit params and data.
+    # exit_tf is kept in config to document intent but is not used for param lookup.
+    params = EXIT_PARAMS.get(tf)
     if not params or df is None or df.empty or len(df) < 20 or not c3_kpis:
         return flat_result
 
     n = len(df)
     scan_start = max(0, n - 500)
     events = compute_polarity_position_events(
-        df, st, c3_kpis, c3_pols, c4_kpis, c4_pols, exit_tf,
+        df, st, c3_kpis, c3_pols, c4_kpis, c4_pols, tf,
         exit_kpis=exit_kpis, exit_pols=exit_pols,
         scan_start=scan_start,
+        entry_gates=entry_gates,
     )
 
     T, K = params["T"], params["K"]
@@ -795,7 +812,8 @@ def compute_trailing_pnl(
     if not closed:
         return {"l12m_pnl": 0.0, "l12m_trades": 0, "l12m_hit_rate": None}
 
-    total_ret = sum(e["ret_pct"] for e in closed)
+    # BUG-PL1 fix: ret_pct is now unweighted; apply 1.5x for C4 trades here.
+    total_ret = sum(e["ret_pct"] * (1.5 if e.get("scaled") else 1.0) for e in closed)
     wins = sum(1 for e in closed if e["ret_pct"] >= 0)
     hr = (wins / len(closed)) * 100
 
@@ -835,23 +853,218 @@ def compute_polarity_trailing_pnl(
     exit_def = setup.get("exit_combos")
     exit_kpis = exit_def.get("kpis") if exit_def else None
     exit_pols = exit_def.get("pols") if exit_def else None
+    entry_gates = setup.get("entry_gates")
 
-    if not EXIT_PARAMS.get(exit_tf) or df is None or df.empty or len(df) < 20 or not c3_kpis:
+    # BUG-D1/D2 fix: use entry TF params and data (not exit_tf).
+    if not EXIT_PARAMS.get(tf) or df is None or df.empty or len(df) < 20 or not c3_kpis:
         return empty
 
-    lookback = _L12M_BARS.get(exit_tf, 252)
+    lookback = _L12M_BARS.get(tf, 252)
     start = max(0, len(df) - lookback)
     events = compute_polarity_position_events(
-        df, st, c3_kpis, c3_pols, c4_kpis, c4_pols, exit_tf,
+        df, st, c3_kpis, c3_pols, c4_kpis, c4_pols, tf,
         exit_kpis=exit_kpis, exit_pols=exit_pols,
         scan_start=start,
+        entry_gates=entry_gates,
     )
 
     closed = [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None]
     if not closed:
         return {"l12m_pnl": 0.0, "l12m_trades": 0, "l12m_hit_rate": None}
 
-    total_ret = sum(e["ret_pct"] for e in closed)
+    # BUG-PL1 fix: ret_pct is unweighted; apply 1.5x for C4 trades here.
+    total_ret = sum(e["ret_pct"] * (1.5 if e.get("scaled") else 1.0) for e in closed)
+    wins = sum(1 for e in closed if e["ret_pct"] >= 0)
+    hr = (wins / len(closed)) * 100
+    return {
+        "l12m_pnl": round(total_ret, 2),
+        "l12m_trades": len(closed),
+        "l12m_hit_rate": round(hr, 1),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Stoof threshold-based position engine (BUG-ST2/ST3)
+# ---------------------------------------------------------------------------
+
+def compute_stoof_position_events(
+    df: pd.DataFrame,
+    st: dict,
+    stoof_kpis: list[str],
+    threshold: int,
+    tf: str,
+    *,
+    scan_start: int | None = None,
+) -> list[dict]:
+    """Threshold-based (Band Light) position engine for the Stoof strategy.
+
+    Entry: bullish KPI count transitions from < threshold to >= threshold (onset only).
+    No SMA/volume/overextension gates — Stoof is score-based, not trend-filtered.
+    No C4 / position scaling (single entry level).
+    Exit: same ATR stop + two-stage KPI invalidation as other engines, but measured
+          against the threshold instead of individual KPI polarity.
+          Lenient (bars <= T): exit if count < threshold (any breach).
+          Strict (bars > T): exit if count <= threshold - 2 (2+ KPIs dropped below line).
+          Checkpoint (M bars): exit if count < threshold, else trail stop.
+
+    ret_pct is unweighted (scaled=False always); consumers apply weight if needed.
+    """
+    params = EXIT_PARAMS.get(tf)
+    if not params or df is None or df.empty or len(df) < 20 or not stoof_kpis:
+        return []
+    if not {"High", "Low", "Close"}.issubset(df.columns):
+        return []
+
+    T, M, K = params["T"], params["M"], params["K"]
+    cl = df["Close"].to_numpy(float)
+    op = df["Open"].to_numpy(float) if "Open" in df.columns else cl.copy()
+    atr = compute_atr(df, ATR_PERIOD).to_numpy(float)
+    n = len(df)
+
+    # Pre-compute bullish count per bar for available KPIs
+    avail_kpis = [k for k in stoof_kpis if st.get(k) is not None]
+    if not avail_kpis:
+        return []
+
+    bull_counts = np.zeros(n, dtype=int)
+    for k in avail_kpis:
+        s = st[k]
+        for idx in range(n):
+            if idx < len(s):
+                v = s.iloc[idx]
+                if not pd.isna(v) and int(v) == 1:
+                    bull_counts[idx] += 1
+
+    start = scan_start if scan_start is not None else 0
+    events: list[dict] = []
+    i = start
+
+    while i < n:
+        # Onset: count crosses threshold upward
+        if bull_counts[i] < threshold or (i > 0 and bull_counts[i - 1] >= threshold):
+            i += 1
+            continue
+
+        signal_idx = i
+        fill_bar = i + 1
+        if fill_bar >= n:
+            break
+        entry_price = float(op[fill_bar])
+        if entry_price <= 0 or np.isnan(entry_price):
+            i += 1
+            continue
+
+        atr_val = atr[i]
+        stop = (entry_price - K * atr_val
+                if not np.isnan(atr_val) and atr_val > 0
+                else entry_price * 0.95)
+        stop_price = entry_price
+        bars_since_reset = 0
+        entry_idx = fill_bar
+        stop_trail: list[float] = [stop]
+
+        exit_idx = None
+        exit_reason = None
+
+        j = fill_bar + 1
+        while j < n:
+            bars_since_reset += 1
+            c = float(cl[j])
+            if np.isnan(c):
+                stop_trail.append(stop_trail[-1] if stop_trail else stop)
+                j += 1
+                continue
+
+            if c < stop:
+                exit_idx = j
+                exit_reason = "ATR stop"
+                break
+
+            cnt = int(bull_counts[j])
+            bars_held = j - entry_idx
+
+            if bars_held <= T:
+                if cnt < threshold:
+                    exit_idx = j
+                    exit_reason = "Full invalidation"
+                    break
+            else:
+                if cnt <= threshold - 2:
+                    exit_idx = j
+                    exit_reason = f"Score {cnt}/{len(avail_kpis)} below threshold"
+                    break
+
+            if bars_since_reset >= M:
+                if cnt >= threshold:
+                    stop_price = c
+                    a_val = atr[j] if j < len(atr) else np.nan
+                    stop = (stop_price - K * a_val
+                            if not np.isnan(a_val) and a_val > 0
+                            else stop)
+                    bars_since_reset = 0
+                else:
+                    exit_idx = j
+                    exit_reason = "Checkpoint exit"
+                    break
+
+            stop_trail.append(stop)
+            j += 1
+
+        if exit_idx is None:
+            exit_idx = n - 1
+            exit_reason = "Open"
+
+        while len(stop_trail) < (exit_idx - entry_idx + 1):
+            stop_trail.append(stop_trail[-1] if stop_trail else stop)
+
+        is_open = exit_reason == "Open"
+        exit_fill = min(exit_idx + 1, n - 1) if not is_open and exit_idx < n - 1 else exit_idx
+        xp = float(op[exit_fill]) if exit_fill != exit_idx else float(cl[exit_idx])
+        hold = exit_idx - entry_idx
+        cost = COMMISSION + SLIPPAGE
+        ret_pct = (((xp - entry_price) / entry_price - cost) * 100
+                   if entry_price > 0 and not is_open else None)
+
+        events.append({
+            "signal_idx": signal_idx,
+            "entry_idx": entry_idx,
+            "entry_price": round(entry_price, 4),
+            "exit_idx": exit_idx,
+            "exit_price": round(xp, 4) if not is_open else None,
+            "exit_reason": exit_reason,
+            "scaled": False,
+            "scale_idx": None,
+            "stop_trail": [round(s, 4) if np.isfinite(s) else None for s in stop_trail],
+            "hold": hold,
+            "ret_pct": round(ret_pct, 2) if ret_pct is not None else None,
+        })
+
+        i = exit_idx + 1 if not is_open else n
+
+    return events
+
+
+def compute_stoof_trailing_pnl(
+    df: pd.DataFrame,
+    st: dict,
+    stoof_kpis: list[str],
+    threshold: int,
+    tf: str,
+) -> dict:
+    """Trailing 12-month P&L for the Stoof strategy."""
+    empty = {"l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None}
+    if not EXIT_PARAMS.get(tf) or df is None or df.empty or len(df) < 20 or not stoof_kpis:
+        return empty
+
+    lookback = _L12M_BARS.get(tf, 252)
+    start = max(0, len(df) - lookback)
+    events = compute_stoof_position_events(df, st, stoof_kpis, threshold, tf, scan_start=start)
+
+    closed = [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None]
+    if not closed:
+        return {"l12m_pnl": 0.0, "l12m_trades": 0, "l12m_hit_rate": None}
+
+    total_ret = sum(e["ret_pct"] for e in closed)  # Stoof has no scaling, no weight needed
     wins = sum(1 for e in closed if e["ret_pct"] >= 0)
     hr = (wins / len(closed)) * 100
     return {

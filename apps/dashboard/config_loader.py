@@ -110,7 +110,8 @@ def get_timeframe(key: str) -> Timeframe:
 # This file lives in: trading_app/apps/dashboard/config_loader.py
 # Repo root (PROJECT_ROOT) is: trading_app/
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_DIR = SCRIPT_DIR.parents[2]  # trading_app (root)
+import os as _os
+REPO_DIR = Path(_os.environ.get("TRADING_APP_ROOT", str(SCRIPT_DIR.parents[2])))
 PROJECT_ROOT = REPO_DIR
 PROJECT_DIR = REPO_DIR  # legacy name used throughout the file
 

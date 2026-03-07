@@ -1303,7 +1303,9 @@ def run_refresh_dashboard(
                     for skey, sdef in _strat_setups.items():
                         if sdef.get("entry_type") != "polarity_combo":
                             continue
-                        combos = sdef.get("combos", {})
+                        # BUG-T1: resolve per-TF combos before flat fallback
+                        _cbytf = sdef.get("combos_by_tf", {})
+                        combos = _cbytf.get(tf) or sdef.get("combos", {})
                         c3d = combos.get("c3", {})
                         c4d = combos.get("c4")
                         s_c3_kpis = c3d.get("kpis", [])
@@ -1313,18 +1315,36 @@ def run_refresh_dashboard(
                         exit_def = sdef.get("exit_combos")
                         ex_kpis = exit_def.get("kpis") if exit_def else None
                         ex_pols = exit_def.get("pols") if exit_def else None
+                        # BUG-D4: pass per-strategy entry gates
+                        _gates = sdef.get("entry_gates")
                         try:
                             raw = compute_polarity_position_events(
                                 df_full, kpi_st,
                                 s_c3_kpis, s_c3_pols,
                                 s_c4_kpis, s_c4_pols, tf,
                                 exit_kpis=ex_kpis, exit_pols=ex_pols,
+                                entry_gates=_gates,
                             )
                             pos_events_by_strategy[skey] = _remap_events(raw)
                         except Exception as exc:
                             logger.debug("Polarity events failed for %s/%s/%s: %s", sym, tf, skey, exc)
             except Exception as exc:
                 logger.warning("Strategy position events failed for %s/%s: %s", sym, tf, exc)
+
+            # BUG-ST2: compute Stoof threshold-based position events
+            try:
+                from apps.dashboard.strategy import compute_stoof_position_events
+                from trading_dashboard.indicators.registry import get_kpi_trend_order as _gkto
+                _stoof_def = _load_strategy_setups().get("stoof", {})
+                if _stoof_def and kpi_st and df_full is not None and not df_full.empty:
+                    _stoof_kpis = _gkto("stoof")
+                    _stoof_thresh = int(_stoof_def.get("threshold", 7))
+                    raw_stoof = compute_stoof_position_events(
+                        df_full, kpi_st, _stoof_kpis, _stoof_thresh, tf)
+                    if raw_stoof:
+                        pos_events_by_strategy["stoof"] = _remap_events(raw_stoof)
+            except Exception as exc:
+                logger.debug("Stoof events failed for %s/%s: %s", sym, tf, exc)
 
             from apps.dashboard.data_exporter import export_symbol_data_json
             data_json = export_symbol_data_json(

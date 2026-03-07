@@ -23,7 +23,8 @@
 
     // UI state (persisted)
     // NOTE: bump key to reset prior default indicator selections.
-    const LS_KEY = "td_dash_shell_state_v1_2";
+    const _LS_SUFFIX = window.location.pathname.startsWith("/test/") ? "_test" : "";
+    const LS_KEY = "td_dash_shell_state_v1_2" + _LS_SUFFIX;
     function loadState() {
       try {
         return JSON.parse(localStorage.getItem(LS_KEY) || "{}") || {};
@@ -807,8 +808,8 @@
     });
 
     // --- Move-between-groups system ---
-    let _pendingMoves = JSON.parse(localStorage.getItem("td_pending_moves") || "[]");
-    function _savePendingMoves() { localStorage.setItem("td_pending_moves", JSON.stringify(_pendingMoves)); _updateMoveBadge(); }
+    let _pendingMoves = JSON.parse(localStorage.getItem(("td_pending_moves" + _LS_SUFFIX)) || "[]");
+    function _savePendingMoves() { localStorage.setItem(("td_pending_moves" + _LS_SUFFIX), JSON.stringify(_pendingMoves)); _updateMoveBadge(); }
 
     function _findSymbolGroups(sym) {
       const groups = [];
@@ -2131,10 +2132,10 @@
 
     // --- Annotations (17): double-click on upper chart to add text ---
     let _userAnnotations = {};
-    try { _userAnnotations = JSON.parse(localStorage.getItem("td_annotations") || "{}"); } catch (e) {}
+    try { _userAnnotations = JSON.parse(localStorage.getItem(("td_annotations" + _LS_SUFFIX)) || "{}"); } catch (e) {}
     function _getAnnotationKey() { return currentSymbol + "|" + currentTF; }
     function _saveAnnotations() {
-      try { localStorage.setItem("td_annotations", JSON.stringify(_userAnnotations)); } catch (e) {}
+      try { localStorage.setItem(("td_annotations" + _LS_SUFFIX), JSON.stringify(_userAnnotations)); } catch (e) {}
     }
     function _applyAnnotations() {
       const gd = DOM.chartUpper;
@@ -2313,7 +2314,9 @@
 
     /* ── Scan / Refresh buttons & SSE progress bar ────────────────────── */
     (function initScanRefresh() {
-      const scanBtn    = document.getElementById("scanBtn");
+      const scanBtn       = document.getElementById("scanBtn");
+      const scanStrategy  = document.getElementById("scanStrategy");
+      const scanTimeframe = document.getElementById("scanTimeframe");
       const refreshBtn = document.getElementById("refreshBtn");
       const bar        = document.getElementById("scanBar");
       const fill       = document.getElementById("scanFill");
@@ -2321,6 +2324,20 @@
       const detail     = document.getElementById("scanDetail");
       const eta        = document.getElementById("scanEta");
       const closeBtn   = document.getElementById("scanClose");
+
+      /* Populate strategy select from STRATEGY_SETUPS (skip threshold strategies) */
+      (function populateScanStrategies() {
+        if (!scanStrategy || typeof STRATEGY_SETUPS === "undefined") return;
+        var setups = STRATEGY_SETUPS.setups || {};
+        Object.keys(setups).forEach(function(key) {
+          var s = setups[key];
+          if (s && s.entry_type === "threshold") return; // Stoof: not yet supported
+          var opt = document.createElement("option");
+          opt.value = key;
+          opt.textContent = (s && s.label) ? s.label : key;
+          scanStrategy.appendChild(opt);
+        });
+      })();
       if (!bar) return;
 
       let evtSource = null;
@@ -2468,10 +2485,8 @@
               label.textContent = "Refresh complete";
               detail.textContent = d.detail || "All data refreshed";
             } else {
-              var msg = d.c3 + " C3 + " + d.c4 + " C4 hits";
-              if (d.total) msg += " (" + (d.enriched || d.total) + "/" + d.total + " ready)";
               label.textContent = "Scan complete";
-              detail.textContent = msg;
+              detail.textContent = (d.total != null ? d.total + " signals found" : d.detail || "");
             }
           } catch (_) {
             label.textContent = "Done";
@@ -2536,7 +2551,14 @@
         };
       }
 
-      if (scanBtn) scanBtn.addEventListener("click", function() { _connectSSE("/api/scan", "Scan"); });
+      if (scanBtn) scanBtn.addEventListener("click", function() {
+        var strategy = scanStrategy ? scanStrategy.value : "";
+        if (!strategy) { alert("Please select a strategy before scanning."); return; }
+        var timeframe = scanTimeframe ? scanTimeframe.value : "1D";
+        var url = "/api/scan?strategy=" + encodeURIComponent(strategy);
+        if (timeframe) url += "&timeframe=" + encodeURIComponent(timeframe);
+        _connectSSE(url, "Scan");
+      });
       if (refreshBtn) refreshBtn.addEventListener("click", function() { _connectSSE("/api/refresh", "Refresh"); });
 
       fetch("/api/scan/status", { cache: "no-store" })

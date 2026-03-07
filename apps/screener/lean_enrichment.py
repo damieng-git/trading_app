@@ -1,11 +1,18 @@
 """Lean indicator enrichment for daily screener.
 
 Computes *only* the 5 indicators required for 1D C3/C4 detection plus
-SMA200 and SMA20 (for the v6 SMA20>SMA200 entry gate).
+SMA200 and SMA20 (for the SMA20>SMA200 entry gate).
 
-1D C3: Nadaraya-Watson Smoother, Madrid Ribbon, Volume > MA20  (unchanged in v6)
-1D C4: Nadaraya-Watson Smoother, Madrid Ribbon, GK Trend Ribbon, cRSI  (unchanged in v6)
+1D C3: Nadaraya-Watson Smoother, Madrid Ribbon, Volume > MA20
+1D C4: Nadaraya-Watson Smoother, Madrid Ribbon, GK Trend Ribbon, cRSI
 Entry gates: SMA20 > SMA200, Volume spike 1.5× (uses Vol_MA20 already computed)
+
+Optional extra_kpis extend the default set for strategy-specific scanning:
+  "DEMA"      → DEMA_9 column
+  "ADX & DI"  → DI_plus, DI_minus columns
+  "WT_LB"     → WT_LB_wt1, WT_LB_wt2 columns
+  "SQZMOM_LB" → SQZ_val column
+  "Stoch_MTM" → SMI, SMI_ema columns
 """
 
 from __future__ import annotations
@@ -43,8 +50,12 @@ def compute_lean_indicators(
     df: pd.DataFrame,
     *,
     indicator_config_path: Path | None = None,
+    extra_kpis: list[str] | None = None,
 ) -> pd.DataFrame:
-    """Enrich an OHLCV DataFrame with only the indicators needed for 1D C3/C4.
+    """Enrich an OHLCV DataFrame with only the indicators needed for C3/C4 detection.
+
+    ``extra_kpis`` lists additional KPI names (e.g. ``["DEMA", "ADX & DI"]``) whose
+    indicator columns are appended beyond the default 5-indicator set.
 
     Returns a new DataFrame with the original OHLCV columns plus indicator columns.
     """
@@ -113,8 +124,58 @@ def compute_lean_indicators(
     )
     out = out.join(cr)
 
-    # ── 6. SMA200 + SMA20 (v5 entry gate: SMA20 > SMA200) ──────────────
+    # ── 6. SMA200 + SMA20 (entry gate: SMA20 > SMA200) ──────────────────
     out["SMA200"] = out["Close"].rolling(window=200, min_periods=200).mean()
     out["SMA20"] = out["Close"].rolling(window=20, min_periods=20).mean()
+
+    # ── 7. Optional extra KPIs for strategy-specific scanning ─────────────
+    _extra = set(extra_kpis) if extra_kpis else set()
+
+    if "DEMA" in _extra:
+        from trading_dashboard.indicators import dema as _dema
+        p = _load_indicator_params("DEMA", cfg)
+        out["DEMA_9"] = _dema(out["Close"], int(p.get("length", 9)))
+
+    if "ADX & DI" in _extra:
+        from trading_dashboard.indicators import adx_di as _adx_di
+        p = _load_indicator_params("ADX_DI", cfg)
+        adx_val, di_p, di_m = _adx_di(out, length=int(p.get("length", 14)))
+        out["ADX"] = adx_val
+        out["DI_plus"] = di_p
+        out["DI_minus"] = di_m
+
+    if "WT_LB" in _extra:
+        from trading_dashboard.indicators import wavetrend_lazybear as _wt
+        p = _load_indicator_params("WT_LB", cfg)
+        wt1, wt2, wt_hist = _wt(out, n1=int(p.get("n1", 10)), n2=int(p.get("n2", 21)))
+        out["WT_LB_wt1"] = wt1
+        out["WT_LB_wt2"] = wt2
+        out["WT_LB_hist"] = wt_hist
+
+    if "SQZMOM_LB" in _extra and "Volume" in out.columns:
+        from trading_dashboard.indicators import squeeze_momentum_lazybear as _sqz
+        p = _load_indicator_params("SQZMOM_LB", cfg)
+        sqz = _sqz(
+            out,
+            length=int(p.get("length", 20)),
+            mult=float(p.get("mult", 2.0)),
+            length_kc=int(p.get("length_kc", 20)),
+            mult_kc=float(p.get("mult_kc", 1.5)),
+            use_true_range=bool(p.get("use_true_range", True)),
+        )
+        out["SQZ_val"] = sqz["SQZ_val"]
+
+    if "Stoch_MTM" in _extra:
+        from trading_dashboard.indicators import stoch_momentum_index as _smi
+        p = _load_indicator_params("SMI", cfg)
+        smi_val, smi_ema = _smi(
+            out,
+            a=int(p.get("a", 10)),
+            b=int(p.get("b", 3)),
+            c=int(p.get("c", 10)),
+            smooth_period=int(p.get("smooth_period", 5)),
+        )
+        out["SMI"] = smi_val
+        out["SMI_ema"] = smi_ema
 
     return out

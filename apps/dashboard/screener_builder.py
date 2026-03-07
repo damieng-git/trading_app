@@ -12,6 +12,7 @@ from apps.dashboard.strategy import (
     compute_polarity_position_status,
     compute_polarity_trailing_pnl,
     compute_position_status,
+    compute_stoof_trailing_pnl,
     compute_trailing_pnl,
 )
 
@@ -132,32 +133,60 @@ def build_screener_rows(
 
             pos_status = compute_position_status(df, st, c3_kpis, c4_kpis, tf)
             trailing_pnl = compute_trailing_pnl(df, st, c3_kpis, c4_kpis, tf)
+            # BUG-PL4 placeholder: overwrite with Trend's strat_status l12m after strat loop
 
             # Multi-strategy polarity positions
             strat_statuses: dict[str, dict] = {}
             _setups = strategy_setups or {}
             for skey, sdef in _setups.items():
-                if sdef.get("entry_type") != "polarity_combo":
-                    continue
-                s_entry_tf = sdef.get("entry_tf", tf)
-                if s_entry_tf != tf:
-                    continue
                 try:
-                    ps = compute_polarity_position_status(df, st, sdef, tf)
-                    tp = compute_polarity_trailing_pnl(df, st, sdef, tf)
-                    strat_statuses[skey] = {
-                        "signal_action": ps["signal_action"],
-                        "entry_price": ps["entry_price"],
-                        "atr_stop": ps["atr_stop"],
-                        "bars_held": ps["bars_held"],
-                        "combo_bars": ps.get("combo_bars"),
-                        "c4_scaled": ps["c4_scaled"],
-                        "l12m_pnl": tp["l12m_pnl"],
-                        "l12m_trades": tp["l12m_trades"],
-                        "l12m_hit_rate": tp["l12m_hit_rate"],
-                    }
+                    if sdef.get("entry_type") == "polarity_combo":
+                        s_entry_tf = sdef.get("entry_tf", tf)
+                        if s_entry_tf != tf:
+                            continue
+                        ps = compute_polarity_position_status(df, st, sdef, tf)
+                        tp = compute_polarity_trailing_pnl(df, st, sdef, tf)
+                        strat_statuses[skey] = {
+                            "signal_action": ps["signal_action"],
+                            "entry_price": ps["entry_price"],
+                            "atr_stop": ps["atr_stop"],
+                            "bars_held": ps["bars_held"],
+                            "combo_bars": ps.get("combo_bars"),
+                            "c4_scaled": ps["c4_scaled"],
+                            "l12m_pnl": tp["l12m_pnl"],
+                            "l12m_trades": tp["l12m_trades"],
+                            "l12m_hit_rate": tp["l12m_hit_rate"],
+                        }
+                    elif sdef.get("entry_type") == "threshold":
+                        # BUG-ST3: compute Stoof trailing P&L for screener
+                        from trading_dashboard.indicators.registry import get_kpi_trend_order as _gkto
+                        _sk = _gkto(skey)
+                        _thresh = int(sdef.get("threshold", 7))
+                        tp = compute_stoof_trailing_pnl(df, st, _sk, _thresh, tf)
+                        strat_statuses[skey] = {
+                            "signal_action": "FLAT",
+                            "entry_price": None,
+                            "atr_stop": None,
+                            "bars_held": None,
+                            "combo_bars": None,
+                            "c4_scaled": False,
+                            "l12m_pnl": tp["l12m_pnl"],
+                            "l12m_trades": tp["l12m_trades"],
+                            "l12m_hit_rate": tp["l12m_hit_rate"],
+                        }
                 except Exception as e:
                     logger.warning("Strategy %s failed for %s/%s: %s", skey, sym, tf, e)
+
+            # BUG-PL4 fix: use Trend's strat_status l12m values as the primary screener P&L.
+            # The legacy compute_trailing_pnl uses combo_kpis_by_tf (an unnamed strategy);
+            # Trend's polarity engine with combos_by_tf is the canonical named equivalent.
+            if "trend" in strat_statuses:
+                _ts = strat_statuses["trend"]
+                trailing_pnl = {
+                    "l12m_pnl": _ts["l12m_pnl"],
+                    "l12m_trades": _ts["l12m_trades"],
+                    "l12m_hit_rate": _ts["l12m_hit_rate"],
+                }
 
             n = int(max(1, min(int(cfg_alerts_lookback_bars), len(df))))
             bull_events = 0

@@ -814,9 +814,13 @@
       : (isStoof ? "StoofScore" : "TrendScore");
 
     // Build polarity map for polarity strategies: KPI name → expected polarity
+    // Bug-C fix: prefer TF-specific combos (combos_by_tf) over flat combos, mirroring entry logic.
     const _polMap = {};
-    if (isPolStrat && _activeDef && _activeDef.combos) {
-      const _cc = _activeDef.combos;
+    if (isPolStrat && _activeDef) {
+      const _pmTfKey = (typeof tf === "string") ? tf.toUpperCase() : "";
+      const _pmByTf = _activeDef.combos_by_tf || {};
+      const _pmTfCombos = _pmByTf[_pmTfKey] || {};
+      const _cc = Object.keys(_pmTfCombos).length ? _pmTfCombos : (_activeDef.combos || {});
       ["c3", "c4"].forEach(ck => {
         const cd = _cc[ck];
         if (cd && cd.kpis && cd.pols) {
@@ -860,6 +864,27 @@
         c3Active = comboBool(combo3kpis, combo3pols);
         c4Active = combo4kpis.length ? comboBool(combo4kpis, combo4pols) : null;
       }
+
+      // Entry / exit badges on score bar
+      if (c3Active) {
+        const _badgeColor = (isPolStrat && _stratColor) ? _stratColor : "#22c55e";
+        const entryX = [], exitX = [];
+        for (let i = 1; i < n; i++) {
+          if (c3Active[i] && !c3Active[i - 1]) entryX.push(x[i]);
+          if (!c3Active[i] && c3Active[i - 1]) exitX.push(x[i]);
+        }
+        const _bY = tsPad * 0.88;
+        if (entryX.length) traces.push(mkTrace({
+          type: "scatter", x: entryX, y: constant(entryX.length, _bY),
+          mode: "markers", marker: { symbol: "triangle-up", size: 11, color: _badgeColor, line: { color: "rgba(0,0,0,0.25)", width: 1 } },
+          hovertemplate: "<b>C3 Entry</b><br>%{x}<extra></extra>",
+        }, 4, "TrendScore", false));
+        if (exitX.length) traces.push(mkTrace({
+          type: "scatter", x: exitX, y: constant(exitX.length, -_bY),
+          mode: "markers", marker: { symbol: "triangle-down", size: 11, color: "#ef4444", line: { color: "rgba(0,0,0,0.25)", width: 1 } },
+          hovertemplate: "<b>C3 Exit</b><br>%{x}<extra></extra>",
+        }, 4, "TrendScore", false));
+      }
     }
 
     // KPI Trend Heatmap (row 6) — uses scoreSlice when strategy is active
@@ -867,13 +892,32 @@
       : (isStoof ? stoofSlice : trend);
     const trLabels = [];
     if (heatmapSlice.kk.length) {
+      const trZ = heatmapSlice.zz.slice();
+      const trC = heatmapSlice.cc.slice();
+      const trCustom = heatmapSlice.kk.map(k => constant(n, shortLabel(k)));
       heatmapSlice.kk.forEach(k => trLabels.push(shortLabel(k)));
-      const grouped_kpi_labels = heatmapSlice.kk.map(k => constant(n, shortLabel(k)));
+
+      // C3 / C4 combo rows appended at top of heatmap (z=1→green, z=0→grey via existing colorscale)
+      if (!isStoof && c3Active && combo3kpis.length) {
+        const c3Label = "C3: " + combo3kpis.map(k => shortLabel(k)).join(" · ");
+        trLabels.push(c3Label);
+        trZ.push(c3Active.map(v => v ? 1 : 0));
+        trC.push(c3Active.map(v => v ? "active" : "—"));
+        trCustom.push(constant(n, c3Label));
+        if (c4Active && combo4kpis.length) {
+          const c4Label = "C4: " + combo4kpis.map(k => shortLabel(k)).join(" · ");
+          trLabels.push(c4Label);
+          trZ.push(c4Active.map(v => v ? 1 : 0));
+          trC.push(c4Active.map(v => v ? "active" : "—"));
+          trCustom.push(constant(n, c4Label));
+        }
+      }
+
       traces.push(mkTrace({
-        type: "heatmap", x: x, y: trLabels, z: heatmapSlice.zz,
+        type: "heatmap", x: x, y: trLabels, z: trZ,
         zmin: -3, zmax: 1, colorscale: colorscale, zsmooth: false,
         showscale: false, xgap: 0, ygap: 3,
-        customdata: grouped_kpi_labels, text: heatmapSlice.cc,
+        customdata: trCustom, text: trC,
         hovertemplate: "<b>%{customdata}</b><br>%{x}<br>%{text}<extra></extra>",
       }, 6, "KPI Trend", true));
     }
@@ -959,7 +1003,8 @@
         for (const sk in _peByStrat) {
           _pushEvents(_peByStrat[sk], sk);
         }
-      } else if (data.position_events && data.position_events.length) {
+      } else if (!isStoof && data.position_events && data.position_events.length) {
+        // BUG-ST1 fix: do not show Trend events when Stoof is selected.
         _pushEvents(data.position_events, "trend");
       } else if (c3Active && Object.keys(allKpiZ).length) {
         // Fallback: compute from payload data (backward compat)
@@ -1039,7 +1084,10 @@
       }
 
       // --- "All strategies" mode: compute trades for every polarity_combo strategy ---
-      if (_activeStrat === "all" && Object.keys(allKpiZ).length) {
+      // BUG-CC2 fix: only run client-side simulation when no pre-computed events exist.
+      // When position_events_by_strategy is populated (after a build), allTrades was
+      // already filled by _useAllOverlay above and client-side re-computation is skipped.
+      if (_activeStrat === "all" && Object.keys(allKpiZ).length && Object.keys(_peByStrat).length === 0) {
         allTrades.length = 0;
         const _aSlip = 0.005;
         const _aEP2 = (typeof EXIT_PARAMS_CFG !== "undefined") ? EXIT_PARAMS_CFG : {"4H":{T:4,M:48,K:4.0},"1D":{T:4,M:40,K:4.0},"1W":{T:2,M:20,K:4.0},"2W":{T:2,M:10,K:4.0},"1M":{T:1,M:6,K:4.0}};
@@ -1096,6 +1144,10 @@
           const _sc3pols = _sc3d.pols || _sc3kpis.map(() => 1);
           const _sc4kpis = _sc4d ? (_sc4d.kpis || []) : [];
           const _sc4pols = _sc4d ? (_sc4d.pols || _sc4kpis.map(() => 1)) : [];
+          // BUG-D3 fix: use exit_combos for exit checking if defined on this strategy
+          const _sExitDef = sdef.exit_combos;
+          const _sExKpis = _sExitDef ? (_sExitDef.kpis || null) : null;
+          const _sExPols = _sExitDef ? (_sExitDef.pols || null) : null;
           if (!_sc3kpis.length || _sc3kpis.some(k => !allKpiZ[k])) continue;
           const _sc3Act = comboBool(_sc3kpis, _sc3pols);
           const _sc4Act = _sc4kpis.length ? comboBool(_sc4kpis, _sc4pols) : null;
@@ -1112,15 +1164,20 @@
             const _sEnt = _sfb;
             let _sSc = _sc4Act ? _sc4Act[_sIdx] : false, _sScIdx = _sSc ? _sIdx : null;
             let _sAk = _sSc ? _sc4kpis : _sc3kpis, _sAp = _sSc ? _sc4pols : _sc3pols;
+            // BUG-D3: resolve exit KPIs (use exit_combos if defined, else active entry combo)
+            let _sCurExKpis = _sExKpis || _sAk, _sCurExPols = _sExPols || _sAp;
             let _sSp = _sep, _sStop = _aAtr[_sIdx] > 0 ? _sSp - _aK * _aAtr[_sIdx] : _sSp * 0.95;
             let _sBsr = 0; const _sSt = [_sStop]; let _sXi = null, _sXr = null;
             for (let _sj = _sEnt + 1; _sj < n; _sj++) {
               _sBsr++; const _scj = _aClose[_sj]; if (isNaN(_scj)) { _sSt.push(_sSt[_sSt.length - 1]); continue; }
               if (_scj < _sStop) { _sXi = _sj; _sXr = "ATR stop"; break; }
-              if (!_sSc && _sc4Act && _sc4Act[_sj]) { _sSc = true; _sScIdx = _sj; _sAk = _sc4kpis; _sAp = _sc4pols; }
-              const _snb = _aBearCount(_sAk, _sj, _sAp), _sbh = _sj - _sEnt;
-              if (_sbh <= _aT) { if (_snb >= _sAk.length) { _sXi = _sj; _sXr = "Full invalidation"; break; } }
-              else { if (_snb >= 2) { _sXi = _sj; _sXr = _snb + "/" + _sAk.length + " KPIs bearish"; break; } }
+              if (!_sSc && _sc4Act && _sc4Act[_sj]) {
+                _sSc = true; _sScIdx = _sj; _sAk = _sc4kpis; _sAp = _sc4pols;
+                if (!_sExKpis) { _sCurExKpis = _sAk; _sCurExPols = _sAp; }
+              }
+              const _snb = _aBearCount(_sCurExKpis, _sj, _sCurExPols), _sbh = _sj - _sEnt;
+              if (_sbh <= _aT) { if (_snb >= _sCurExKpis.length) { _sXi = _sj; _sXr = "Full invalidation"; break; } }
+              else { if (_snb >= 2) { _sXi = _sj; _sXr = _snb + "/" + _sCurExKpis.length + " KPIs bearish"; break; } }
               if (_sBsr >= _aM) { if (_snb === 0) { _sSp = _scj; _sStop = _aAtr[_sj] > 0 ? _sSp - _aK * _aAtr[_sj] : _sStop; _sBsr = 0; } else { _sXi = _sj; _sXr = "Checkpoint exit"; break; } }
               _sSt.push(_sStop);
             }
@@ -1487,9 +1544,9 @@
     const subplotTitles = [
       { text: "Price (" + tf + ")", xref: "paper", yref: "paper", x: 0.5, y: r1Top, showarrow: false, font: { size: 14 }, xanchor: "center", yanchor: "bottom" },
       { text: "Oscillators", xref: "paper", yref: "paper", x: 0.5, y: r3Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
-      { text: "TrendScore", xref: "paper", yref: "paper", x: 0.5, y: r4Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
+      { text: scoreLabel, xref: "paper", yref: "paper", x: 0.5, y: r4Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
-      { text: "KPI \u2014 Trend (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
+      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
     ];
     // Stash KPI counts in layout.meta for dynamic height in splitFigure
     layout.meta = layout.meta || {};
@@ -1533,9 +1590,12 @@
     const _stSetups2a = (typeof STRATEGY_SETUPS !== "undefined") ? (STRATEGY_SETUPS.setups || {}) : {};
     const _sDef2a = _stSetups2a[_cStrat2a];
     const _isPolStrat2 = _sDef2a && _sDef2a.entry_type === "polarity_combo";
-    const _stratEvents2 = _isPolStrat2 ? _peByStrat2[_cStrat2a] : null;
+    const _isStoof2 = _cStrat2a === "stoof";
+    // prefer strategy-specific events; for Stoof use its own events; never fall back to Trend events for Stoof
+    const _stratEvents2 = (_isPolStrat2 || _isStoof2) ? (_peByStrat2[_cStrat2a] || null) : null;
+    // BUG-ST1 fix: suppress Trend event fallback when Stoof is selected
     const _useEvents2 = (_stratEvents2 && _stratEvents2.length) ? _stratEvents2
-      : (payload.position_events && payload.position_events.length ? payload.position_events : null);
+      : (!_isStoof2 && payload.position_events && payload.position_events.length ? payload.position_events : null);
 
     if (_useEvents2) {
       for (const ev of _useEvents2) {
@@ -1559,11 +1619,15 @@
       let combo4kpis = payload.combo_4_kpis || [];
       let combo3pols = null, combo4pols = null;
       // Support polarity_combo strategies in fallback simulation
+      // Bug-C fix: prefer TF-specific combos_by_tf over flat combos, matching entry logic.
       const _stSetups2 = (typeof STRATEGY_SETUPS !== "undefined") ? (STRATEGY_SETUPS.setups || {}) : {};
       const _cStrat2 = (typeof window !== "undefined" && window.currentStrategy) ? window.currentStrategy : "trend";
       const _sDef2 = _stSetups2[_cStrat2];
       if (_sDef2 && _sDef2.entry_type === "polarity_combo") {
-        const cc = _sDef2.combos || {};
+        const _simTfKey = (typeof tf === "string") ? tf.toUpperCase() : "";
+        const _simByTf = _sDef2.combos_by_tf || {};
+        const _simTfCombos = _simByTf[_simTfKey] || {};
+        const cc = Object.keys(_simTfCombos).length ? _simTfCombos : (_sDef2.combos || {});
         if (cc.c3 && cc.c3.kpis) { combo3kpis = cc.c3.kpis; combo3pols = cc.c3.pols; }
         if (cc.c4 && cc.c4.kpis) { combo4kpis = cc.c4.kpis; combo4pols = cc.c4.pols; }
         else { combo4kpis = []; }
@@ -1605,7 +1669,8 @@
         let stopPrice = ep, stop = atr[idx] > 0 ? stopPrice - K * atr[idx] : stopPrice * 0.95; let barsSinceReset = 0; let exitIdx = null, exitReason = null;
         for (let j = entryIdx + 1; j < n; j++) { barsSinceReset++; const cj = close[j]; if (isNaN(cj)) continue; if (cj < stop) { exitIdx = j; exitReason = "ATR stop"; break; } if (!scaled && c4Active[j]) { scaled = true; scaleIdx = j; activeKpis = combo4kpis; activePols = combo4pols; nk = activeKpis.length; } const nb = bearishCount(activeKpis, j, activePols); const barsHeld = j - entryIdx; if (barsHeld <= T) { if (nb >= nk) { exitIdx = j; exitReason = "Full invalidation"; break; } } else { if (nb >= 2) { exitIdx = j; exitReason = nb + "/" + nk + " KPIs bearish"; break; } } if (barsSinceReset >= M) { if (nb === 0) { stopPrice = cj; stop = atr[j] > 0 ? stopPrice - K * atr[j] : stopPrice * 0.95; barsSinceReset = 0; } else { exitIdx = j; exitReason = "Checkpoint exit"; break; } } }
         if (exitIdx == null) { exitIdx = n - 1; exitReason = "Open"; }
-        const exitFill = (exitIdx < n - 1 && exitReason !== "Open") ? exitIdx + 1 : exitIdx; const xp = exitFill !== exitIdx ? open[exitFill] : close[exitIdx]; const cost = 0.001 + SLIPPAGE; const weight = scaled ? 1.5 : 1.0; const ret = ep > 0 ? ((xp - ep) / ep - cost) * 100 * weight : 0;
+        // BUG-PL2 fix: ret is unweighted here; simulateTrades equity loop applies weight.
+        const exitFill = (exitIdx < n - 1 && exitReason !== "Open") ? exitIdx + 1 : exitIdx; const xp = exitFill !== exitIdx ? open[exitFill] : close[exitIdx]; const cost = 0.001 + SLIPPAGE; const ret = ep > 0 ? ((xp - ep) / ep - cost) * 100 : 0;
         trades.push({ entryIdx: entryIdx, exitIdx: exitIdx, ret: ret, hold: exitIdx - entryIdx, label: scaled ? "C4" : "C3", reason: exitReason, scaled: scaled, scaleIdx: scaleIdx, entryDate: x[entryIdx], exitDate: x[exitIdx] });
         idx = exitReason !== "Open" ? exitIdx + 1 : n;
       }

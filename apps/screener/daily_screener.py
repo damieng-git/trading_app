@@ -51,7 +51,35 @@ def _load_screener_config() -> dict:
         "combo_4_kpis": cfg.get("combo_4_kpis", []),
         "kpi_weights": cfg.get("kpi_weights", {}),
         "stoch_mtm_thresholds": cfg.get("stoch_mtm_thresholds"),
+        "strategy_setups": cfg.get("strategy_setups", {}),
     }
+
+
+def _resolve_strategy_combos(strategy: str, tf: str, strategy_setups: dict) -> tuple[list[str], list[int]] | None:
+    """Return (c3_kpis, c3_pols) for the given strategy and timeframe.
+
+    Falls back to the strategy's global combos if no TF-specific combos are defined.
+    Returns None if the strategy is not found or has no c3 combos.
+    """
+    setup = strategy_setups.get(strategy)
+    if not setup:
+        return None
+    combos_by_tf = setup.get("combos_by_tf", {})
+    tf_combos = combos_by_tf.get(tf, {})
+    combos = tf_combos if tf_combos else setup.get("combos", {})
+    c3 = combos.get("c3", {})
+    kpis = c3.get("kpis", [])
+    if not kpis:
+        return None
+    pols = c3.get("pols", [1] * len(kpis))
+    return kpis, pols
+
+
+# KPIs already computed by the default lean enrichment — no need to add as extras
+_LEAN_DEFAULT_KPIS = frozenset({
+    "Nadaraya-Watson Smoother", "Madrid Ribbon", "Volume + MA20",
+    "GK Trend Ribbon", "cRSI",
+})
 
 
 def _compute_trend_score(kpi_state_map: dict, kpi_weights: dict) -> float:
@@ -97,12 +125,21 @@ def run_screener(
     max_c3: int = MAX_C3_HITS,
     max_c4: int = MAX_C4_HITS,
     on_progress=None,
+    strategy: str | None = None,
+    timeframe: str = "1D",
 ) -> dict:
     """Execute the daily screener pipeline.
 
     *on_progress*, if provided, is called with a dict containing phase info,
     step/total counts, overall percentage, elapsed/ETA seconds, and a
     human-readable label + detail string.
+
+    *strategy* selects a named strategy from config.json ``strategy_setups``.
+    When set, uses that strategy's C3 KPIs (polarity-aware) for matching instead
+    of the default all-bullish combo. C4 logic is skipped.
+
+    *timeframe* selects the OHLCV timeframe to scan (default "1D").
+    For non-1D: quality filters are run on 1D data, then resampled to target TF.
 
     Returns a dict with c3_hits, c4_hits, and metadata.
     """
@@ -116,11 +153,19 @@ def run_screener(
         exclude_indices_and_leveraged,
         load_universe,
     )
-    from trading_dashboard.data.downloader import download_daily_batch
+    from trading_dashboard.data.downloader import (
+        download_daily_batch,
+        download_hourly_batch,
+        resample_to_4h,
+        resample_to_biweekly,
+        resample_to_monthly,
+        resample_to_weekly,
+    )
     from trading_dashboard.kpis.catalog import KPI_TREND_ORDER, compute_kpi_state_map
 
     t0 = time.perf_counter()
     out_path = output_path or _OUTPUT_PATH
+    tf = timeframe or "1D"
 
     _emit(on_progress, phase="download", phase_num=1,
           label="Loading config & universe", detail="",
@@ -128,11 +173,25 @@ def run_screener(
 
     # ── Load config ──────────────────────────────────────────────────────
     scr_cfg = _load_screener_config()
-    tf = "1D"
-    tf_combos = scr_cfg["combo_kpis_by_tf"].get(tf, {})
+    tf_combos = scr_cfg["combo_kpis_by_tf"].get("1D", {})
     c3_kpis = tf_combos.get("combo_3", scr_cfg["combo_3_kpis"])
     c4_kpis = tf_combos.get("combo_4", scr_cfg["combo_4_kpis"])
     kpi_weights = scr_cfg["kpi_weights"]
+
+    # ── Resolve strategy combos ───────────────────────────────────────────
+    strategy_c3_kpis: list[str] | None = None
+    strategy_c3_pols: list[int] | None = None
+    extra_kpis: list[str] = []
+    if strategy:
+        resolved = _resolve_strategy_combos(strategy, tf, scr_cfg["strategy_setups"])
+        if resolved:
+            strategy_c3_kpis, strategy_c3_pols = resolved
+            extra_kpis = [k for k in strategy_c3_kpis if k not in _LEAN_DEFAULT_KPIS]
+            logger.info("Strategy '%s' / %s: C3 KPIs=%s pols=%s extra=%s",
+                        strategy, tf, strategy_c3_kpis, strategy_c3_pols, extra_kpis)
+        else:
+            logger.warning("Strategy '%s' not found or has no C3 combos for %s; "
+                           "falling back to default combos", strategy, tf)
 
     # ── Load universe ────────────────────────────────────────────────────
     universe_df = load_universe(universe_csv, allowed_geo={"US", "EU"})
@@ -154,10 +213,13 @@ def run_screener(
     except Exception:
         sector_map = {}
 
-    # ── Download 1D OHLCV (batch) ────────────────────────────────────────
+    # ── Download OHLCV ────────────────────────────────────────────────────
+    # Always download 1D first: quality filters require 1D price/volume data.
+    # For non-1D timeframes, resample after filtering.
     start_date = "2023-06-01"
-    logger.info("Downloading 1D OHLCV for %d tickers...", len(all_tickers))
+    logger.info("Downloading 1D OHLCV for %d tickers (TF target: %s)...", len(all_tickers), tf)
 
+    _hourly_map: Dict[str, pd.DataFrame] = {}
     _skip_enrichment = False
     if use_cached_ohlcv:
         from trading_dashboard.data.store import DataStore
@@ -169,10 +231,44 @@ def run_screener(
         )
         ohlcv_map: Dict[str, pd.DataFrame] = {}
         for sym in all_tickers:
-            enriched = store.load_enriched(sym, "1D", respect_ttl=False)
+            enriched = store.load_enriched(sym, tf, respect_ttl=False)
+            if enriched is None or enriched.empty:
+                enriched = store.load_enriched(sym, "1D", respect_ttl=False)
             if enriched is not None and not enriched.empty:
                 ohlcv_map[sym] = enriched
         _skip_enrichment = True
+    elif tf == "4H":
+        # Download 1H hourly data, then resample to 4H after quality filters
+        chunk_sz = 50
+        n_batches = (len(all_tickers) + chunk_sz - 1) // chunk_sz
+
+        def _dl_progress_4h(done, total, chunk):
+            batch_num = (done + chunk_sz - 1) // chunk_sz
+            sample = ", ".join(chunk[:4])
+            if len(chunk) > 4:
+                sample += f"\u2026 ({len(chunk)})"
+            _emit(on_progress, phase="download", phase_num=1,
+                  label=f"Downloading 1H batch {batch_num}/{n_batches}",
+                  detail=sample, step=done, step_total=total, t0=t0)
+
+        hourly_map = download_hourly_batch(
+            all_tickers, period="730d", chunk_size=chunk_sz,
+            on_chunk=_dl_progress_4h,
+        )
+        # Build a 1D proxy for quality filtering (resample hourly → daily)
+        ohlcv_map = {}
+        for sym, h_df in hourly_map.items():
+            if h_df is not None and not h_df.empty:
+                try:
+                    daily_proxy = h_df.resample("1D").agg({
+                        "Open": "first", "High": "max", "Low": "min",
+                        "Close": "last", "Volume": "sum",
+                    }).dropna(subset=["Close"])
+                    ohlcv_map[sym] = daily_proxy
+                except Exception:
+                    pass
+        # Keep hourly data for resampling after filters
+        _hourly_map = hourly_map
     else:
         chunk_sz = 50
         n_batches = (len(all_tickers) + chunk_sz - 1) // chunk_sz
@@ -245,6 +341,47 @@ def run_screener(
 
     filtered_sr = [s for s in filtered if s in sr_passed]
 
+    # ── Resample to target timeframe (if non-1D) ──────────────────────────
+    if not _skip_enrichment and tf != "1D":
+        _resample_map: Dict[str, pd.DataFrame] = {}
+        if tf == "4H":
+            for sym in filtered_sr:
+                h_df = _hourly_map.get(sym)
+                if h_df is not None and not h_df.empty:
+                    try:
+                        _resample_map[sym] = resample_to_4h(h_df)
+                    except Exception:
+                        pass
+        elif tf == "1W":
+            for sym in filtered_sr:
+                d_df = ohlcv_map.get(sym)
+                if d_df is not None and not d_df.empty:
+                    try:
+                        _resample_map[sym] = resample_to_weekly(d_df)
+                    except Exception:
+                        pass
+        elif tf == "2W":
+            for sym in filtered_sr:
+                d_df = ohlcv_map.get(sym)
+                if d_df is not None and not d_df.empty:
+                    try:
+                        _resample_map[sym] = resample_to_biweekly(d_df)
+                    except Exception:
+                        pass
+        elif tf == "1M":
+            for sym in filtered_sr:
+                d_df = ohlcv_map.get(sym)
+                if d_df is not None and not d_df.empty:
+                    try:
+                        _resample_map[sym] = resample_to_monthly(d_df)
+                    except Exception:
+                        pass
+        for sym in filtered_sr:
+            if sym in _resample_map:
+                ohlcv_map[sym] = _resample_map[sym]
+        logger.info("Resampled %d/%d tickers from 1D to %s",
+                    len(_resample_map), len(filtered_sr), tf)
+
     # ── Lean enrichment + C3/C4 onset detection (v5) ──────────────────
     logger.info("Enriching %d tickers (lean mode, post-SR filter)...", len(filtered_sr))
 
@@ -267,7 +404,11 @@ def run_screener(
             df = df_raw
         else:
             try:
-                df = compute_lean_indicators(df_raw, indicator_config_path=indicator_config_path)
+                df = compute_lean_indicators(
+                    df_raw,
+                    indicator_config_path=indicator_config_path,
+                    extra_kpis=extra_kpis if extra_kpis else None,
+                )
             except Exception:
                 logger.debug("Enrichment failed for %s, skipping", sym, exc_info=True)
                 continue
@@ -312,6 +453,16 @@ def run_screener(
                     return False
             return True
 
+        def _kpi_pol_at(kpi_list: list, pol_list: list, idx: int) -> bool:
+            for k, p in zip(kpi_list, pol_list):
+                s = st.get(k)
+                if s is None or len(s) <= abs(idx):
+                    return False
+                v = s.iloc[idx]
+                if pd.isna(v) or int(v) != p:
+                    return False
+            return True
+
         # Trend score for ranking
         kpi_state_map = {}
         for k in KPI_TREND_ORDER:
@@ -346,38 +497,44 @@ def run_screener(
             "trend_score": trend_score,
         }
 
-        # v5: C3 onset detection — combo must TRANSITION from false to true
-        c3_now = _kpi_bull_at(c3_kpis, -1)
-        c3_prev = _kpi_bull_at(c3_kpis, -2) if len(df) >= 2 else False
+        # C3 onset detection — 3-bar lookback, polarity-aware when strategy set
+        if strategy_c3_kpis is not None:
+            def _c3_at(idx: int) -> bool:
+                return _kpi_pol_at(strategy_c3_kpis, strategy_c3_pols, idx)
+            c3_kpis_used = strategy_c3_kpis
+        else:
+            def _c3_at(idx: int) -> bool:
+                return _kpi_bull_at(c3_kpis, idx)
+            c3_kpis_used = c3_kpis
+
+        c3_now = _c3_at(-1)
+        c3_prev = _c3_at(-2) if len(df) >= 2 else False
         c3_onset = c3_now and not c3_prev
 
-        # Also check bar -2 for onset (2-bar lookback for recent onsets)
+        # Also check bar -2 for onset (3-bar lookback for recent onsets)
         if not c3_onset and len(df) >= 3:
-            c3_at_m1 = _kpi_bull_at(c3_kpis, -2)
-            c3_at_m2 = _kpi_bull_at(c3_kpis, -3)
-            if c3_at_m1 and not c3_at_m2:
+            if _c3_at(-2) and not _c3_at(-3):
                 c3_onset = True
 
         if c3_onset:
-            rec = {**base_rec, "combo": "C3", "c3_kpis": c3_kpis}
+            rec = {**base_rec, "combo": "C3", "c3_kpis": c3_kpis_used}
             c3_candidates.append(rec)
             _enriched_cache[sym] = (df, st)
 
-        # v5: C4 onset detection
-        c4_now = _kpi_bull_at(c4_kpis, -1)
-        c4_prev = _kpi_bull_at(c4_kpis, -2) if len(df) >= 2 else False
-        c4_onset = c4_now and not c4_prev
+        # C4 onset detection — skip entirely when strategy-specific scan
+        if strategy_c3_kpis is None:
+            c4_now = _kpi_bull_at(c4_kpis, -1)
+            c4_prev = _kpi_bull_at(c4_kpis, -2) if len(df) >= 2 else False
+            c4_onset = c4_now and not c4_prev
 
-        if not c4_onset and len(df) >= 3:
-            c4_at_m1 = _kpi_bull_at(c4_kpis, -2)
-            c4_at_m2 = _kpi_bull_at(c4_kpis, -3)
-            if c4_at_m1 and not c4_at_m2:
-                c4_onset = True
+            if not c4_onset and len(df) >= 3:
+                if _kpi_bull_at(c4_kpis, -2) and not _kpi_bull_at(c4_kpis, -3):
+                    c4_onset = True
 
-        if c4_onset:
-            rec = {**base_rec, "combo": "C4", "c4_kpis": c4_kpis}
-            c4_candidates.append(rec)
-            _enriched_cache.setdefault(sym, (df, st))
+            if c4_onset:
+                rec = {**base_rec, "combo": "C4", "c4_kpis": c4_kpis}
+                c4_candidates.append(rec)
+                _enriched_cache.setdefault(sym, (df, st))
 
     # ── Fresh-entry filter: discard candidates with an older open position ─
     # The onset detection above uses a 2-bar lookback, but the full position
@@ -499,20 +656,23 @@ def _purge_stale_data(tickers: set[str]) -> int:
 def inject_screener_groups(
     screener_result: dict,
     config_path: Path | None = None,
+    group_name: str | None = None,
 ) -> list[str]:
-    """Write screener combo hits to entry_stocks.csv.
+    """Write screener combo hits to a group CSV file.
 
-    Replaces the contents of entry_stocks.csv with the deduplicated
-    list of C3/C4 combo tickers, excluding any that are already in
-    portfolio.csv.  Deletes enriched data and chart assets for tickers
-    that were dropped and don't belong to any other group.
+    When *group_name* is given, writes to ``{group_name}.csv`` instead of
+    ``entry_stocks.csv``. Replaces the contents of the target file with the
+    deduplicated list of C3/C4 combo tickers, excluding any already in
+    portfolio.csv. Deletes enriched data and chart assets for tickers that
+    were dropped and don't belong to any other group.
 
     Returns the deduplicated list of symbols written.
     """
     import csv
 
     lists_dir = LISTS_DIR
-    entry_stocks_path = lists_dir / "entry_stocks.csv"
+    csv_name = f"{group_name}.csv" if group_name else "entry_stocks.csv"
+    entry_stocks_path = lists_dir / csv_name
     portfolio_path = lists_dir / "portfolio.csv"
 
     # Read old entry_stocks before overwriting
@@ -551,8 +711,8 @@ def inject_screener_groups(
         for t in sorted(merged):
             w.writerow([t])
 
-    logger.info("entry_stocks.csv updated: %d combo tickers (excluded %d portfolio)",
-                len(merged), len(portfolio_tickers))
+    logger.info("%s updated: %d combo tickers (excluded %d portfolio)",
+                csv_name, len(merged), len(portfolio_tickers))
 
     # Purge data for tickers dropped from entry_stocks and not in any other group
     new_tickers = {s.upper() for s in merged}
@@ -560,7 +720,7 @@ def inject_screener_groups(
     if dropped:
         other_group_tickers: set[str] = set()
         for csv_file in lists_dir.glob("*.csv"):
-            if csv_file.name == "entry_stocks.csv":
+            if csv_file.name == csv_name:
                 continue
             try:
                 with open(csv_file, encoding="utf-8") as f:

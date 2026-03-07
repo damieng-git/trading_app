@@ -1256,6 +1256,13 @@
 }
 .scan-btn:hover { background: var(--panel-hover); border-color: var(--border-strong); }
 .scan-btn.running { pointer-events: none; opacity: 0.5; }
+.scan-select {
+  padding: 3px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--panel);
+  color: var(--fg); font-size: 12px;
+  cursor: pointer;
+}
+.scan-select:hover { border-color: var(--border-strong); }
 
 .scan-bar {
   display: flex; align-items: center; gap: 10px;

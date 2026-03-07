@@ -188,13 +188,15 @@ class _ScanState:
         self._listeners: list[threading.Event] = []
         self._event_log: list[tuple[str, dict]] = []
         self._finished_event = threading.Event()
+        self._strategy: str | None = None
+        self._timeframe: str = "1D"
 
     @property
     def running(self) -> bool:
         with self._lock:
             return self._running
 
-    def start(self) -> bool:
+    def start(self, strategy: str | None = None, timeframe: str = "1D") -> bool:
         """Start a scan if nothing else is running. Returns False if busy."""
         if _is_any_task_running("scan"):
             return False
@@ -202,6 +204,8 @@ class _ScanState:
             if self._running:
                 return False
             self._running = True
+            self._strategy = strategy
+            self._timeframe = timeframe
             self._event_log = []
             self._finished_event.clear()
             for ev in self._listeners:
@@ -241,34 +245,10 @@ class _ScanState:
     def _run(self) -> None:
         import time as _time
 
-        _PHASE_TOTAL = 8
         _t0 = _time.perf_counter()
-        _failures: list[dict] = []
 
         def _elapsed() -> float:
             return round(_time.perf_counter() - _t0, 1)
-
-        _POST_SCREENER_PHASES = {"inject": 62, "build": 70, "validate": 92}
-
-        def _progress(phase: str, phase_num: int, label: str, detail: str = "",
-                      pct: float | None = None, eta_s: float | None = None) -> None:
-            if pct is None:
-                pct = _POST_SCREENER_PHASES.get(phase, round((phase_num / _PHASE_TOTAL) * 100))
-            self._emit("progress", {
-                "phase": phase, "phase_num": phase_num, "phase_total": _PHASE_TOTAL,
-                "label": label, "detail": detail,
-                "pct": min(pct, 99), "elapsed_s": _elapsed(), "eta_s": eta_s,
-            })
-
-        _SCREENER_PCT_CEILING = 60
-
-        def _on_screener_progress(info: dict) -> None:
-            rescaled = dict(info)
-            raw_pct = info.get("pct", 0)
-            rescaled["pct"] = round(raw_pct * _SCREENER_PCT_CEILING / 100)
-            rescaled["phase_total"] = _PHASE_TOTAL
-            rescaled["elapsed_s"] = _elapsed()
-            self._emit("progress", rescaled)
 
         _saved_cwd = os.getcwd()
         try:
@@ -277,129 +257,43 @@ class _ScanState:
                 sys.path.insert(0, str(REPO_DIR))
             os.chdir(REPO_DIR)
 
-            _progress("init", 0, "Starting scan\u2026")
+            _strategy = self._strategy
+            _timeframe = self._timeframe
 
-            try:
-                from apps.screener.daily_screener import inject_screener_groups, run_screener
-                result = run_screener(on_progress=_on_screener_progress)
-            except Exception as exc:
-                logger.exception("Screener failed")
+            if not _strategy:
                 self._emit("failed", {
-                    "message": f"Screener failed: {exc}",
-                    "phase": "screener",
-                    "failures": [{"phase": "screener", "error": str(exc)}],
+                    "message": "No strategy specified.",
+                    "phase": "init",
+                    "failures": [{"phase": "init", "error": "strategy param missing"}],
                     "elapsed_s": _elapsed(),
                 })
                 return
 
-            c3_count = len(result.get("c3_hits", []))
-            c4_count = len(result.get("c4_hits", []))
+            from apps.screener.scan_strategy import run_scan
 
-            if c3_count == 0 and c4_count == 0:
-                self._emit("complete", {
-                    "c3": 0, "c4": 0, "total": 0,
-                    "elapsed_s": _elapsed(),
-                    "detail": "No combo hits found",
-                })
-                return
-
-            _progress("inject", 5, "Updating entry_stocks.csv",
-                      f"{c3_count} C3 + {c4_count} C4 hits")
-            try:
-                merged = inject_screener_groups(result)
-            except Exception as exc:
-                logger.exception("inject_screener_groups failed")
-                self._emit("failed", {
-                    "message": f"Failed to write entry_stocks.csv: {exc}",
-                    "phase": "inject",
-                    "c3": c3_count, "c4": c4_count,
-                    "failures": [{"phase": "inject", "error": str(exc)}],
-                    "elapsed_s": _elapsed(),
-                })
-                return
-
-            # Diff: find which tickers are truly new (no enriched Parquet)
-            new_tickers: list[str] = []
-            try:
-                stock_data_dir = OUTPUT_STOCK_DATA_DIR
-                if stock_data_dir.is_dir():
-                    existing_files = set(os.listdir(stock_data_dir))
-                    for sym in merged:
-                        if not any(f.startswith(sym + "_") for f in existing_files):
-                            new_tickers.append(sym)
-                else:
-                    new_tickers = list(merged)
-            except Exception as exc:
-                logger.warning("Failed to filter new tickers: %s", exc)
-                new_tickers = list(merged)
-
-            enriched_count = len(merged) - len(new_tickers)
-
-            if new_tickers:
-                _progress("build", 6, "Enriching new tickers",
-                          f"{len(new_tickers)} new / {len(merged)} total")
-
-                def _on_enrich_progress(info: dict) -> None:
-                    info["elapsed_s"] = _elapsed()
-                    raw_pct = info.get("pct", 0)
-                    info["pct"] = 62 + int(raw_pct * 30 / 100)
-                    self._emit("progress", info)
-
-                build_ok = False
-                try:
-                    from apps.dashboard.build_dashboard import enrich_symbols
-                    result_e = enrich_symbols(new_tickers, on_progress=_on_enrich_progress)
-                    enriched_count += len(result_e.get("enriched", []))
-                    build_ok = len(result_e.get("enriched", [])) > 0
-                    failed_e = result_e.get("failed", [])
-                    if failed_e:
-                        _failures.append({
-                            "phase": "enrich",
-                            "error": f"{len(failed_e)} tickers failed enrichment",
-                            "failed_tickers": failed_e[:20],
-                        })
-                except Exception as exc:
-                    logger.exception("Batch enrichment failed after scan")
-                    _failures.append({"phase": "build", "error": str(exc)})
-            else:
-                build_ok = True
-                _progress("build", 6, "All tickers already enriched",
-                          f"{len(merged)} tickers")
-                try:
-                    from apps.dashboard.build_dashboard import _rebuild_screener_json
-                    from apps.dashboard.config_loader import load_build_config, resolve_paths
-                    _cfg = load_build_config()
-                    _paths = resolve_paths(_cfg)
-                    _rebuild_screener_json(_cfg, _paths)
-                except Exception as exc:
-                    logger.warning("Screener JSON rebuild failed: %s", exc)
-
-            _progress("validate", 7, "Done",
-                      f"{enriched_count}/{len(merged)} tickers ready")
-
-            missing_count = len(merged) - enriched_count
-
-            if _failures:
-                severity = "partial" if build_ok and enriched_count > 0 else "critical"
-                self._emit("failed", {
-                    "c3": c3_count, "c4": c4_count,
-                    "total": len(merged), "enriched": enriched_count,
-                    "missing": missing_count, "severity": severity,
-                    "failures": _failures,
-                    "message": (
-                        f"{enriched_count}/{len(merged)} tickers ready, "
-                        f"{missing_count} missing data"
-                        if severity == "partial"
-                        else f"Build failed: {_failures[0]['error']}"
-                    ),
-                    "elapsed_s": _elapsed(),
-                })
-            else:
-                self._emit("complete", {
-                    "c3": c3_count, "c4": c4_count,
-                    "total": len(merged), "enriched": enriched_count,
-                    "elapsed_s": _elapsed(),
-                })
+            passing: list[str] = []
+            for event in run_scan(_strategy, _timeframe, yield_progress=True):
+                etype = event.get("type")
+                if etype == "progress":
+                    self._emit("progress", {
+                        "phase": "scan",
+                        "pct": event.get("pct", 0),
+                        "label": event.get("msg", ""),
+                        "elapsed_s": _elapsed(),
+                    })
+                elif etype == "done":
+                    self._emit("complete", {
+                        "total": event.get("count", 0),
+                        "elapsed_s": _elapsed(),
+                    })
+                elif etype == "error":
+                    self._emit("failed", {
+                        "message": event.get("msg", "Unknown error"),
+                        "phase": "scan",
+                        "failures": [{"phase": "scan", "error": event.get("msg", "")}],
+                        "elapsed_s": _elapsed(),
+                    })
+                    return
 
         except Exception as exc:
             logger.exception("Scan failed")
@@ -742,10 +636,18 @@ def _add_symbol_to_group(ticker: str, group: str) -> dict:
     return {"ok": True, "ticker": ticker, "group": group, "groups": sm.groups}
 
 
-def _compute_pnl_summary(group: str, tf: str) -> dict:
-    """Compute portfolio-level backtest P&L for all symbols in a group."""
+def _compute_pnl_summary(group: str, tf: str, strategy: str = "legacy") -> dict:
+    """Compute portfolio-level backtest P&L for all symbols in a group.
+
+    BUG-PL3 fix: strategy-aware.  Pass strategy="trend"|"dip_buy"|"swing"|"stoof"
+    to use the appropriate engine.  "legacy" (default) uses combo_kpis_by_tf.
+    """
     from apps.dashboard.config_loader import load_build_config
-    from apps.dashboard.strategy import compute_position_events
+    from apps.dashboard.strategy import (
+        compute_polarity_position_events,
+        compute_position_events,
+        compute_stoof_position_events,
+    )
     from trading_dashboard.kpis.catalog import compute_kpi_state_map
     from trading_dashboard.symbols.manager import SymbolManager
 
@@ -757,9 +659,35 @@ def _compute_pnl_summary(group: str, tf: str) -> dict:
     else:
         syms = sm.group(group) if group in sm.groups else []
 
-    combo_cfg = cfg.combo_kpis_by_tf.get(tf, cfg.combo_kpis_by_tf.get("1D", {}))
-    c3_kpis = combo_cfg.get("combo_3", cfg.combo_3_kpis)
-    c4_kpis = combo_cfg.get("combo_4", cfg.combo_4_kpis)
+    # Resolve combos/KPIs based on requested strategy
+    _strat_setups = cfg.strategy_setups if hasattr(cfg, "strategy_setups") else {}
+    _sdef = _strat_setups.get(strategy, {})
+    _use_polarity = _sdef.get("entry_type") == "polarity_combo"
+    _use_stoof = strategy == "stoof" and _sdef.get("entry_type") == "threshold"
+
+    if _use_polarity:
+        _cbytf = _sdef.get("combos_by_tf", {})
+        _combos = _cbytf.get(tf) or _sdef.get("combos", {})
+        s_c3_kpis = _combos.get("c3", {}).get("kpis", [])
+        s_c3_pols = _combos.get("c3", {}).get("pols", [])
+        _c4d = _combos.get("c4")
+        s_c4_kpis = _c4d.get("kpis") if _c4d else None
+        s_c4_pols = _c4d.get("pols") if _c4d else None
+        _exit_def = _sdef.get("exit_combos")
+        ex_kpis = _exit_def.get("kpis") if _exit_def else None
+        ex_pols = _exit_def.get("pols") if _exit_def else None
+        _gates = _sdef.get("entry_gates")
+        # Only run if entry_tf matches or no entry_tf restriction
+        _entry_tf = _sdef.get("entry_tf", tf)
+    elif _use_stoof:
+        from trading_dashboard.indicators.registry import get_kpi_trend_order as _gkto
+        _stoof_kpis = _gkto("stoof")
+        _stoof_thresh = int(_sdef.get("threshold", 7))
+    else:
+        # Legacy: combo_kpis_by_tf
+        combo_cfg = cfg.combo_kpis_by_tf.get(tf, cfg.combo_kpis_by_tf.get("1D", {}))
+        c3_kpis = combo_cfg.get("combo_3", cfg.combo_3_kpis)
+        c4_kpis = combo_cfg.get("combo_4", cfg.combo_4_kpis)
 
     try:
         from apps.dashboard.build_dashboard import _derive_symbol_display
@@ -779,7 +707,16 @@ def _compute_pnl_summary(group: str, tf: str) -> dict:
             continue
         try:
             st = compute_kpi_state_map(df)
-            events = compute_position_events(df, st, c3_kpis, c4_kpis, tf)
+            if _use_polarity:
+                if _entry_tf != tf:
+                    continue
+                events = compute_polarity_position_events(
+                    df, st, s_c3_kpis, s_c3_pols, s_c4_kpis, s_c4_pols, tf,
+                    exit_kpis=ex_kpis, exit_pols=ex_pols, entry_gates=_gates)
+            elif _use_stoof:
+                events = compute_stoof_position_events(df, st, _stoof_kpis, _stoof_thresh, tf)
+            else:
+                events = compute_position_events(df, st, c3_kpis, c4_kpis, tf)
         except Exception as exc:
             logger.debug("PnL compute skipped for %s: %s", sym, exc)
             continue
@@ -790,8 +727,8 @@ def _compute_pnl_summary(group: str, tf: str) -> dict:
             continue
 
         dates = [str(d) for d in df.index]
-        pnls = [e["ret_pct"] for e in closed]
-        weighted_pnls = [p * (1.5 if e.get("scaled") else 1.0) for p, e in zip(pnls, closed)]
+        # BUG-PL1 fix: ret_pct is now unweighted; apply 1.5x for scaled trades.
+        weighted_pnls = [e["ret_pct"] * (1.5 if e.get("scaled") else 1.0) for e in closed]
         total_ret = sum(weighted_pnls)
         wins = [p for p in weighted_pnls if p >= 0]
         losses = [p for p in weighted_pnls if p < 0]
@@ -811,6 +748,7 @@ def _compute_pnl_summary(group: str, tf: str) -> dict:
         for e in closed:
             entry_date = dates[min(e["entry_idx"], len(dates) - 1)] if e.get("entry_idx") is not None else ""
             exit_date = dates[min(e["exit_idx"], len(dates) - 1)] if e.get("exit_idx") is not None else ""
+            # BUG-PL1 fix: apply weight here; ret_pct is now raw (unweighted).
             w = 1.5 if e.get("scaled") else 1.0
             all_trades.append({
                 "symbol": sym, "name": display_name,
@@ -1197,18 +1135,20 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(u.query or "")
             group = (qs.get("group", ["all"])[0] or "all").strip()
             tf = (qs.get("tf", ["1D"])[0] or "1D").strip().upper()
+            # BUG-PL3 fix: accept strategy param to use the correct engine
+            pnl_strategy = (qs.get("strategy", ["legacy"])[0] or "legacy").strip()
             if tf not in VALID_TIMEFRAMES:
                 tf = "1D"
             try:
                 import time
-                cache_key = f"{group}|{tf}"
+                cache_key = f"{group}|{tf}|{pnl_strategy}"
                 with _pnl_cache_lock:
                     cached = _pnl_cache.get(cache_key)
                     if cached and (time.time() - cached[0]) < _PNL_CACHE_TTL:
                         body = json.dumps({"ok": True, "data": cached[1]}, allow_nan=False).encode("utf-8")
                         self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
                         return
-                result = _compute_pnl_summary(group, tf)
+                result = _compute_pnl_summary(group, tf, strategy=pnl_strategy)
                 with _pnl_cache_lock:
                     _pnl_cache[cache_key] = (time.time(), result)
                 body = json.dumps({"ok": True, "data": result}, allow_nan=False).encode("utf-8")
@@ -1566,7 +1506,11 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return False
 
-        SCAN.start()
+        u = urlparse(self.path)
+        qs = parse_qs(u.query)
+        _scan_strategy = qs.get("strategy", [None])[0] or None
+        _scan_timeframe = qs.get("timeframe", ["1D"])[0] or "1D"
+        SCAN.start(strategy=_scan_strategy, timeframe=_scan_timeframe)
 
         snapshot, notify = SCAN.subscribe()
         try:
