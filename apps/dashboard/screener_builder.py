@@ -158,11 +158,29 @@ def build_screener_rows(
                             "l12m_hit_rate": tp["l12m_hit_rate"],
                         }
                     elif sdef.get("entry_type") == "threshold":
-                        # BUG-ST3: compute Stoof trailing P&L for screener
+                        # Stoof: only active on configured timeframes (default 2W, 1M)
+                        _active_tfs = sdef.get("active_tfs")
+                        if _active_tfs and tf not in _active_tfs:
+                            continue
                         from trading_dashboard.indicators.registry import get_kpi_trend_order as _gkto
+                        from apps.dashboard.strategy import compute_atr as _catr
                         _sk = _gkto(skey)
                         _thresh = int(sdef.get("threshold", 7))
-                        tp = compute_stoof_trailing_pnl(df, st, _sk, _thresh, tf)
+                        _exit_thresh = int(sdef.get("exit_threshold", _thresh - 2))
+                        _K = float(sdef.get("atr_multiplier", 3.0))
+                        _atr_tf = sdef.get("atr_tf", "1W")
+                        # Load cross-TF ATR (e.g. 1W ATR for 2W/1M entries)
+                        _atr_override = None
+                        if _atr_tf and _atr_tf != tf:
+                            _atr_df = tf_map.get(_atr_tf)
+                            if _atr_df is not None and not _atr_df.empty:
+                                _atr_override = _catr(_atr_df)
+                        tp = compute_stoof_trailing_pnl(
+                            df, st, _sk, _thresh, tf,
+                            exit_threshold=_exit_thresh,
+                            atr_override=_atr_override,
+                            K_override=_K,
+                        )
                         strat_statuses[skey] = {
                             "signal_action": "FLAT",
                             "entry_price": None,

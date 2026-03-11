@@ -471,6 +471,7 @@ def run_stock_export(
     indicator_config_path: Path,
     export_phase: str = "all",
     force_recompute_indicators: bool = False,
+    force_download: bool = False,
     use_parallel_enrich: bool = True,
     on_progress: "Callable[[dict], None] | None" = None,
 ) -> tuple[dict, dict, dict, dict, list]:
@@ -552,7 +553,7 @@ def run_stock_export(
             if use_parallel_enrich and len(enrich_tasks) > 1:
                 _workers = min(os.cpu_count() or 4, len(enrich_tasks))
                 with ProcessPoolExecutor(max_workers=_workers) as pool:
-                    for _sym, _tf, enriched, specs in pool.map(_enrich_one_task, enrich_tasks, chunksize=2):
+                    for _sym, _tf, enriched, specs in pool.map(_enrich_one_task, enrich_tasks, chunksize=2, timeout=5400):
                         if enriched is not None:
                             health = _summarize_df_health(
                                 enriched,
@@ -595,7 +596,7 @@ def run_stock_export(
                 all_data[sym] = tf_map_enriched
             continue
 
-        if USE_CACHED_OUTPUT_DATA and (export_phase == "all") and (not force_recompute_indicators):
+        if USE_CACHED_OUTPUT_DATA and not force_download and (export_phase == "all") and (not force_recompute_indicators):
             cached = _load_cached_symbol(sym)
             if cached and set(timeframes).issubset(cached.keys()):
                 data_health.setdefault(sym, {})
@@ -1331,16 +1332,31 @@ def run_refresh_dashboard(
             except Exception as exc:
                 logger.warning("Strategy position events failed for %s/%s: %s", sym, tf, exc)
 
-            # BUG-ST2: compute Stoof threshold-based position events
+            # Stoof threshold-based position events
             try:
+                from apps.dashboard.strategy import compute_atr as _stoof_catr
                 from apps.dashboard.strategy import compute_stoof_position_events
                 from trading_dashboard.indicators.registry import get_kpi_trend_order as _gkto
                 _stoof_def = _load_strategy_setups().get("stoof", {})
-                if _stoof_def and kpi_st and df_full is not None and not df_full.empty:
+                _stoof_active_tfs = _stoof_def.get("active_tfs")
+                if (_stoof_def and kpi_st and df_full is not None and not df_full.empty
+                        and (not _stoof_active_tfs or tf in _stoof_active_tfs)):
                     _stoof_kpis = _gkto("stoof")
                     _stoof_thresh = int(_stoof_def.get("threshold", 7))
+                    _stoof_exit_thresh = int(_stoof_def.get("exit_threshold", _stoof_thresh - 2))
+                    _stoof_K = float(_stoof_def.get("atr_multiplier", 3.0))
+                    _stoof_atr_tf = _stoof_def.get("atr_tf", "1W")
+                    _stoof_atr_override = None
+                    if _stoof_atr_tf and _stoof_atr_tf != tf:
+                        _stoof_atr_df = tf_map.get(_stoof_atr_tf)
+                        if _stoof_atr_df is not None and not _stoof_atr_df.empty:
+                            _stoof_atr_override = _stoof_catr(_stoof_atr_df)
                     raw_stoof = compute_stoof_position_events(
-                        df_full, kpi_st, _stoof_kpis, _stoof_thresh, tf)
+                        df_full, kpi_st, _stoof_kpis, _stoof_thresh, tf,
+                        exit_threshold=_stoof_exit_thresh,
+                        atr_override=_stoof_atr_override,
+                        K_override=_stoof_K,
+                    )
                     if raw_stoof:
                         pos_events_by_strategy["stoof"] = _remap_events(raw_stoof)
             except Exception as exc:
@@ -1487,6 +1503,11 @@ def main(argv: list[str] | None = None, _on_export_progress=None) -> int:
         help="Disable ProcessPoolExecutor for enrichment (use sequential enrichment).",
     )
     parser.add_argument(
+        "--force_download",
+        action="store_true",
+        help="Bypass the enriched-data TTL cache and re-download all symbols from yfinance.",
+    )
+    parser.add_argument(
         "--move",
         nargs=3,
         metavar=("TICKER", "FROM_GROUP", "TO_GROUP"),
@@ -1498,6 +1519,7 @@ def main(argv: list[str] | None = None, _on_export_progress=None) -> int:
     indicator_config_path_raw = str(getattr(args, "indicator_config_path", "") or "").strip()
     export_phase = str(getattr(args, "export_phase", "all") or "all").strip().lower()
     force_recompute_indicators = bool(getattr(args, "force_recompute_indicators", False))
+    force_download = bool(getattr(args, "force_download", False))
     skip_figures = bool(getattr(args, "skip_figures", False))
     use_parallel_enrich = not bool(getattr(args, "no_parallel_enrich", False))
     # --move: move a ticker between groups and exit
@@ -1551,6 +1573,59 @@ def main(argv: list[str] | None = None, _on_export_progress=None) -> int:
     paths.output_raw_ohlcv_dir.mkdir(parents=True, exist_ok=True)
     paths.docs_dir.mkdir(parents=True, exist_ok=True)
 
+    # Fast path: rebuild_ui only rewrites the HTML shell from cached metadata.
+    # Skips all data loading and Plotly chart generation (~seconds vs ~5 min).
+    if mode == "rebuild_ui":
+        t0_ui = time.perf_counter()
+        try:
+            from apps.dashboard.sector_map import load_sector_map as _load_sm_ui
+            _smap_ui = _load_sm_ui()
+            _sym_display_ui = _derive_symbol_display(_smap_ui)
+        except Exception:
+            _sym_display_ui = {}
+        _screener_ui: dict = {}
+        if paths.screener_summary_json.exists():
+            try:
+                _screener_ui = json.loads(paths.screener_summary_json.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        _health_ui: dict = {}
+        if paths.data_health_json.exists():
+            try:
+                _health_ui = json.loads(paths.data_health_json.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        _fx_cache = paths.dashboard_shell_html.parent / "fx_rates.json"
+        _fx_ui: dict = {}
+        if _fx_cache.exists():
+            try:
+                _fx_ui = json.loads(_fx_cache.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        _symbols_ui = cfg.symbols
+        _tfs_ui = cfg.timeframes
+        _groups_ui = getattr(cfg, "symbol_groups", None)
+        _sym_to_asset_ui = {s: _safe_path_component(s) for s in _symbols_ui}
+        write_lazy_dashboard_shell_html(
+            output_path=paths.dashboard_shell_html,
+            fig_source="server" if cfg.dashboard_mode == "lazy_server" else "static_js",
+            assets_rel_dir=None if cfg.dashboard_mode == "lazy_server" else "dashboard_assets",
+            symbols=_symbols_ui,
+            symbol_groups=_groups_ui,
+            timeframes=_tfs_ui,
+            symbol_display=_sym_display_ui,
+            symbol_to_asset=None if cfg.dashboard_mode == "lazy_server" else _sym_to_asset_ui,
+            run_metadata=None,
+            data_health=_health_ui,
+            symbol_meta={},
+            screener_summary=_screener_ui,
+            fx_rates=_fx_ui,
+            symbol_currencies={},
+        )
+        elapsed = time.perf_counter() - t0_ui
+        print(f"Shell HTML rebuilt in {elapsed:.1f}s (UI-only fast path).")
+        return
+
     # Export phase
     all_data: dict = {}
     symbol_display: dict = {}
@@ -1564,6 +1639,7 @@ def main(argv: list[str] | None = None, _on_export_progress=None) -> int:
             indicator_config_path=indicator_config_path,
             export_phase=export_phase,
             force_recompute_indicators=force_recompute_indicators,
+            force_download=force_download,
             use_parallel_enrich=use_parallel_enrich,
             on_progress=_on_export_progress,
         )
@@ -1685,7 +1761,7 @@ def main(argv: list[str] | None = None, _on_export_progress=None) -> int:
 
             with ProcessPoolExecutor(max_workers=_ENRICH_WORKERS) as pool:
                 _done = 0
-                for sym, tf, enriched, specs in pool.map(_enrich_one_task, _enrich_tasks, chunksize=4):
+                for sym, tf, enriched, specs in pool.map(_enrich_one_task, _enrich_tasks, chunksize=4, timeout=5400):
                     _done += 1
                     if enriched is not None:
                         all_data_refresh[sym][tf] = enriched

@@ -43,7 +43,7 @@
     var _st0 = loadState();
     var currentSymbol = (typeof _st0.symbol === "string" && SYMBOLS.includes(_st0.symbol.toUpperCase())) ? _st0.symbol.toUpperCase() : DEFAULT_SYMBOL;
     var currentTF = (typeof _st0.tf === "string" && TIMEFRAMES.includes(_st0.tf.toUpperCase())) ? _st0.tf.toUpperCase() : DEFAULT_TF;
-    var currentTab = (typeof _st0.tab === "string" && ["chart", "strategy", "screener", "info", "pnl"].includes(_st0.tab)) ? _st0.tab : "screener";
+    var currentTab = (typeof _st0.tab === "string" && ["chart", "strategy", "screener", "info", "pnl", "scan"].includes(_st0.tab)) ? _st0.tab : "screener";
     var currentGroup = (typeof _st0.group === "string") ? _st0.group : "all";
     var _savedScreenerFilter = _st0.screenerFilter || "all";
     var _savedScreenerSortKey = _st0.screenerSortKey || "_action_tf";
@@ -308,7 +308,7 @@
       }
     }
 
-    const _groupNames = {"entry_stocks":"Entry Stocks","benchmark":"Benchmark","stoof":"Stoof"};
+    const _groupNames = {"entry_stocks":"Entry Stocks","benchmark":"Benchmark","stefan":"Stefan"};
     function _groupLabel(k) {
       if (k === "all") return "All";
       return _groupNames[k] || k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -337,7 +337,7 @@
 
     function _buildGroupOptions() {
       const primaryGroups = ["portfolio", "entry_stocks", "watchlist"];
-      const secondaryGroups = ["benchmark", "stoof"];
+      const secondaryGroups = ["benchmark", "stefan"];
       const ordered = ["all"];
       primaryGroups.forEach(g => { if (GROUP_KEYS.includes(g)) ordered.push(g); });
       ordered.push("__sep__");
@@ -1037,7 +1037,7 @@
       const dispName = (SYMBOL_DISPLAY && SYMBOL_DISPLAY[sym]) ? SYMBOL_DISPLAY[sym] : sym;
 
       // Try API first (works when served via serve_dashboard.py)
-      fetch("/api/move", {
+      fetch(_BASE + "/api/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticker: sym, from: fromGroup, to: toGroup }),
@@ -1079,7 +1079,7 @@
     function _deleteStock(sym, group) {
       const dispName = (SYMBOL_DISPLAY && SYMBOL_DISPLAY[sym]) ? SYMBOL_DISPLAY[sym] : sym;
       if (!confirm("Delete " + dispName + " from " + (group || "all groups") + "?\nThis also removes enriched data files.")) return;
-      fetch("/api/delete", {
+      fetch(_BASE + "/api/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticker: sym, group: group || "" }),
@@ -1128,13 +1128,14 @@
       const lowerVis = [];
       for (const tr of currentFig.data) {
         const k = indicatorKeyForTrace(tr);
-        const alwaysOn = (k === "Price" || k === "P&L" || k === "KPI Trend" || k === "KPI Breakout" || k === "TrendScore" || k === "Combo Signal");
+        const alwaysOn = (k === "Price" || k === "P&L" || k === "KPI Trend" || k === "KPI Breakout" || k === "TrendScore" || k === "Combo Signal" || k === "Combo");
         const show = (alwaysOn || selectedIndicators.has(k));
         const xa = tr.xaxis || "x";
         const axNum = parseInt((xa.replace("x", "") || "1"), 10);
         if (axNum === 2) pnlVis.push(show);
         else if (axNum === 3) oscVis.push(show);
         else if (axNum === 4) tsVis.push(show);
+        else if (axNum === 7) lowerVis.push(show);
         else if (axNum >= 5) lowerVis.push(show);
         else upperVis.push(show);
       }
@@ -1197,7 +1198,7 @@
       // Fallback fetch modes (requires serving over http)
       let url = "";
       if (FIG_SOURCE === "server") {
-        url = `/fig?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(tf)}`;
+        url = `${_BASE}/fig?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(tf)}`;
       } else {
         const symDir = (SYMBOL_TO_ASSET && SYMBOL_TO_ASSET[symbol]) ? SYMBOL_TO_ASSET[symbol] : symbol;
         url = `${ASSETS_DIR}/${encodeURIComponent(symDir)}/${encodeURIComponent(tf)}.json`;
@@ -1281,6 +1282,61 @@
       _wire(gdOsc);
       _wire(gdTs);
       _wire(gdLo);
+
+      // PnL chart: hide tooltip when cursor is in empty space between bars.
+      // Plotly hovermode:"closest" snaps to the nearest bar even when the cursor
+      // is far from any bar.  barW is built as (exitMs - entryMs) in chart_builder,
+      // so all widths and positions are in ms — same unit as JS Date.getTime().
+      if (gdPnl && gdPnl.on) {
+        gdPnl.on("plotly_hover", function(ev) {
+          try {
+            const hovers = gdPnl.querySelectorAll(".hovertext");
+            if (!ev || !ev.points || !ev.points.length) {
+              hovers.forEach(function(el) { el.style.visibility = "hidden"; });
+              return;
+            }
+            const pt = ev.points[0];
+            if (!pt || !pt.data || pt.data.type !== "bar") {
+              hovers.forEach(function(el) { el.style.visibility = "hidden"; });
+              return;
+            }
+            const barMs = new Date(pt.x).getTime();
+            const wArr = pt.data.width;
+            const w = Array.isArray(wArr) ? wArr[pt.pointIndex] : (wArr || 0);
+
+            // Resolve cursor position in ms.
+            // Method 1: ev.xvals[0] (Plotly emits cursor's axis value — ms for date axes).
+            // Method 2: pixel math via axis range + layout geometry (always available).
+            let cursorMs = null;
+            if (ev.xvals && ev.xvals.length && typeof ev.xvals[0] === "number") {
+              cursorMs = ev.xvals[0];
+            } else {
+              const xa = pt.xaxis;
+              if (xa && xa.range && xa._length && ev.event) {
+                function _pDate(s) {
+                  return new Date(typeof s === "number" ? s : String(s).replace(" ", "T")).getTime();
+                }
+                const r0 = _pDate(xa.range[0]), r1 = _pDate(xa.range[1]);
+                const rect = gdPnl.getBoundingClientRect();
+                const pxInPlot = ev.event.clientX - rect.left - (xa._offset || 0);
+                cursorMs = r0 + (pxInPlot / xa._length) * (r1 - r0);
+              }
+            }
+
+            // Default to hidden when position cannot be determined.
+            const insideBar = cursorMs !== null && Math.abs(cursorMs - barMs) <= w / 2;
+            hovers.forEach(function(el) {
+              el.style.visibility = insideBar ? "" : "hidden";
+            });
+          } catch(e) {}
+        });
+        gdPnl.on("plotly_unhover", function() {
+          try {
+            gdPnl.querySelectorAll(".hovertext").forEach(function(el) { el.style.visibility = ""; });
+          } catch(e) {}
+        });
+      }
+
       // Apply base shapes once (no relayout on hover)
       try {
         if (gdUp && gdUp.data && _crosshairBaseShapesUp.length) Plotly.relayout(gdUp, { shapes: _crosshairBaseShapesUp });
@@ -1303,12 +1359,17 @@
       const tsData = [];
       const lowerData = [];
 
-      // Row 1 → upper, row 2 → pnl, row 3 → osc, row 4 → ts, rows 5-6 → lower
+      // Row 1 → upper, row 2 → pnl, row 3 → osc, row 4 → ts, row 7 → lower (y3), rows 5-6 → lower
       const lowerAxisMap = {5: 1, 6: 2};
       for (const tr of data) {
         const xa = tr.xaxis || "x";
         const axNum = parseInt((xa.replace("x", "") || "1"), 10);
-        if (axNum >= 5) {
+        if (axNum === 7) {
+          const newTr = Object.assign({}, tr);
+          newTr.xaxis = "x";
+          newTr.yaxis = "y3";
+          lowerData.push(newTr);
+        } else if (axNum >= 5) {
           const newTr = Object.assign({}, tr);
           const newN = lowerAxisMap[axNum] || 1;
           newTr.xaxis = newN === 1 ? "x" : ("x" + newN);
@@ -1350,7 +1411,7 @@
       // --- Upper layout: row 1 (price only) ---
       const upperLayout = {};
       for (const [k, v] of Object.entries(layout)) {
-        if (/^[xy]axis[2-6]$/.test(k)) continue;
+        if (/^[xy]axis[2-9]\d*$/.test(k)) continue;
         if (k === "annotations" || k === "shapes") continue;
         upperLayout[k] = v;
       }
@@ -1426,8 +1487,9 @@
       tsLayout.shapes = [];
       tsLayout.xaxis = cleanAxis(layout.xaxis4, Object.assign({domain: [0, 1], anchor: "y"}, xRangeOvr));
       tsLayout.yaxis = cleanAxis(layout.yaxis4, {domain: [0, 1], anchor: "x"});
-      tsLayout.autosize = false;
       tsLayout.height = 140;
+      _chartHeights.chartTs = tsLayout.height;
+      tsLayout.autosize = false;
       tsLayout.margin = Object.assign({}, layout.margin || {}, {t: 6, b: 20});
       tsLayout.barmode = "relative";
       if (layout.annotations) {
@@ -1449,21 +1511,32 @@
       lowerLayout.xaxis  = cleanAxis(layout.xaxis5, Object.assign({domain: [0, 1], anchor: "y"}, xRangeOvr));
       lowerLayout.xaxis2 = cleanAxis(layout.xaxis6, Object.assign({domain: [0, 1], anchor: "y2", matches: "x"}, xRangeOvr));
       const _meta = layout.meta || {};
-      const _nBr = _meta._nBr || 0;
-      const _nTr = _meta._nTr || 0;
-      const _totalK = Math.max((_nBr + _nTr), 1);
-      const _trFrac = _nTr / _totalK;
-      const _brFrac = _nBr / _totalK;
-      const _splitGap = 0.04;
-      const _trTop = 1.0;
-      const _trBot = _trTop - _trFrac * (1.0 - _splitGap);
-      const _brTop = _trBot - _splitGap;
+      const _nBr    = _meta._nBr    || 0;
+      const _nTr    = _meta._nTr    || 0;
+      const _nCombo = _meta._nCombo || 0;
+
+      const _totalR   = Math.max(_nBr + _nTr + _nCombo, 1);
+      const _splitGap = 0.06;                          // gap between breakout and trend sections
+      const _comboGap = _nCombo > 0 ? 0.03 : 0;       // gap between trend and combo sections
+      const _usable   = 1.0 - _splitGap - _comboGap;
+
+      // Bottom-to-top: breakout | splitGap | trend | comboGap | combo
       const _brBot = 0.0;
+      const _brTop = (_nBr    / _totalR) * _usable;
+      const _trBot = _brTop + _splitGap;
+      const _trTop = _trBot + (_nTr    / _totalR) * _usable;
+      const _cBot  = _trTop + _comboGap;
+      const _cTop  = 1.0;
+
       lowerLayout.yaxis  = cleanAxis(layout.yaxis5, {domain: [_brBot, _brTop], anchor: "x"});
       lowerLayout.yaxis2 = cleanAxis(layout.yaxis6, {domain: [_trBot, _trTop], anchor: "x2"});
+      if (_nCombo > 0) {
+        lowerLayout.xaxis3 = cleanAxis(layout.xaxis7, Object.assign({domain: [0, 1], anchor: "y3", matches: "x"}, xRangeOvr));
+        lowerLayout.yaxis3 = cleanAxis(layout.yaxis7, {domain: [_cBot, _cTop], anchor: "x3"});
+      }
       lowerLayout.autosize = false;
       const _kpiRowPx = Math.round(30 * 1.25); // +25% heatmap row size
-      const _lowerH = Math.max(200, (_nBr + _nTr) * _kpiRowPx + 80);
+      const _lowerH = Math.max(200, (_nBr + _nTr + _nCombo) * _kpiRowPx + 80);
       lowerLayout.height = _lowerH;
       _chartHeights.chartLower = _lowerH;
       lowerLayout.hovermode = "closest";
@@ -1474,12 +1547,12 @@
           .filter(a => {
             const xr = a.xref || "x";
             const n = parseInt((xr.replace("x", "") || "1"), 10);
-            return n >= 5 && n <= 6;
+            return n >= 5 && n <= 7;
           })
           .map(a => {
             const xr = a.xref || "";
             const yr = a.yref || "";
-            const axMap = {"x6":"x2","x5":"x","y6":"y2","y5":"y"};
+            const axMap = {"x6":"x2","x5":"x","x7":"x3","y6":"y2","y5":"y","y7":"y3"};
             return {
               ...a,
               xref: axMap[xr] || xr,
@@ -1588,7 +1661,11 @@
       _applyAnnotations();
       const gdUpStash = DOM.chartUpper;
       if (gdUpStash && gdUpStash.data) {
-        gdUpStash.data.forEach(tr => { if (!tr._origHover) tr._origHover = tr.hoverinfo; });
+        // Stash original hoverinfo and hovertemplate once so _applySubTabVisibility
+        // can restore them when switching back to Charts mode.
+        gdUpStash.data.forEach(tr => {
+          if (!tr._origHover) tr._origHover = tr.hoverinfo;
+        });
       }
       _applySubTabVisibility();
       // Progressive rendering (20): prefetch adjacent symbols
@@ -1808,11 +1885,17 @@
           const origH = tr._origHover !== undefined ? tr._origHover : tr.hoverinfo;
           if (isStrategy) {
             vis.push(_strategyShow.has(k));
-            hoverInfos.push(_srHoverHide.has(nm) ? "skip" : origH);
+            // In strategy mode only the hover-catcher fires OHLC tooltip;
+            // every other trace is silenced so only one popup appears.
+            // meta.role is merged by mkTrace so it survives alongside meta.indicator.
+            const isHoverCatcher = tr.meta && tr.meta.role === "hover_catcher";
+            hoverInfos.push(isHoverCatcher ? "all" : "skip");
           } else {
             const show = k === "Price" || selectedIndicators.has(k) || k === "Combo Signal";
             vis.push(show);
-            hoverInfos.push(origH);
+            // Restore original hover; fall back to "all" if it was never set
+            // (undefined won't un-skip a trace that was previously set to "skip").
+            hoverInfos.push(origH !== undefined && origH !== null ? origH : "all");
           }
         });
         if (idxs.length) {
@@ -1834,7 +1917,7 @@
 
 
     function switchTab(tab) {
-      const tabs = ["tabScreener", "tabStrategy", "tabChart", "tabPnl", "tabInfo"];
+      const tabs = ["tabScan", "tabScreener", "tabStrategy", "tabChart", "tabPnl", "tabInfo"];
       tabs.forEach(id => {
         const el = document.getElementById(id);
         if (el) { el.classList.remove("active"); el.setAttribute("aria-selected", "false"); el.setAttribute("tabindex", "-1"); }
@@ -1845,12 +1928,19 @@
       if (infoEl) infoEl.style.display = "none";
       const pnlEl = document.getElementById("pnlWrap");
       if (pnlEl) pnlEl.style.display = "none";
+      const scanEl = document.getElementById("scanWrap");
+      if (scanEl) scanEl.style.display = "none";
 
       function _activateTab(id) {
         const el = document.getElementById(id);
         if (el) { el.classList.add("active"); el.setAttribute("aria-selected", "true"); el.setAttribute("tabindex", "0"); }
       }
-      if (tab === "screener") {
+      if (tab === "scan") {
+        _activateTab("tabScan");
+        if (scanEl) scanEl.style.display = "block";
+        currentTab = "scan";
+        if (window.Dashboard && window.Dashboard.buildScanPage) window.Dashboard.buildScanPage();
+      } else if (tab === "screener") {
         _activateTab("tabScreener");
         document.getElementById("screenerWrap").style.display = "block";
         currentTab = "screener";
@@ -1882,6 +1972,7 @@
       if (currentTab === "screener") buildScreener();
     }
 
+    document.getElementById("tabScan").addEventListener("click", () => switchTab("scan"));
     document.getElementById("tabChart").addEventListener("click", () => switchTab("chart"));
     document.getElementById("tabStrategy").addEventListener("click", () => switchTab("strategy"));
     document.getElementById("tabScreener").addEventListener("click", () => switchTab("screener"));
@@ -2033,9 +2124,28 @@
     })();
 
     function _getStrategyKpis() {
-      const setups = (typeof STRATEGY_SETUPS !== "undefined") ? STRATEGY_SETUPS : {};
-      const kpisByStrategy = setups.kpis_by_strategy || {};
       if (currentStrategy === "all") return null;
+      const setups = (typeof STRATEGY_SETUPS !== "undefined") ? STRATEGY_SETUPS : {};
+      // Prefer TF-specific combo KPIs from combos_by_tf (matches actual scan combos)
+      const stratDef = (setups.setups || {})[currentStrategy];
+      if (stratDef && stratDef.combos_by_tf) {
+        const tfCombos = stratDef.combos_by_tf[currentTF] || stratDef.combos_by_tf["1D"];
+        if (tfCombos) {
+          const c3kpis = (tfCombos.c3 && tfCombos.c3.kpis) || [];
+          const c4kpis = (tfCombos.c4 && tfCombos.c4.kpis) || [];
+          const allKpis = Array.from(new Set([...c3kpis, ...c4kpis]));
+          if (allKpis.length) return allKpis;
+        }
+      }
+      // Fallback: flat combos from the strategy definition
+      if (stratDef && stratDef.combos) {
+        const c3kpis = (stratDef.combos.c3 && stratDef.combos.c3.kpis) || [];
+        const c4kpis = (stratDef.combos.c4 && stratDef.combos.c4.kpis) || [];
+        const allKpis = Array.from(new Set([...c3kpis, ...c4kpis]));
+        if (allKpis.length) return allKpis;
+      }
+      // Final fallback: registry-based KPI list
+      const kpisByStrategy = setups.kpis_by_strategy || {};
       return kpisByStrategy[currentStrategy] || null;
     }
 
@@ -2289,7 +2399,7 @@
     })();
 
     // Sync SYMBOL_GROUPS from live CSV data via API (overrides stale baked-in data)
-    fetch("/api/groups", { cache: "no-store" })
+    fetch(_BASE + "/api/groups", { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
       .then(raw => {
         const live = (raw && raw.data !== undefined) ? raw.data : raw;
@@ -2315,29 +2425,17 @@
     /* ── Scan / Refresh buttons & SSE progress bar ────────────────────── */
     (function initScanRefresh() {
       const scanBtn       = document.getElementById("scanBtn");
-      const scanStrategy  = document.getElementById("scanStrategy");
-      const scanTimeframe = document.getElementById("scanTimeframe");
-      const refreshBtn = document.getElementById("refreshBtn");
-      const bar        = document.getElementById("scanBar");
+      const refreshToggle = document.getElementById("refreshToggle");
+      const refreshBtn    = document.getElementById("refreshBtn");
+      const rebuildUiBtn  = document.getElementById("rebuildUiBtn");
+      const refreshSplit  = document.getElementById("refreshSplit");
+      const bar           = document.getElementById("scanBar");
       const fill       = document.getElementById("scanFill");
       const label      = document.getElementById("scanLabel");
       const detail     = document.getElementById("scanDetail");
       const eta        = document.getElementById("scanEta");
       const closeBtn   = document.getElementById("scanClose");
 
-      /* Populate strategy select from STRATEGY_SETUPS (skip threshold strategies) */
-      (function populateScanStrategies() {
-        if (!scanStrategy || typeof STRATEGY_SETUPS === "undefined") return;
-        var setups = STRATEGY_SETUPS.setups || {};
-        Object.keys(setups).forEach(function(key) {
-          var s = setups[key];
-          if (s && s.entry_type === "threshold") return; // Stoof: not yet supported
-          var opt = document.createElement("option");
-          opt.value = key;
-          opt.textContent = (s && s.label) ? s.label : key;
-          scanStrategy.appendChild(opt);
-        });
-      })();
       if (!bar) return;
 
       let evtSource = null;
@@ -2354,7 +2452,17 @@
 
       function _setRunning(on) {
         if (scanBtn) scanBtn.classList.toggle("running", on);
-        if (refreshBtn) refreshBtn.classList.toggle("running", on);
+        if (refreshToggle) refreshToggle.classList.toggle("running", on);
+      }
+
+      // Dropdown open/close
+      if (refreshToggle && refreshSplit) {
+        refreshToggle.addEventListener("click", function(e) {
+          e.stopPropagation();
+          if (refreshToggle.classList.contains("running")) return;
+          refreshSplit.classList.toggle("open");
+        });
+        document.addEventListener("click", function() { refreshSplit.classList.remove("open"); });
       }
 
       function showBar(initLabel) {
@@ -2381,12 +2489,12 @@
 
       function _reloadLiveData() {
         Promise.all([
-          fetch("/api/symbol-data", { cache: "no-store" }).then(function(r) {
+          fetch(_BASE + "/api/symbol-data", { cache: "no-store" }).then(function(r) {
             return r.ok ? r.json() : null;
           }).then(function(raw) {
             return (raw && raw.data !== undefined) ? raw.data : raw;
           }),
-          fetch("/api/screener-data", { cache: "no-store" }).then(function(r) {
+          fetch(_BASE + "/api/screener-data", { cache: "no-store" }).then(function(r) {
             return r.ok ? r.json() : null;
           }).then(function(raw) {
             return (raw && raw.data !== undefined) ? raw.data : raw;
@@ -2434,9 +2542,11 @@
             ensureCurrentSymbolAllowed();
             buildSymbolList();
             buildScreener();
-            if (currentTab === "pnl") {
+            if (currentTab === "scan" && window.Dashboard && window.Dashboard.buildScanPage) {
+              window.Dashboard.buildScanPage();
+            } else if (currentTab === "pnl") {
               buildPnlTab();
-            } else if (currentTab !== "screener" && currentSymbol) {
+            } else if (currentTab !== "screener" && currentTab !== "scan" && currentSymbol) {
               loadFig(currentSymbol, currentTF);
             }
           }
@@ -2445,7 +2555,15 @@
 
       window._connectSSE = _connectSSE;
       function _connectSSE(endpoint, actionName) {
-        if (evtSource) return;
+        if (evtSource) {
+          // Already streaming — show a brief notice instead of silently ignoring.
+          showBar(_activeAction ? _activeAction + " in progress\u2026" : "Busy\u2026");
+          label.textContent = "Already running";
+          detail.textContent = (_activeAction || "A task") + " is currently in progress. Please wait.";
+          closeBtn.classList.remove("hidden");
+          _setRunning(false);
+          return;
+        }
         if (location.protocol === "file:") {
           showBar();
           fill.classList.add("error");
@@ -2457,7 +2575,7 @@
           return;
         }
         _activeAction = actionName;
-        var initLabel = actionName === "Refresh" ? "Refreshing data\u2026" :
+        var initLabel = actionName === "Full Refresh" ? "Refreshing data\u2026" :
                         actionName === "Enrich" ? "Enriching tickers\u2026" : "Initialising\u2026";
         showBar(initLabel);
         evtSource = new EventSource(endpoint);
@@ -2481,9 +2599,14 @@
             if (_activeAction === "Enrich") {
               label.textContent = "Enrichment complete";
               detail.textContent = d.detail || (d.enriched + " stocks added");
-            } else if (_activeAction === "Refresh") {
-              label.textContent = "Refresh complete";
+            } else if (_activeAction === "Full Refresh") {
+              label.textContent = "Refresh complete — reloading\u2026";
               detail.textContent = d.detail || "All data refreshed";
+              setTimeout(function() { location.reload(); }, 1500);
+            } else if (_activeAction === "UI Refresh") {
+              label.textContent = "UI rebuilt — reloading\u2026";
+              detail.textContent = d.detail || "";
+              setTimeout(function() { location.reload(); }, 1200);
             } else {
               label.textContent = "Scan complete";
               detail.textContent = (d.total != null ? d.total + " signals found" : d.detail || "");
@@ -2552,22 +2675,31 @@
       }
 
       if (scanBtn) scanBtn.addEventListener("click", function() {
-        var strategy = scanStrategy ? scanStrategy.value : "";
-        if (!strategy) { alert("Please select a strategy before scanning."); return; }
-        var timeframe = scanTimeframe ? scanTimeframe.value : "1D";
-        var url = "/api/scan?strategy=" + encodeURIComponent(strategy);
-        if (timeframe) url += "&timeframe=" + encodeURIComponent(timeframe);
+        var activePill = document.querySelector(".scan-tf-pill.active");
+        var timeframe = activePill ? activePill.dataset.tf : "1D";
+        // 4H is not a scan target — it's used for entry confirmation only.
+        // If 4H pill is selected and Scan is clicked, scan 1D instead.
+        if (timeframe === "4H") timeframe = "1D";
+        var url = _BASE + "/api/scan?timeframe=" + encodeURIComponent(timeframe);
         _connectSSE(url, "Scan");
       });
-      if (refreshBtn) refreshBtn.addEventListener("click", function() { _connectSSE("/api/refresh", "Refresh"); });
+      if (refreshBtn) refreshBtn.addEventListener("click", function() {
+        if (refreshSplit) refreshSplit.classList.remove("open");
+        _connectSSE(_BASE + "/api/refresh", "Full Refresh");
+      });
+      if (rebuildUiBtn) rebuildUiBtn.addEventListener("click", function() {
+        if (refreshSplit) refreshSplit.classList.remove("open");
+        _connectSSE(_BASE + "/api/rebuild-ui", "UI Refresh");
+      });
 
-      fetch("/api/scan/status", { cache: "no-store" })
+      fetch(_BASE + "/api/scan/status", { cache: "no-store" })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (raw) {
           var d = (raw && raw.data !== undefined) ? raw.data : raw;
-          if (d && d.scan_running) _connectSSE("/api/scan", "Scan");
-          else if (d && d.refresh_running) _connectSSE("/api/refresh", "Refresh");
-          else if (d && d.enrich_running) _connectSSE("/api/enrich", "Enrich");
+          if (d && d.scan_running) _connectSSE(_BASE + "/api/scan", "Scan");
+          else if (d && d.refresh_running) _connectSSE(_BASE + "/api/refresh", "Full Refresh");
+          else if (d && d.rebuild_ui_running) _connectSSE(_BASE + "/api/rebuild-ui", "UI Refresh");
+          else if (d && d.enrich_running) _connectSSE(_BASE + "/api/enrich", "Enrich");
         })
         .catch(function () {});
 

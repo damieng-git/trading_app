@@ -108,3 +108,76 @@ Indicators output numeric columns into enriched DataFrames. `kpis/catalog.py` ma
 ### Configuration
 
 `apps/dashboard/configs/config.json` is the primary runtime config. Symbol lists are CSV files in `apps/dashboard/configs/lists/`. `indicator_config.json` controls which indicators are active and their parameters.
+
+## Deployment & Server Management
+
+### Server layout
+
+| | Production | Staging |
+|---|---|---|
+| Repo | `trading_app` | `trading_app_test` (this repo) |
+| Port | 8050 | 8051 |
+| URL | `http://46.224.149.54/` | `http://46.224.149.54/test/` |
+| Systemd service | `trading-dashboard` | `trading-dashboard-test` |
+| Data root | `trading_app/data/` | `trading_app_test/data/` |
+
+Nginx config: `/etc/nginx/sites-enabled/trading-dashboard` (not in git — must be recreated manually if server is rebuilt).
+- `/test/*` → strips prefix → proxies to 8051 (staging)
+- `/api/*`, `/fig/*` → proxies to 8050 (prod)
+- `/*` → proxies to 8050 (prod)
+
+**Critical:** the `/test/` location block must include `proxy_buffering off`, `proxy_cache off`, `proxy_set_header Connection ''`, and `proxy_read_timeout 86400s` — otherwise SSE streams (scan, refresh, rebuild-ui) are buffered by nginx and appear to hang in the browser.
+
+Both services use `/root/damiverse_apps/trading_app/.venv/bin/python` (`trading_app_test` has no venv of its own).
+
+### Process management — systemd only
+
+Both servers are managed exclusively by **systemd**. Do NOT use `pm2` or manual `python3` invocations.
+
+```bash
+systemctl restart trading-dashboard        # restart prod
+systemctl restart trading-dashboard-test   # restart staging
+systemctl status trading-dashboard         # check prod status
+journalctl -u trading-dashboard-test -f    # tail staging logs
+```
+
+Do NOT `kill <pid>` directly — systemd will immediately respawn the process (`Restart=always`). Always use `systemctl stop/restart`.
+
+### When to restart vs. click UI Refresh
+
+| Change type | Action |
+|---|---|
+| `apps/dashboard/static/*.js` or `*.css` | Click **UI Refresh** in the dashboard |
+| `apps/dashboard/templates.py` | Click **UI Refresh** in the dashboard |
+| `apps/dashboard/serve_dashboard.py` | `systemctl restart trading-dashboard-test` |
+| `configs/config.json` | `systemctl restart trading-dashboard-test` |
+
+The **UI Refresh** button (in the dashboard toolbar) calls `/api/rebuild-ui` on the server, which regenerates `dashboard_shell.html` from the current JS/CSS/templates without re-downloading data (~5 min).
+
+### CLI rebuild-ui — always set TRADING_APP_ROOT
+
+`config_loader.py` resolves the data root from the `TRADING_APP_ROOT` env var. When running CLI commands manually, always set it explicitly or the output will go to the wrong path:
+
+```bash
+# Staging rebuild (correct)
+TRADING_APP_ROOT=/root/damiverse_apps/trading_app_test python3 -m trading_dashboard dashboard rebuild-ui
+
+# Production rebuild (correct — only after git pull in trading_app)
+TRADING_APP_ROOT=/root/damiverse_apps/trading_app python3 -m trading_dashboard dashboard rebuild-ui
+```
+
+The systemd services already set `TRADING_APP_ROOT` correctly — this only affects manual terminal runs.
+
+### Promoting staging → production
+
+```bash
+# 1. Pull changes into prod repo
+cd /root/damiverse_apps/trading_app && git pull
+
+# 2. Restart prod server if serve_dashboard.py changed
+systemctl restart trading-dashboard
+
+# 3. Rebuild prod shell (JS/CSS/templates changes)
+TRADING_APP_ROOT=/root/damiverse_apps/trading_app python3 -m trading_dashboard dashboard rebuild-ui
+# or click UI Refresh in the prod dashboard (once the endpoint is available in prod)
+```

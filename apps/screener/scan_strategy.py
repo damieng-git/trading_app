@@ -443,7 +443,7 @@ def _enrich_new_symbols(symbols: list[str]) -> None:
     from apps.dashboard.config_loader import load_build_config, resolve_paths
     cfg = load_build_config()
     paths = resolve_paths(cfg)
-    stock_data_dir = paths.feature_store_enriched_dir / "stock_data"
+    stock_data_dir = paths.output_stock_data_dir
 
     if stock_data_dir.is_dir():
         existing = set(f.stem.split("_")[0] for f in stock_data_dir.glob("*.parquet"))
@@ -475,7 +475,7 @@ def _validate_c3_on_enriched(
 
     cfg = load_build_config()
     paths = resolve_paths(cfg)
-    stock_data_dir = paths.feature_store_enriched_dir / "stock_data"
+    stock_data_dir = paths.output_stock_data_dir
 
     validated = []
     for sym in symbols:
@@ -522,6 +522,250 @@ def _trigger_dashboard_refresh() -> None:
         logger.info("Dashboard refresh subprocess started.")
     except Exception as exc:
         logger.warning("Could not trigger dashboard refresh: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# All-strategy scan (single TF — one download, all strategies)
+# ---------------------------------------------------------------------------
+
+def _get_artifacts_dir() -> Path:
+    """Return DASHBOARD_ARTIFACTS_DIR, respecting TRADING_APP_ROOT env var."""
+    try:
+        from apps.dashboard.config_loader import DASHBOARD_ARTIFACTS_DIR
+        return DASHBOARD_ARTIFACTS_DIR
+    except Exception:
+        return _REPO_ROOT / "data" / "dashboard_artifacts"
+
+
+def _load_strategy_csv(strategy_key: str) -> list[str]:
+    """Return current ticker list from a strategy CSV (before overwriting)."""
+    path = _LISTS_DIR / f"{strategy_key}.csv"
+    if not path.exists():
+        return []
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            return [
+                row.get("ticker", "").strip().upper()
+                for row in reader
+                if row.get("ticker", "").strip()
+            ]
+    except Exception:
+        return []
+
+
+def _append_scan_log(tf: str, validated: dict[str, list[str]], prev_lists: dict[str, list[str]]) -> None:
+    """Append one JSONL entry per strategy to scan_log.jsonl in dashboard_artifacts."""
+    import datetime
+    ts = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    artifacts_dir = _get_artifacts_dir()
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    log_path = artifacts_dir / "scan_log.jsonl"
+    with open(log_path, "a", encoding="utf-8") as f:
+        for strategy_key, passing in validated.items():
+            prev = set(prev_lists.get(strategy_key, []))
+            curr = set(passing)
+            entry = {
+                "ts": ts,
+                "tf": tf,
+                "strategy": strategy_key,
+                "added": sorted(curr - prev),
+                "removed": sorted(prev - curr),
+                "total": len(passing),
+            }
+            f.write(json.dumps(entry) + "\n")
+    logger.info("Scan log appended: %s %s — %d strategies", tf, ts, len(validated))
+
+
+def _scan_symbol_all_strategies(
+    sym: str,
+    df: pd.DataFrame,
+    strategy_defs: list[dict],
+    global_kpis: list[str],
+) -> dict[str, str | None]:
+    """Enrich once, evaluate all strategies. Returns {key: 'c3'|None}."""
+    max_min_bars = max((s["min_bars"] for s in strategy_defs), default=50)
+    if len(df) < max_min_bars:
+        return {s["key"]: None for s in strategy_defs}
+    try:
+        enriched = compute_scan_indicators(df, global_kpis, indicator_config_path=_INDICATOR_CONFIG)
+    except Exception as exc:
+        logger.debug("%s enrichment failed: %s", sym, exc)
+        return {s["key"]: None for s in strategy_defs}
+
+    results: dict[str, str | None] = {}
+    for strat in strategy_defs:
+        if not check_quality_gates(enriched, strat["scan_filters"]):
+            results[strat["key"]] = None
+            continue
+        c3_kpis, c3_pols = strat["c3_kpis"], strat["c3_pols"]
+        if c3_kpis:
+            c3_states = compute_scan_kpi_states(enriched, c3_kpis, c3_pols)
+            if detect_c3_onset(c3_states):
+                results[strat["key"]] = "c3"
+                continue
+        results[strat["key"]] = None
+    return results
+
+
+def run_scan_all_strategies(
+    tf: str,
+    *,
+    symbols: list[str] | None = None,
+    yield_progress: bool = False,
+    _skip_refresh: bool = False,
+) -> Generator[dict, None, dict[str, list[str]]]:
+    """Download OHLCV once for *tf*, check ALL strategies in a single enrichment pass.
+
+    Yields SSE-compatible dicts when yield_progress=True.
+    Returns {strategy_key: [validated_symbols]}.
+    """
+    t0 = time.time()
+    config = _load_config()
+    all_setups = config.get("strategy_setups", {})
+
+    # Build per-strategy definition for this TF (skip threshold / stoof)
+    strategy_defs: list[dict] = []
+    for key, strat_def in all_setups.items():
+        if strat_def.get("entry_type") == "threshold":
+            continue
+        c3_kpis, c3_pols, _, _ = _get_combos(strat_def, tf)
+        if not c3_kpis:
+            continue
+        strategy_defs.append({
+            "key": key,
+            "c3_kpis": c3_kpis,
+            "c3_pols": c3_pols,
+            "scan_filters": strat_def.get("scan_filters", {}),
+            "min_bars": min_bars_for_combo(c3_kpis),
+        })
+
+    if not strategy_defs:
+        msg = f"No strategies have C3 combos defined for TF '{tf}'."
+        if yield_progress:
+            yield {"type": "error", "msg": msg}
+        return {}
+
+    # Union of all KPIs — enrich once per symbol for all strategies
+    global_kpis = list(dict.fromkeys(kpi for s in strategy_defs for kpi in s["c3_kpis"]))
+    strat_names = ", ".join(s["key"] for s in strategy_defs)
+    period_days = _TF_DOWNLOAD_DAYS.get(tf, 450)
+    universe = symbols if symbols is not None else _load_universe()
+
+    if not universe:
+        if yield_progress:
+            yield {"type": "error", "msg": "No symbols in universe."}
+        return {}
+
+    total = len(universe)
+    if yield_progress:
+        yield {"type": "progress", "pct": 0, "msg": f"Scanning {total} symbols on {tf} [{strat_names}]…"}
+
+    # ── Download once ──────────────────────────────────────────────────────
+    batches = [universe[i:i + _BATCH_SIZE] for i in range(0, total, _BATCH_SIZE)]
+    downloaded: dict[str, pd.DataFrame] = {}
+    completed_batches = 0
+
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        futures = {pool.submit(_download_batch, b, tf, period_days): b for b in batches}
+        for fut in as_completed(futures):
+            downloaded.update(fut.result())
+            completed_batches += 1
+            time.sleep(_BATCH_DELAY)
+            pct = int(completed_batches / len(batches) * 40)
+            if yield_progress:
+                yield {"type": "progress", "pct": pct, "msg": f"Downloaded {len(downloaded)}/{total}…"}
+
+    if yield_progress:
+        yield {"type": "progress", "pct": 40, "msg": f"Enriching {len(downloaded)} symbols for {len(strategy_defs)} strategies…"}
+
+    # ── Multi-strategy scan (single enrichment pass per symbol) ────────────
+    passing: dict[str, list[str]] = {s["key"]: [] for s in strategy_defs}
+    for idx, (sym, df) in enumerate(downloaded.items()):
+        sym_results = _scan_symbol_all_strategies(sym, df, strategy_defs, global_kpis)
+        for key, result in sym_results.items():
+            if result:
+                passing[key].append(sym)
+        if yield_progress and idx % 50 == 0:
+            pct = 40 + int(idx / max(len(downloaded), 1) * 50)
+            total_sigs = sum(len(v) for v in passing.values())
+            yield {"type": "progress", "pct": pct, "msg": f"Scanned {idx+1}/{len(downloaded)} — {total_sigs} signals…"}
+
+    if yield_progress:
+        yield {"type": "progress", "pct": 91, "msg": "Re-validating candidates on enriched data…"}
+
+    # ── Validate, write CSVs, log ──────────────────────────────────────────
+    prev_lists = {s["key"]: _load_strategy_csv(s["key"]) for s in strategy_defs}
+    validated: dict[str, list[str]] = {}
+    for strat in strategy_defs:
+        key = strat["key"]
+        _enrich_new_symbols(passing[key])
+        confirmed = _validate_c3_on_enriched(passing[key], strat["c3_kpis"], strat["c3_pols"], tf)
+        _write_strategy_csv(key, confirmed, tf)
+        validated[key] = confirmed
+        if yield_progress:
+            yield {"type": "progress", "pct": 93, "msg": f"{key}: {len(confirmed)} confirmed"}
+
+    _append_scan_log(tf, validated, prev_lists)
+
+    if not _skip_refresh:
+        _trigger_dashboard_refresh()
+
+    elapsed = time.time() - t0
+    total_sigs = sum(len(v) for v in validated.values())
+    if yield_progress:
+        yield {
+            "type": "done",
+            "count": total_sigs,
+            "elapsed": round(elapsed, 1),
+            "by_strategy": {k: len(v) for k, v in validated.items()},
+        }
+    return validated
+
+
+def run_scan_all_tf(
+    *,
+    symbols: list[str] | None = None,
+    yield_progress: bool = False,
+) -> Generator[dict, None, dict[str, dict[str, list[str]]]]:
+    """Scan all 5 timeframes with all strategies — 5 downloads total.
+
+    Yields combined SSE progress. Returns {tf: {strategy_key: [symbols]}}.
+    """
+    # 4H is excluded from scanning — it's used for entry confirmation only after
+    # a signal is found on 1D+. Scanning on 4H produces noise and doesn't align
+    # with our entry model (we enter on 1D signals, confirm timing on 4H).
+    tfs = [tf for tf in _TF_DOWNLOAD_DAYS.keys() if tf != "4H"]  # ["1D", "1W", "2W", "1M"]
+    all_results: dict[str, dict[str, list[str]]] = {}
+
+    for i, tf in enumerate(tfs):
+        base_pct = int(i / len(tfs) * 100)
+        if yield_progress:
+            yield {"type": "progress", "pct": base_pct, "msg": f"[{i+1}/{len(tfs)}] Starting {tf} scan…"}
+
+        tf_validated: dict[str, list[str]] = {}
+        for event in run_scan_all_strategies(tf, symbols=symbols, yield_progress=yield_progress, _skip_refresh=True):
+            etype = event.get("type")
+            if etype == "progress":
+                inner_pct = event.get("pct", 0)
+                scaled = base_pct + int(inner_pct / len(tfs))
+                if yield_progress:
+                    yield {"type": "progress", "pct": scaled, "msg": f"[{tf}] {event.get('msg', '')}"}
+            elif etype == "done":
+                tf_validated = {k: [] for k in (event.get("by_strategy") or {})}
+            elif etype == "error":
+                if yield_progress:
+                    yield event
+
+        all_results[tf] = tf_validated
+
+    # Single refresh after all TFs done
+    _trigger_dashboard_refresh()
+
+    total_sigs = sum(len(syms) for tf_res in all_results.values() for syms in tf_res.values())
+    if yield_progress:
+        yield {"type": "done", "count": total_sigs, "elapsed": 0, "all_tf": True}
+    return all_results
 
 
 # ---------------------------------------------------------------------------

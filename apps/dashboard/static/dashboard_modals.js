@@ -59,7 +59,7 @@
     searchBtn.textContent = "Searching\u2026";
     statusDiv.textContent = "Searching\u2026";
     statusDiv.className = "modal-status loading";
-    fetch("/api/resolve-ticker", {
+    fetch(_BASE + "/api/resolve-ticker", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: q }),
@@ -132,7 +132,7 @@
     statusDiv.className = "modal-status loading";
     confirmBtn.disabled = true;
 
-    fetch("/api/enrich-symbols", {
+    fetch(_BASE + "/api/enrich-symbols", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tickers: tickers, group: "watchlist" }),
@@ -142,7 +142,7 @@
         if (!d.ok && d.error) {
           if (d.error.indexOf("already running") >= 0) {
             hide();
-            window._connectSSE("/api/enrich", "Enrich");
+            window._connectSSE(_BASE + "/api/enrich", "Enrich");
             return;
           }
           statusDiv.textContent = d.error;

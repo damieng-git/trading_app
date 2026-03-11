@@ -1150,16 +1150,7 @@ def build_figure_for_symbol_timeframe(symbol: str, timeframe: str, df: pd.DataFr
             )
 
         if trend_kpis:
-            grouped_y: list[str] = []
-            grouped_z: list[list[int]] = []
-            grouped_custom: list[list[str]] = []
-            grouped_kpi_names: list[list[str]] = []
             n_cols = len(x)
-            for i, k in enumerate(trend_kpis):
-                grouped_y.append(_short_label(k))
-                grouped_z.append(trend_z[i])
-                grouped_custom.append(trend_custom[i])
-                grouped_kpi_names.append([k] * n_cols)
 
             # Combo-3 / Combo-4 are rendered on the PRICE chart (row 1), not here.
             # Use the full (unfiltered) kpi_tl data. KPIs that are entirely NA
@@ -1182,6 +1173,42 @@ def build_figure_for_symbol_timeframe(symbol: str, timeframe: str, df: pd.DataFr
             _c3_active = _combo_bool(_eff_c3)
             _c4_active = _combo_bool(_eff_c4)
 
+            # Separate combo KPIs (in C3 or C4) from regular trend KPIs.
+            # Combo KPIs appear at the TOP of the heatmap (last in y-array = top in Plotly).
+            # A separator row (z=-3, white) creates a visual gap between groups.
+            _combo_kpi_set = set(_eff_c3) | set(_eff_c4)
+            regular_entries: list[tuple] = []  # (label, z_row, custom_row, name_row)
+            combo_entries: list[tuple] = []
+            for i, k in enumerate(trend_kpis):
+                entry = (_short_label(k), trend_z[i], trend_custom[i], [k] * n_cols)
+                if k in _combo_kpi_set:
+                    combo_entries.append(entry)
+                else:
+                    regular_entries.append(entry)
+
+            # Build ordered lists: regular first (bottom), separator, combo last (top)
+            grouped_y: list[str] = []
+            grouped_z: list[list[int]] = []
+            grouped_custom: list[list[str]] = []
+            grouped_kpi_names: list[list[str]] = []
+            for label, z_row, custom_row, name_row in regular_entries:
+                grouped_y.append(label)
+                grouped_z.append(z_row)
+                grouped_custom.append(custom_row)
+                grouped_kpi_names.append(name_row)
+            if combo_entries and regular_entries:
+                # White separator row between regular and combo groups
+                _sep_label = "__sep_combo"
+                grouped_y.append(_sep_label)
+                grouped_z.append([-3] * n_cols)
+                grouped_custom.append([""] * n_cols)
+                grouped_kpi_names.append([""] * n_cols)
+            for label, z_row, custom_row, name_row in combo_entries:
+                grouped_y.append(label)
+                grouped_z.append(z_row)
+                grouped_custom.append(custom_row)
+                grouped_kpi_names.append(name_row)
+
             tr_tick_vals = [y for y in grouped_y if not y.startswith("__sep_")]
             tr_tick_text = tr_tick_vals[:]
 
@@ -1196,7 +1223,7 @@ def build_figure_for_symbol_timeframe(symbol: str, timeframe: str, df: pd.DataFr
                     zsmooth=False,
                     showscale=False,
                     xgap=0,
-                    ygap=3,
+                    ygap=2,
                     customdata=grouped_kpi_names,
                     text=grouped_custom,
                     hovertemplate="<b>%{customdata}</b><br>%{x}<br>%{text}<extra></extra>",
@@ -1212,6 +1239,8 @@ def build_figure_for_symbol_timeframe(symbol: str, timeframe: str, df: pd.DataFr
                 tickfont=dict(size=8),
                 ticklabelstandoff=8,
                 automargin=True,
+                categoryorder="array",
+                categoryarray=grouped_y,
                 row=6,
                 col=1,
             )
@@ -1338,7 +1367,7 @@ if __name__ == "__main__":
         from apps.dashboard.figures import (
             compute_kpi_timeline_matrix,
         )
-        print("figures module verification OK: build_figure_for_symbol_timeframe, compute_kpi_timeline_matrix, _safe_plotly_json_dumps", file=sys.stderr)
+        print("figures module verification OK: build_figure_for_symbol_timeframe, compute_kpi_timeline_matrix", file=sys.stderr)
     except Exception as e:
         print(f"figures import failed (may be due to dependencies): {e}", file=sys.stderr)
         sys.exit(1)

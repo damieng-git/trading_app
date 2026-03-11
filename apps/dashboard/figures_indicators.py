@@ -127,17 +127,12 @@ def _add_exit_flow_overlay(
     """
     tf_key = timeframe.upper()
     params = _EXIT_FLOW_V4_PARAMS.get(tf_key, _EXIT_FLOW_V4_PARAMS["1D"])
-    T, M, _K = int(params["T"]), int(params["M"]), float(params["K"])
+    _T, _M, _K = int(params["T"]), int(params["M"]), float(params["K"])
     n_bars = len(df)
     if n_bars < 20:
         return
 
     close = df["Close"].to_numpy(dtype=float)
-    high = df["High"].to_numpy(dtype=float)
-    low_arr = df["Low"].to_numpy(dtype=float)
-    df["Open"].to_numpy(dtype=float) if "Open" in df.columns else close.copy()
-    price_lo, price_hi = float(np.nanmin(low_arr)), float(np.nanmax(high))
-    price_range = max(price_hi - price_lo, 1.0)
 
     tf_u = timeframe.upper()
     half_bar = pd.Timedelta(days=0.5 if tf_u == "1D" else (3.5 if tf_u == "1W" else 0.085))
@@ -252,99 +247,46 @@ def _add_exit_flow_overlay(
             row=1, indicator_label=LABEL["Price"], visible=True,
         )
 
-    # --- Entry markers ---
-    entry_x, entry_y, entry_text, entry_custom = [], [], [], []
+    # --- Zone hover traces (invisible — fire on hover over trading zone) ---
     for t in trades:
-        ei = t["entry_idx"]
-        lbl = "1.5x" if (t["scaled"] and t["scale_idx"] == ei) else "1x"
-        entry_x.append(x[ei])
-        entry_y.append(float(low_arr[ei]) - price_range * 0.03)
-        entry_text.append(lbl)
-        entry_custom.append(
-            f"<b>ENTRY {lbl}</b><br>"
-            f"Price: {t['ep']:.2f}<br>"
-            f"ATR stop: {t['stop_trail'][0]:.2f}<br>"
-            f"Date: {str(x[ei])[:10]}"
-        )
-
-    if entry_x:
-        _add(
-            go.Scatter(
-                x=entry_x, y=entry_y,
-                mode="markers+text",
-                marker=dict(symbol="triangle-up", size=11, color="#22c55e",
-                            line=dict(width=1.2, color="#ffffff")),
-                text=entry_text,
-                textposition="bottom center",
-                textfont=dict(color="#22c55e", size=8, family="Arial Black"),
-                customdata=entry_custom,
-                hovertemplate="%{customdata}<extra></extra>",
-            ),
-            row=1, indicator_label=LABEL["Price"], visible=True,
-        )
-
-    # --- C4 scale-up markers (mid-position) ---
-    scale_x, scale_y, scale_custom = [], [], []
-    for t in trades:
-        si = t["scale_idx"]
-        if si is not None and si > t["entry_idx"]:
-            scale_x.append(x[si])
-            scale_y.append(float(low_arr[si]) - price_range * 0.035)
-            scale_custom.append(
-                f"<b>\u25B2 SCALE to 1.5x</b><br>"
-                f"C4 fired at {close[si]:.2f}<br>"
-                f"Entry was {t['ep']:.2f}<br>"
-                f"Date: {str(x[si])[:10]}"
-            )
-
-    if scale_x:
-        _add(
-            go.Scatter(
-                x=scale_x, y=scale_y,
-                mode="markers+text",
-                marker=dict(symbol="triangle-up", size=10, color="#ff9800",
-                            line=dict(width=1.2, color="#ffffff")),
-                text=["\u25B2 1.5x"] * len(scale_x),
-                textposition="bottom center",
-                textfont=dict(color="#ff9800", size=7, family="Arial Black"),
-                customdata=scale_custom,
-                hovertemplate="%{customdata}<extra></extra>",
-            ),
-            row=1, indicator_label=LABEL["Price"], visible=True,
-        )
-
-    # --- Exit markers ---
-    exit_x, exit_y, exit_custom, exit_colors = [], [], [], []
-    for t in trades:
-        xi = t["exit_idx"]
-        if t["exit_reason"] == "Open":
-            continue
+        ei, xi = t["entry_idx"], t["exit_idx"]
+        ep = t["ep"]
+        xp = t["xp"]
         ret = t["ret"]
-        color = "#66bb6a" if ret >= 0 else "#ef5350"
-        exit_colors.append(color)
-        exit_x.append(x[xi])
-        exit_y.append(float(high[xi]) + price_range * 0.025)
-        sizing = "1.5x" if t["scaled"] else "1x"
-        stage = "Lenient" if t["hold"] <= T else "Strict"
-        exit_custom.append(
-            f"<b>EXIT ({sizing}): {ret:+.1f}%</b><br>"
-            f"Reason: {t['exit_reason']}<br>"
-            f"Stage: {stage} (T={T}, M={M})<br>"
-            f"Hold: {t['hold']} bars<br>"
-            f"Entry: {t['ep']:.2f} ({str(x[t['entry_idx']])[:10]})<br>"
-            f"Exit: {t['xp']:.2f} ({str(x[xi])[:10]})"
+        atr_pct = abs(ep - t["stop_trail"][0]) / ep * 100 if ep > 0 else 0.0
+        exit_date = str(x[xi])[:10] if t["exit_reason"] != "Open" else "Open"
+        bars = xi - ei
+        if tf_u == "4H":
+            length_str = f"{bars * 4}h"
+        elif tf_u == "1D":
+            length_str = f"{bars}d"
+        elif tf_u == "1W":
+            length_str = f"{bars}w"
+        elif tf_u == "2W":
+            length_str = f"{bars * 2}w"
+        elif tf_u == "1M":
+            length_str = f"{bars}mo"
+        else:
+            length_str = f"{bars} bars"
+        sizing = "1.5\u00d7" if t["scaled"] else "1\u00d7"
+        sign = "\u25b2" if ret >= 0 else "\u25bc"
+        hover_html = (
+            f"<b>{sign} {ret:+.1f}% ({sizing})</b><br>"
+            f"Entry:  {ep:.2f}<br>"
+            f"Exit:   {xp:.2f}  ({exit_date})<br>"
+            f"ATR:    {atr_pct:.1f}% of price<br>"
+            f"Length: {length_str}"
         )
-
-    if exit_x:
+        zone_x = [x[j] for j in range(ei, min(xi + 1, n_bars))]
+        zone_y = [float(close[j]) for j in range(ei, min(xi + 1, n_bars))]
         _add(
             go.Scatter(
-                x=exit_x, y=exit_y,
+                x=zone_x, y=zone_y,
                 mode="markers",
-                marker=dict(symbol="triangle-down", size=10,
-                            color=exit_colors,
-                            line=dict(width=1.2, color="#ffffff")),
-                customdata=exit_custom,
-                hovertemplate="%{customdata}<extra></extra>",
+                marker=dict(size=18, opacity=0),
+                hovertemplate=hover_html + "<extra></extra>",
+                showlegend=False,
+                name="",
             ),
             row=1, indicator_label=LABEL["Price"], visible=True,
         )

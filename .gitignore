@@ -47,3 +47,4 @@ htmlcov/
 
 # PineScript source docs (binary/large)
 docs/pinescripts/
+data/feature_store_prod

@@ -168,10 +168,12 @@ _RATE_LIMITER = _RateLimiter(_RATE_LIMIT_MAX, _RATE_LIMIT_WINDOW)
 
 
 def _is_any_task_running(exclude: str = "") -> bool:
-    """Check if any background task (scan/refresh/enrich) is running."""
+    """Check if any background task (scan/refresh/rebuild_ui/enrich) is running."""
     if exclude != "scan" and SCAN.running:
         return True
     if exclude != "refresh" and REFRESH.running:
+        return True
+    if exclude != "rebuild_ui" and REBUILD_UI.running:
         return True
     if exclude != "enrich" and ENRICH.running:
         return True
@@ -188,7 +190,6 @@ class _ScanState:
         self._listeners: list[threading.Event] = []
         self._event_log: list[tuple[str, dict]] = []
         self._finished_event = threading.Event()
-        self._strategy: str | None = None
         self._timeframe: str = "1D"
 
     @property
@@ -196,7 +197,7 @@ class _ScanState:
         with self._lock:
             return self._running
 
-    def start(self, strategy: str | None = None, timeframe: str = "1D") -> bool:
+    def start(self, timeframe: str = "1D") -> bool:
         """Start a scan if nothing else is running. Returns False if busy."""
         if _is_any_task_running("scan"):
             return False
@@ -204,7 +205,6 @@ class _ScanState:
             if self._running:
                 return False
             self._running = True
-            self._strategy = strategy
             self._timeframe = timeframe
             self._event_log = []
             self._finished_event.clear()
@@ -257,22 +257,16 @@ class _ScanState:
                 sys.path.insert(0, str(REPO_DIR))
             os.chdir(REPO_DIR)
 
-            _strategy = self._strategy
             _timeframe = self._timeframe
 
-            if not _strategy:
-                self._emit("failed", {
-                    "message": "No strategy specified.",
-                    "phase": "init",
-                    "failures": [{"phase": "init", "error": "strategy param missing"}],
-                    "elapsed_s": _elapsed(),
-                })
-                return
+            if _timeframe == "all":
+                from apps.screener.scan_strategy import run_scan_all_tf as _scanner
+                _scan_iter = _scanner(yield_progress=True)
+            else:
+                from apps.screener.scan_strategy import run_scan_all_strategies as _scanner
+                _scan_iter = _scanner(_timeframe, yield_progress=True)
 
-            from apps.screener.scan_strategy import run_scan
-
-            passing: list[str] = []
-            for event in run_scan(_strategy, _timeframe, yield_progress=True):
+            for event in _scan_iter:
                 etype = event.get("type")
                 if etype == "progress":
                     self._emit("progress", {
@@ -282,8 +276,11 @@ class _ScanState:
                         "elapsed_s": _elapsed(),
                     })
                 elif etype == "done":
+                    by_strat = event.get("by_strategy") or {}
+                    detail = " · ".join(f"{k}: {v}" for k, v in by_strat.items()) if by_strat else ""
                     self._emit("complete", {
                         "total": event.get("count", 0),
+                        "detail": detail,
                         "elapsed_s": _elapsed(),
                     })
                 elif etype == "error":
@@ -399,7 +396,7 @@ class _RefreshState:
                                      "pct": 0, "elapsed_s": 0})
 
             from apps.dashboard.build_dashboard import main as _build_main
-            _build_main(["--mode", "all"], _on_export_progress=_on_export_progress)
+            _build_main(["--mode", "all", "--force_download"], _on_export_progress=_on_export_progress)
 
             self._emit("complete", {
                 "detail": "All data refreshed",
@@ -424,6 +421,107 @@ class _RefreshState:
 
 
 REFRESH = _RefreshState()
+
+
+class _RebuildUiState:
+    """Background rebuild-ui: regenerate HTML shell from cached data (no download/re-enrich)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: threading.Thread | None = None
+        self._listeners: list[threading.Event] = []
+        self._event_log: list[tuple[str, dict]] = []
+        self._finished_event = threading.Event()
+
+    @property
+    def running(self) -> bool:
+        with self._lock:
+            return self._running
+
+    def start(self) -> bool:
+        # rebuild-ui only reads JS/CSS source files and writes dashboard_shell.html.
+        # It does not touch OHLCV data or enriched parquets, so it is safe to run
+        # concurrently with a scan or full refresh.  Only block a concurrent rebuild-ui.
+        with self._lock:
+            if self._running:
+                return False
+            self._running = True
+            self._event_log = []
+            self._finished_event.clear()
+            for ev in self._listeners:
+                ev.set()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+            return True
+
+    def subscribe(self) -> tuple[list[tuple[str, dict]], threading.Event]:
+        notify = threading.Event()
+        with self._lock:
+            snapshot = list(self._event_log)
+            if self._running:
+                self._listeners.append(notify)
+            else:
+                notify.set()
+        return snapshot, notify
+
+    def unsubscribe(self, notify: threading.Event) -> None:
+        with self._lock:
+            try:
+                self._listeners.remove(notify)
+            except ValueError:
+                pass
+
+    def get_events_since(self, idx: int) -> list[tuple[str, dict]]:
+        with self._lock:
+            return list(self._event_log[idx:])
+
+    def _emit(self, event: str, data: dict) -> None:
+        with self._lock:
+            self._event_log.append((event, data))
+            for ev in self._listeners:
+                ev.set()
+
+    def _run(self) -> None:
+        import time as _time
+        _t0 = _time.perf_counter()
+
+        def _elapsed() -> float:
+            return round(_time.perf_counter() - _t0, 1)
+
+        def _on_progress(info: dict) -> None:
+            rescaled = dict(info)
+            rescaled["elapsed_s"] = _elapsed()
+            self._emit("progress", rescaled)
+
+        _saved_cwd = os.getcwd()
+        try:
+            import sys
+            if str(REPO_DIR) not in sys.path:
+                sys.path.insert(0, str(REPO_DIR))
+            os.chdir(REPO_DIR)
+            self._emit("progress", {"phase": "init", "label": "Rebuilding UI\u2026", "pct": 0, "elapsed_s": 0})
+            from apps.dashboard.build_dashboard import main as _build_main
+            _build_main(["--mode", "rebuild_ui"], _on_export_progress=_on_progress)
+            self._emit("complete", {"detail": "UI rebuilt", "elapsed_s": _elapsed()})
+        except Exception as exc:
+            logger.exception("Rebuild UI failed")
+            self._emit("failed", {
+                "message": str(exc),
+                "phase": "unknown",
+                "failures": [{"phase": "unknown", "error": str(exc)}],
+                "elapsed_s": _elapsed(),
+            })
+        finally:
+            os.chdir(_saved_cwd)
+            with self._lock:
+                self._running = False
+                self._finished_event.set()
+                for ev in self._listeners:
+                    ev.set()
+
+
+REBUILD_UI = _RebuildUiState()
 
 
 class _EnrichState:
@@ -683,6 +781,9 @@ def _compute_pnl_summary(group: str, tf: str, strategy: str = "legacy") -> dict:
         from trading_dashboard.indicators.registry import get_kpi_trend_order as _gkto
         _stoof_kpis = _gkto("stoof")
         _stoof_thresh = int(_sdef.get("threshold", 7))
+        _stoof_exit_thresh = int(_sdef.get("exit_threshold", _stoof_thresh - 2))
+        _stoof_K = float(_sdef.get("atr_multiplier", 3.0))
+        _stoof_atr_tf = _sdef.get("atr_tf", "1W")
     else:
         # Legacy: combo_kpis_by_tf
         combo_cfg = cfg.combo_kpis_by_tf.get(tf, cfg.combo_kpis_by_tf.get("1D", {}))
@@ -714,7 +815,18 @@ def _compute_pnl_summary(group: str, tf: str, strategy: str = "legacy") -> dict:
                     df, st, s_c3_kpis, s_c3_pols, s_c4_kpis, s_c4_pols, tf,
                     exit_kpis=ex_kpis, exit_pols=ex_pols, entry_gates=_gates)
             elif _use_stoof:
-                events = compute_stoof_position_events(df, st, _stoof_kpis, _stoof_thresh, tf)
+                _stoof_atr_override = None
+                if _stoof_atr_tf and _stoof_atr_tf != tf:
+                    from apps.dashboard.strategy import compute_atr as _stoof_catr
+                    _df_atr = CACHE.load_df(sym, _stoof_atr_tf)
+                    if _df_atr is not None and not _df_atr.empty:
+                        _stoof_atr_override = _stoof_catr(_df_atr)
+                events = compute_stoof_position_events(
+                    df, st, _stoof_kpis, _stoof_thresh, tf,
+                    exit_threshold=_stoof_exit_thresh,
+                    atr_override=_stoof_atr_override,
+                    K_override=_stoof_K,
+                )
             else:
                 events = compute_position_events(df, st, c3_kpis, c4_kpis, tf)
         except Exception as exc:
@@ -916,7 +1028,8 @@ class _Caches:
             if cached and cached[0] == mt:
                 return cached[1]
 
-        from apps.dashboard.figures import _safe_plotly_json_dumps, build_figure_for_symbol_timeframe
+        from apps.dashboard.figures import build_figure_for_symbol_timeframe
+        from apps.dashboard.figures_layout import _safe_plotly_json_dumps
 
         cfg = _read_config()
         tf_combos = cfg.get("combo_kpis_by_tf", {}).get(tf, {})
@@ -998,9 +1111,9 @@ class Handler(BaseHTTPRequestHandler):
         path = u.path or "/"
 
         if path in ("/", "/index.html"):
-            # Redirect to the shell
+            # Redirect to the shell (relative so it works under any path prefix, e.g. /test/).
             self.send_response(HTTPStatus.FOUND)
-            self.send_header("Location", "/dashboard_shell.html")
+            self.send_header("Location", "dashboard_shell.html")
             self.end_headers()
             return
 
@@ -1055,10 +1168,15 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_enrich_sse()
             return
 
+        if path == "/api/rebuild-ui":
+            self._handle_rebuild_ui_sse()
+            return
+
         if path == "/api/scan/status":
             status_obj = {
                 "scan_running": SCAN.running,
                 "refresh_running": REFRESH.running,
+                "rebuild_ui_running": REBUILD_UI.running,
                 "enrich_running": ENRICH.running,
             }
             body = json.dumps({"ok": True, "data": status_obj}).encode("utf-8")
@@ -1085,6 +1203,25 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
                 else:
                     self._send(HTTPStatus.NOT_FOUND, b'{"error":"no screener data"}', content_type="application/json")
+            except Exception as exc:
+                body = json.dumps({"error": str(exc)}).encode("utf-8")
+                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, body, content_type="application/json")
+            return
+
+        if path == "/api/scan-log":
+            try:
+                log_path = DASHBOARD_ARTIFACTS_DIR / "scan_log.jsonl"
+                entries: list[dict] = []
+                if log_path.exists():
+                    for line in log_path.read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if line:
+                            try:
+                                entries.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                pass
+                body = json.dumps({"ok": True, "data": entries}).encode("utf-8")
+                self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
             except Exception as exc:
                 body = json.dumps({"error": str(exc)}).encode("utf-8")
                 self._send(HTTPStatus.INTERNAL_SERVER_ERROR, body, content_type="application/json")
@@ -1506,11 +1643,18 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return False
 
+        def _write_keepalive() -> bool:
+            try:
+                self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+                return True
+            except (BrokenPipeError, ConnectionResetError):
+                return False
+
         u = urlparse(self.path)
         qs = parse_qs(u.query)
-        _scan_strategy = qs.get("strategy", [None])[0] or None
         _scan_timeframe = qs.get("timeframe", ["1D"])[0] or "1D"
-        SCAN.start(strategy=_scan_strategy, timeframe=_scan_timeframe)
+        SCAN.start(timeframe=_scan_timeframe)
 
         snapshot, notify = SCAN.subscribe()
         try:
@@ -1521,7 +1665,7 @@ class Handler(BaseHTTPRequestHandler):
                 cursor += 1
 
             while True:
-                notify.wait(timeout=2.0)
+                fired = notify.wait(timeout=2.0)
                 notify.clear()
 
                 new_events = SCAN.get_events_since(cursor)
@@ -1529,6 +1673,12 @@ class Handler(BaseHTTPRequestHandler):
                     if not _write_event(event, data):
                         return
                     cursor += 1
+
+                if not new_events and not fired:
+                    # Poll timed out with no new data — send keepalive to prevent
+                    # proxy/browser from closing the long-lived SSE connection.
+                    if not _write_keepalive():
+                        return
 
                 if not SCAN.running:
                     remaining = SCAN.get_events_since(cursor)
@@ -1557,7 +1707,19 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return False
 
-        REFRESH.start()
+        def _write_keepalive() -> bool:
+            try:
+                self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+                return True
+            except (BrokenPipeError, ConnectionResetError):
+                return False
+
+        started = REFRESH.start()
+        if not started and not REFRESH.running:
+            # Another task type is blocking this refresh.
+            _write_event("failed", {"message": "Another task is already running. Please wait for it to complete."})
+            return
 
         snapshot, notify = REFRESH.subscribe()
         try:
@@ -1568,7 +1730,7 @@ class Handler(BaseHTTPRequestHandler):
                 cursor += 1
 
             while True:
-                notify.wait(timeout=2.0)
+                fired = notify.wait(timeout=2.0)
                 notify.clear()
 
                 new_events = REFRESH.get_events_since(cursor)
@@ -1576,6 +1738,10 @@ class Handler(BaseHTTPRequestHandler):
                     if not _write_event(event, data):
                         return
                     cursor += 1
+
+                if not new_events and not fired:
+                    if not _write_keepalive():
+                        return
 
                 if not REFRESH.running:
                     remaining = REFRESH.get_events_since(cursor)
@@ -1585,6 +1751,62 @@ class Handler(BaseHTTPRequestHandler):
                     break
         finally:
             REFRESH.unsubscribe(notify)
+
+    def _handle_rebuild_ui_sse(self) -> None:
+        """Stream rebuild-ui progress via SSE (fast: no download/re-enrich)."""
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+        def _write_event(event: str, data: dict) -> bool:
+            try:
+                payload = f"event: {event}\ndata: {json.dumps(data)}\n\n"
+                self.wfile.write(payload.encode("utf-8"))
+                self.wfile.flush()
+                return True
+            except (BrokenPipeError, ConnectionResetError):
+                return False
+
+        def _write_keepalive() -> bool:
+            try:
+                self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+                return True
+            except (BrokenPipeError, ConnectionResetError):
+                return False
+
+        REBUILD_UI.start()
+
+        snapshot, notify = REBUILD_UI.subscribe()
+        try:
+            cursor = 0
+            for event, data in snapshot:
+                if not _write_event(event, data):
+                    return
+                cursor += 1
+
+            while True:
+                fired = notify.wait(timeout=2.0)
+                notify.clear()
+                new_events = REBUILD_UI.get_events_since(cursor)
+                for event, data in new_events:
+                    if not _write_event(event, data):
+                        return
+                    cursor += 1
+                if not new_events and not fired:
+                    if not _write_keepalive():
+                        return
+                if not REBUILD_UI.running:
+                    remaining = REBUILD_UI.get_events_since(cursor)
+                    for event, data in remaining:
+                        if not _write_event(event, data):
+                            return
+                    break
+        finally:
+            REBUILD_UI.unsubscribe(notify)
 
     def _handle_enrich_sse(self) -> None:
         """Stream batch enrichment progress via SSE."""

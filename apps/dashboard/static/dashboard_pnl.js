@@ -338,8 +338,8 @@ function _renderDrillChart(chartId, payload, tf, sym) {
 
   function loadTrades() {
   Promise.all([
-    fetch("/api/trades").then(function(r) { return r.json(); }).then(function(raw) { return (raw && raw.data !== undefined) ? raw.data : raw; }),
-    fetch("/api/trades/stats").then(function(r) { return r.json(); }).then(function(raw) { return (raw && raw.data !== undefined) ? raw.data : raw; }),
+    fetch(_BASE + "/api/trades").then(function(r) { return r.json(); }).then(function(raw) { return (raw && raw.data !== undefined) ? raw.data : raw; }),
+    fetch(_BASE + "/api/trades/stats").then(function(r) { return r.json(); }).then(function(raw) { return (raw && raw.data !== undefined) ? raw.data : raw; }),
   ]).then(function(arr) {
     var trades = arr[0]; var stats = arr[1];
     renderTradesStats(stats);
@@ -506,7 +506,7 @@ function _renderDrillChart(chartId, payload, tf, sym) {
     var ccy = (typeof SYMBOL_CURRENCIES !== "undefined" && SYMBOL_CURRENCIES[sym]) || "USD";
     status.textContent = "Submitting\u2026";
     status.className = "modal-status loading";
-    fetch("/api/trades", {
+    fetch(_BASE + "/api/trades", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol: sym, entry_price: price, entry_date: date, timeframe: tf, direction: dir, size: size, stop_price: stop, notes: notes, currency: ccy }),
@@ -540,7 +540,7 @@ function _renderDrillChart(chartId, payload, tf, sym) {
     }
     status.textContent = "Closing\u2026";
     status.className = "modal-status loading";
-    fetch("/api/trades/close", {
+    fetch(_BASE + "/api/trades/close", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: _closingTradeId, exit_price: exitPrice, exit_date: exitDate }),
@@ -574,7 +574,7 @@ function _renderDrillChart(chartId, payload, tf, sym) {
 
   window.deleteTrade = function(tradeId) {
     if (!confirm("Delete this trade?")) return;
-    fetch("/api/trades/delete", {
+    fetch(_BASE + "/api/trades/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: tradeId }),

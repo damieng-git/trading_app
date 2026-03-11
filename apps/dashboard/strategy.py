@@ -895,17 +895,22 @@ def compute_stoof_position_events(
     tf: str,
     *,
     scan_start: int | None = None,
+    exit_threshold: int | None = None,
+    atr_override: "pd.Series | None" = None,
+    K_override: float | None = None,
 ) -> list[dict]:
     """Threshold-based (Band Light) position engine for the Stoof strategy.
 
-    Entry: bullish KPI count transitions from < threshold to >= threshold (onset only).
-    No SMA/volume/overextension gates — Stoof is score-based, not trend-filtered.
+    Entry: WT_MTF bullish cross (wt1 crosses above wt2, onset) while wt1 < -60,
+           AND score KPI count (excl. WT_MTF) >= threshold.
+    No SMA/volume/overextension gates — pure oversold momentum reversal.
     No C4 / position scaling (single entry level).
-    Exit: same ATR stop + two-stage KPI invalidation as other engines, but measured
-          against the threshold instead of individual KPI polarity.
-          Lenient (bars <= T): exit if count < threshold (any breach).
-          Strict (bars > T): exit if count <= threshold - 2 (2+ KPIs dropped below line).
-          Checkpoint (M bars): exit if count < threshold, else trail stop.
+    Exit: score <= exit_threshold, or ATR stop breached.
+          Checkpoint (M bars): exit if score < threshold, else trail stop.
+
+    atr_override: pre-aligned ATR series (e.g. 1W ATR aligned to this TF's index).
+    K_override: ATR multiplier override (default: from exit_params).
+    exit_threshold: score level at or below which position exits (default: threshold - 2).
 
     ret_pct is unweighted (scaled=False always); consumers apply weight if needed.
     """
@@ -915,17 +920,35 @@ def compute_stoof_position_events(
     if not {"High", "Low", "Close"}.issubset(df.columns):
         return []
 
-    T, M, K = params["T"], params["M"], params["K"]
+    M = params["M"]
+    K = K_override if K_override is not None else params["K"]
+    _exit_thresh = exit_threshold if exit_threshold is not None else threshold - 2
+
     cl = df["Close"].to_numpy(float)
     op = df["Open"].to_numpy(float) if "Open" in df.columns else cl.copy()
-    atr = compute_atr(df, ATR_PERIOD).to_numpy(float)
+
+    # ATR: use override (e.g. 1W ATR aligned to this TF's index) or compute from df
+    if atr_override is not None:
+        atr = atr_override.reindex(df.index, method="ffill").to_numpy(float)
+    else:
+        atr = compute_atr(df, ATR_PERIOD).to_numpy(float)
+
     n = len(df)
 
-    # Pre-compute bullish count per bar for available KPIs
-    avail_kpis = [k for k in stoof_kpis if st.get(k) is not None]
+    # WT_MTF gate: extract raw wt1/wt2 for bullish cross + oversold check
+    _WT_MTF_KPI = "WT_MTF"
+    _wt1_col, _wt2_col = "WT_MTF_wt1", "WT_MTF_wt2"
+    _wt_gate = _wt1_col in df.columns and _wt2_col in df.columns
+    wt1_arr = df[_wt1_col].to_numpy(float) if _wt_gate else None
+    wt2_arr = df[_wt2_col].to_numpy(float) if _wt_gate else None
+
+    # Score KPIs: exclude WT_MTF (it's the trigger gate, not the score)
+    score_kpis = [k for k in stoof_kpis if k != _WT_MTF_KPI]
+    avail_kpis = [k for k in score_kpis if st.get(k) is not None]
     if not avail_kpis:
         return []
 
+    # Pre-compute bullish count per bar
     bull_counts = np.zeros(n, dtype=int)
     for k in avail_kpis:
         s = st[k]
@@ -937,13 +960,28 @@ def compute_stoof_position_events(
 
     start = scan_start if scan_start is not None else 0
     events: list[dict] = []
-    i = start
+    i = max(start, 1)  # need i-1 for cross onset check
 
     while i < n:
-        # Onset: count crosses threshold upward
-        if bull_counts[i] < threshold or (i > 0 and bull_counts[i - 1] >= threshold):
+        # Gate 1: score meets threshold
+        if bull_counts[i] < threshold:
             i += 1
             continue
+
+        # Gate 2: WT_MTF bullish cross onset while wt1 < -60
+        if _wt_gate and wt1_arr is not None and wt2_arr is not None:
+            w1, w2 = wt1_arr[i], wt2_arr[i]
+            w1p, w2p = wt1_arr[i - 1], wt2_arr[i - 1]
+            # Onset: wt1 just crossed above wt2, and wt1 is still in deep oversold
+            if (np.isnan(w1) or np.isnan(w2) or np.isnan(w1p) or np.isnan(w2p)
+                    or not (w1 > w2 and w1p <= w2p and w1 < -60.0)):
+                i += 1
+                continue
+        else:
+            # No WT_MTF columns — fall back to score onset (backward compat)
+            if bull_counts[i - 1] >= threshold:
+                i += 1
+                continue
 
         signal_idx = i
         fill_bar = i + 1
@@ -975,25 +1013,21 @@ def compute_stoof_position_events(
                 j += 1
                 continue
 
+            # ATR stop (always active)
             if c < stop:
                 exit_idx = j
                 exit_reason = "ATR stop"
                 break
 
             cnt = int(bull_counts[j])
-            bars_held = j - entry_idx
 
-            if bars_held <= T:
-                if cnt < threshold:
-                    exit_idx = j
-                    exit_reason = "Full invalidation"
-                    break
-            else:
-                if cnt <= threshold - 2:
-                    exit_idx = j
-                    exit_reason = f"Score {cnt}/{len(avail_kpis)} below threshold"
-                    break
+            # Exit: score drops to exit_threshold or below (2 KPIs flipped from entry)
+            if cnt <= _exit_thresh:
+                exit_idx = j
+                exit_reason = f"Score {cnt}/{len(avail_kpis)} exit"
+                break
 
+            # M-bar checkpoint: trail stop forward if score holds, else exit
             if bars_since_reset >= M:
                 if cnt >= threshold:
                     stop_price = c
@@ -1050,6 +1084,10 @@ def compute_stoof_trailing_pnl(
     stoof_kpis: list[str],
     threshold: int,
     tf: str,
+    *,
+    exit_threshold: int | None = None,
+    atr_override: "pd.Series | None" = None,
+    K_override: float | None = None,
 ) -> dict:
     """Trailing 12-month P&L for the Stoof strategy."""
     empty = {"l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None}
@@ -1058,7 +1096,13 @@ def compute_stoof_trailing_pnl(
 
     lookback = _L12M_BARS.get(tf, 252)
     start = max(0, len(df) - lookback)
-    events = compute_stoof_position_events(df, st, stoof_kpis, threshold, tf, scan_start=start)
+    events = compute_stoof_position_events(
+        df, st, stoof_kpis, threshold, tf,
+        scan_start=start,
+        exit_threshold=exit_threshold,
+        atr_override=atr_override,
+        K_override=K_override,
+    )
 
     closed = [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None]
     if not closed:

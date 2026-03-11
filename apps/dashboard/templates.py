@@ -164,6 +164,7 @@ def write_lazy_dashboard_shell_html(
         _static_dir / "dashboard_screener.js",
         _static_dir / "dashboard_pnl.js",
         _static_dir / "dashboard_modals.js",
+        _static_dir / "dashboard_scan.js",
         _static_dir / "dashboard.js",
     ]
     if not _css_path.exists():
@@ -242,6 +243,9 @@ def write_lazy_dashboard_shell_html(
 {_chart_builder_text}
   </script>
   <script>
+    // API base-path prefix — auto-detected from URL so the same build works
+    // both at the root (production) and under /test/ (staging via nginx proxy).
+    const _BASE = window.location.pathname.startsWith("/test/") ? "/test" : "";
 {_js_text}
   </script>
 """
@@ -251,28 +255,24 @@ def write_lazy_dashboard_shell_html(
     <div class="topbarRow">
       <div class="nav-tabs" role="tablist" aria-label="Dashboard tabs">
         <div id="tabScreener" class="nav-tab" role="tab" tabindex="0" aria-selected="false">Screener</div>
+        <div id="tabScan" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">&#128269; Scan</div>
         <div id="tabStrategy" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">Strategy</div>
         <div id="tabChart" class="nav-tab active" role="tab" tabindex="-1" aria-selected="true">Charts</div>
         <div id="tabPnl" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">P&amp;L</div>
         <div id="tabInfo" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">Info</div>
       </div>
       <div class="topbar-sep"></div>
+      <div class="refresh-split" id="refreshSplit">
+        <button id="refreshToggle" class="topbar-refresh-toggle" title="Refresh options">&#8635; Refresh &#9662;</button>
+        <div class="refresh-menu" id="refreshMenu">
+          <button id="rebuildUiBtn" class="refresh-menu-item">&#9889; UI Refresh <span class="refresh-menu-hint">templates &amp; JS only</span></button>
+          <button id="refreshBtn" class="refresh-menu-item">&#8635; Full Refresh <span class="refresh-menu-hint">re-download &amp; re-enrich</span></button>
+        </div>
+      </div>
+      <div class="topbar-sep"></div>
       <div id="themeToggle" title="Toggle dark/light mode">&#9790;</div>
       <div class="topbar-sep"></div>
       <button id="eurToggle" class="eur-toggle" title="Toggle prices to EUR">Local</button>
-      <div class="topbar-sep"></div>
-      <select id="scanStrategy" class="scan-select" title="Strategy to scan">
-        <option value="">Select strategy…</option>
-      </select>
-      <select id="scanTimeframe" class="scan-select" title="Timeframe to scan">
-        <option value="1D">1D</option>
-        <option value="1W">1W</option>
-        <option value="4H">4H</option>
-        <option value="2W">2W</option>
-        <option value="1M">1M</option>
-      </select>
-      <button id="scanBtn" class="scan-btn" title="Run stock screener">&#9881; Scan</button>
-      <button id="refreshBtn" class="scan-btn" title="Re-download &amp; re-enrich all data">&#8635; Refresh</button>
     </div>
   </div>
   <div id="scanBar" class="scan-bar hidden">
@@ -361,36 +361,225 @@ def write_lazy_dashboard_shell_html(
         </div>
         <span class="filter-sep"></span>
         <div class="btn active" data-filter="all" title="Show all symbols">All</div>
-        <span class="filter-sep"></span>
-        <span class="filter-label">Trend:</span>
-        <div class="btn" data-filter="bull" title="TrendScore &gt; 0">Bullish</div>
-        <div class="btn" data-filter="bear" title="TrendScore &lt; 0">Bearish</div>
-        <div class="btn" data-filter="strong" title="Absolute TrendScore &ge; 5">Strong (&ge;5)</div>
-        <div class="btn" data-filter="improving" title="Trend delta &gt; 0 over last 3 bars — momentum turning">Improving</div>
-        <span class="filter-sep"></span>
-        <span class="filter-label">Signal:</span>
-        <div class="btn" data-filter="combo" title="At least one combo (C3/C4) active on latest bar">Combo</div>
-        <div class="btn" data-filter="new_combo" title="Combo just appeared — was not active on previous bar">New Combo</div>
-        <div class="btn" data-filter="recent_combo" title="Combo signal within the last 3 bars">Recent (&le;3)</div>
-        <span class="filter-sep"></span>
-        <span class="filter-label">Position:</span>
-        <div class="btn" data-filter="active_position" title="Stocks with active ENTRY, SCALE, or HOLD signals">Active</div>
-        <div class="btn" data-filter="entry_signal" title="Stocks with new ENTRY or SCALE signals only">Entry/Scale</div>
-        <span class="filter-sep"></span>
-        <span class="filter-label">Analyst:</span>
-        <div class="btn" data-filter="buy" title="Analyst consensus is Buy or Strong Buy">Buy Rating</div>
+        <div class="btn" data-filter="active_position" title="Stocks with an active ENTRY, SCALE, or HOLD signal (any strategy)">In Position</div>
+        <div class="btn" data-filter="new_combo" title="Combo just appeared — was not active on the previous bar">New Signals</div>
+        <div class="btn" data-filter="improving" title="Trend delta &gt; 0 over last 3 bars — momentum turning up">Improving</div>
+        <div class="btn" data-filter="combo" title="At least one combo (C3/C4) active on the latest bar">Combo</div>
         <span class="filter-sep"></span>
         <span class="filter-label">Strategy:</span>
-        <div class="btn" data-filter="strat_active" title="Any strategy active (entry or hold)">Any Active</div>
-        <div class="btn" data-filter="strat_dip" title="Buy Dip entry signal">Buy Dip</div>
-        <div class="btn" data-filter="strat_swing" title="Swing Trading entry or hold">Swing Trading</div>
-        <div class="btn" data-filter="strat_trend" title="Trend Position entry or hold">Trend</div>
+        <div class="btn" data-filter="strat_dip" title="Dip Buy entry signal active (D badge)">Dip Buy</div>
+        <div class="btn" data-filter="strat_swing" title="Swing Trading entry or hold (S badge)">Swing</div>
+        <div class="btn" data-filter="strat_trend" title="Trend Position entry or hold (T badge)">Trend</div>
+        <div class="btn" data-filter="strat_stoof" title="Stoof entry or hold active on 2W or 1M">Stoof</div>
       </div>
       <button id="btnAddTicker" class="btn btn-add" type="button" title="Add ticker to watchlist">+ Add</button>
       <button id="btnExport" class="btn" type="button">Export CSV</button>
     </div>
     <div id="screenerBox">
       <div id="screener"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!--  SCAN TAB                                                         -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <div id="scanWrap" style="display:none;">
+    <div class="scan-page">
+
+      <!-- ── Controls ──────────────────────────────────────────────────── -->
+      <div class="scan-controls-bar">
+        <div class="scan-controls-left">
+          <span class="scan-controls-label">Timeframe</span>
+          <div id="scanTfSelector" class="scan-tf-pills">
+            <button class="scan-tf-pill scan-tf-confirm" data-tf="4H" title="4H is not scanned — used only to confirm 1D entry timing">4H &#10003;</button>
+            <button class="scan-tf-pill active" data-tf="1D">1D</button>
+            <button class="scan-tf-pill" data-tf="1W">1W</button>
+            <button class="scan-tf-pill" data-tf="2W">2W</button>
+            <button class="scan-tf-pill" data-tf="1M">1M</button>
+            <button class="scan-tf-pill scan-tf-all" data-tf="all">&#9889; All TFs</button>
+          </div>
+        </div>
+        <div class="scan-controls-right">
+          <button id="scanBtn" class="scan-action-btn scan-action-primary" title="Scan universe for all strategies on selected timeframe">&#9881; Scan</button>
+          <button id="scanExportAllBtn" class="scan-action-btn" title="Export all-TF scan results to CSV">&#8595; Export All</button>
+        </div>
+      </div>
+
+      <!-- ── New Signals ───────────────────────────────────────────────── -->
+      <section class="scan-section" id="scanSectionNew">
+        <div class="scan-section-header">
+          <h2 class="scan-section-title">&#128994; New Signals <span id="scanNewCount" class="scan-badge"></span></h2>
+          <span class="scan-section-sub" id="scanNewMeta"></span>
+        </div>
+        <div id="scanNewSignals"></div>
+      </section>
+
+      <!-- ── Positions at Risk ─────────────────────────────────────────── -->
+      <section class="scan-section" id="scanSectionRisk">
+        <div class="scan-section-header">
+          <h2 class="scan-section-title">&#9888; Positions at Risk <span id="scanRiskCount" class="scan-badge scan-badge-warn"></span></h2>
+          <span class="scan-section-sub">Open positions where stop is &lt;10% away</span>
+        </div>
+        <div id="scanPositionsAtRisk"></div>
+      </section>
+
+      <!-- ── Pre-Signals ───────────────────────────────────────────────── -->
+      <section class="scan-section" id="scanSectionPre">
+        <div class="scan-section-header">
+          <h2 class="scan-section-title">&#128064; Almost There <span id="scanPreCount" class="scan-badge scan-badge-info"></span></h2>
+          <span class="scan-section-sub">2 of 3 C3 KPIs bullish — signal may fire next bar</span>
+        </div>
+        <div id="scanPreSignals"></div>
+      </section>
+
+      <!-- ── Strategy Cards ────────────────────────────────────────────── -->
+      <section class="scan-section">
+        <div class="scan-section-header">
+          <h2 class="scan-section-title">&#128196; Strategy Reference</h2>
+          <span class="scan-section-sub">Entry conditions, KPIs, and gates for each active strategy</span>
+        </div>
+        <div id="scanStrategyCards" class="scan-strategy-cards"></div>
+      </section>
+
+      <!-- ── Decision Logigram ─────────────────────────────────────────── -->
+      <section class="scan-section">
+        <div class="scan-section-header">
+          <h2 class="scan-section-title">&#128336; How to Act on a Signal</h2>
+          <span class="scan-section-sub">Decision checklist — run through this before placing any order</span>
+        </div>
+        <div class="scan-logigram">
+          <div class="logi-step logi-step-trigger">
+            <div class="logi-icon">&#128269;</div>
+            <div class="logi-body">
+              <div class="logi-title">New Signal appears in scan</div>
+              <div class="logi-desc">A stock just triggered a C3 combo onset for one or more strategies</div>
+            </div>
+          </div>
+          <div class="logi-arrow">&#8595;</div>
+          <div class="logi-decision-row">
+            <div class="logi-check">
+              <div class="logi-check-num">1</div>
+              <div class="logi-check-body">
+                <div class="logi-check-title">Signal Fresh? <span class="logi-tag logi-tag-green">&#128994; &#8804;1 bar = Act</span> <span class="logi-tag logi-tag-yellow">&#128993; &#8804;3 = Watch</span> <span class="logi-tag logi-tag-red">&#128308; &gt;3 = Skip</span></div>
+                <div class="logi-check-desc">Check <b>Freshness</b> column. Stale signals (&gt;3 bars) likely already priced in.</div>
+              </div>
+            </div>
+            <div class="logi-check">
+              <div class="logi-check-num">2</div>
+              <div class="logi-check-body">
+                <div class="logi-check-title">TF Alignment &#8805;2 timeframes?</div>
+                <div class="logi-check-desc">Check <b>TF Align</b> column. Signal on 1D confirmed by 1W trend = high conviction. Single TF = lower conviction.</div>
+              </div>
+            </div>
+            <div class="logi-check">
+              <div class="logi-check-num">3</div>
+              <div class="logi-check-body">
+                <div class="logi-check-title">Risk acceptable? <span class="logi-tag logi-tag-green">&lt;5% = Full size</span> <span class="logi-tag logi-tag-yellow">5-8% = Half</span> <span class="logi-tag logi-tag-red">&gt;8% = Skip</span></div>
+                <div class="logi-check-desc">Check <b>Risk%</b> column = (price − ATR stop) / price. Size position so 1 risk unit = 1% of portfolio.</div>
+              </div>
+            </div>
+            <div class="logi-check">
+              <div class="logi-check-num">4</div>
+              <div class="logi-check-body">
+                <div class="logi-check-title">Sector concentration OK?</div>
+                <div class="logi-check-desc">Check <b>Sector cluster</b> header. If ≥4 signals in same sector, reduce size — sector bias, not alpha.</div>
+              </div>
+            </div>
+            <div class="logi-check">
+              <div class="logi-check-num">5</div>
+              <div class="logi-check-body">
+                <div class="logi-check-title">Multi-strategy agreement?</div>
+                <div class="logi-check-desc">Check <b>Strategies</b> column. ≥2 strategies agree = strong conviction → full allocation. 1 strategy only → half allocation.</div>
+              </div>
+            </div>
+          </div>
+          <div class="logi-arrow">&#8595;</div>
+          <div class="logi-outcome-row">
+            <div class="logi-outcome logi-outcome-strong">
+              <div class="logi-outcome-icon">&#128994;</div>
+              <div class="logi-outcome-title">STRONG — Full size</div>
+              <div class="logi-outcome-desc">Fresh (&le;1 bar) · &#8805;2 TFs aligned · Risk &lt;5% · &#8805;2 strategies · Sector OK</div>
+            </div>
+            <div class="logi-outcome logi-outcome-moderate">
+              <div class="logi-outcome-icon">&#128993;</div>
+              <div class="logi-outcome-title">MODERATE — Half size</div>
+              <div class="logi-outcome-desc">2-3 bars old · 1 TF only · Risk 5-8% · or single strategy</div>
+            </div>
+            <div class="logi-outcome logi-outcome-skip">
+              <div class="logi-outcome-icon">&#128308;</div>
+              <div class="logi-outcome-title">SKIP — Wait for reconfirmation</div>
+              <div class="logi-outcome-desc">Stale &gt;3 bars · Risk &gt;8% · Sector over-concentrated</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Scan Dataflow ─────────────────────────────────────────────── -->
+      <section class="scan-section">
+        <div class="scan-section-header">
+          <h2 class="scan-section-title">&#128260; Scan Dataflow</h2>
+          <span class="scan-section-sub">How signals are generated — from universe to entry</span>
+        </div>
+        <div class="scan-dataflow">
+          <div class="df-step">
+            <div class="df-step-num">1</div>
+            <div class="df-step-body">
+              <div class="df-step-title">Universe Download <span class="df-tf-badge">1D · 1W · 2W · 1M</span></div>
+              <div class="df-step-desc">All symbols from <code>universe.csv</code> are downloaded via yfinance in batches of 50. Each of the four scan timeframes (1D, 1W, 2W, 1M) is downloaded once. <b>4H is excluded from the scan</b> — it's reserved for entry timing confirmation only.</div>
+            </div>
+          </div>
+          <div class="df-arrow">&#8595;</div>
+          <div class="df-step">
+            <div class="df-step-num">2</div>
+            <div class="df-step-body">
+              <div class="df-step-title">Lean Enrichment + Quality Gate</div>
+              <div class="df-step-desc">For each symbol, only the KPIs required by the active strategy combos are computed (no full indicator suite). Quality gates are applied per strategy: <b>SMA20&gt;SMA200</b> (trend filter), <b>Volume spike ≥1.5× MA20</b> (momentum filter), <b>SR Break</b> (support/resistance breakout within 10 bars).</div>
+            </div>
+          </div>
+          <div class="df-arrow">&#8595;</div>
+          <div class="df-step">
+            <div class="df-step-num">3</div>
+            <div class="df-step-body">
+              <div class="df-step-title">C3 Onset Detection</div>
+              <div class="df-step-desc">A C3 signal fires when <b>all C3 KPIs flip bullish simultaneously</b> within the last 3 bars (onset detection). Stocks that pass are "lean candidates" — quickly enriched without full pipeline overhead.</div>
+            </div>
+          </div>
+          <div class="df-arrow">&#8595;</div>
+          <div class="df-step">
+            <div class="df-step-num">4</div>
+            <div class="df-step-body">
+              <div class="df-step-title">Full Enrichment + Re-validation</div>
+              <div class="df-step-desc">Lean candidates are fully enriched (all indicators, all timeframes including 4H) and written to the feature store. C3 onset is re-validated on real enriched data. Only confirmed signals survive.</div>
+            </div>
+          </div>
+          <div class="df-arrow">&#8595;</div>
+          <div class="df-step df-step-4h">
+            <div class="df-step-num">5</div>
+            <div class="df-step-body">
+              <div class="df-step-title">4H Entry Confirmation <span class="df-confirm-badge">&#10003; Confirmation only</span></div>
+              <div class="df-step-desc">After a stock appears in the New Signals list (1D+), check the <b>4H timeframe</b> to time the entry. Look for 4H KPIs aligning bullish and volume confirmation before placing the order. The 4H tab in the scan view shows this confirmation layer — it is <b>not a source of scan signals</b>.</div>
+            </div>
+          </div>
+          <div class="df-arrow">&#8595;</div>
+          <div class="df-step df-step-output">
+            <div class="df-step-num">6</div>
+            <div class="df-step-body">
+              <div class="df-step-title">Dashboard Refresh &amp; Strategy CSVs</div>
+              <div class="df-step-desc">Confirmed symbols are written to <code>configs/lists/&#123;strategy&#125;.csv</code>. A background dashboard refresh rebuilds all Plotly assets and the screener. The New Signals table is populated from the latest screener data.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Scan History ───────────────────────────────────────────────── -->
+      <section class="scan-section">
+        <div class="scan-section-header">
+          <h2 class="scan-section-title">&#128203; Scan History</h2>
+          <span class="scan-section-sub">Every scan run — what was added and removed per strategy</span>
+        </div>
+        <div id="scanHistory"></div>
+      </section>
+
     </div>
   </div>
 

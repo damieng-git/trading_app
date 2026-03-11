@@ -180,7 +180,7 @@
   function mkTrace(base, row, indicatorLabel, vis) {
     const t = Object.assign({}, base, ax(row));
     t.showlegend = false;
-    t.meta = { indicator: indicatorLabel };
+    t.meta = Object.assign({}, base.meta || {}, { indicator: indicatorLabel });
     t.visible = vis !== undefined ? vis : (indicatorLabel === LABEL.Price);
     return t;
   }
@@ -214,13 +214,17 @@
       name: "Price", hoverinfo: "skip",
     }, 1, LABEL.Price, true));
 
-    // Hover-catcher with OHLCV tooltip
+    // Hover-catcher with OHLCV tooltip.
+    // meta.role="hover_catcher" lets _applySubTabVisibility suppress the tooltip
+    // in Strategy mode while keeping the trace visible so plotly_hover still fires
+    // (crosshair sync depends on this event).
     const hoverCd = [];
     const O = col(c, "Open"), H = col(c, "High"), L = col(c, "Low"), C = col(c, "Close"), V = colOr0(c, "Volume");
     for (let i = 0; i < n; i++) hoverCd.push([O[i], H[i], L[i], C[i], V[i]]);
     traces.push(mkTrace({
       type: "scatter", x: x, y: C, mode: "markers",
       marker: { size: 18, opacity: 0 }, name: "",
+      meta: { role: "hover_catcher" },
       customdata: hoverCd,
       hovertemplate: "<b>O</b> %{customdata[0]:.2f}  <b>H</b> %{customdata[1]:.2f}<br>" +
                      "<b>L</b> %{customdata[2]:.2f}  <b>C</b> %{customdata[3]:.2f}<br>" +
@@ -865,26 +869,6 @@
         c4Active = combo4kpis.length ? comboBool(combo4kpis, combo4pols) : null;
       }
 
-      // Entry / exit badges on score bar
-      if (c3Active) {
-        const _badgeColor = (isPolStrat && _stratColor) ? _stratColor : "#22c55e";
-        const entryX = [], exitX = [];
-        for (let i = 1; i < n; i++) {
-          if (c3Active[i] && !c3Active[i - 1]) entryX.push(x[i]);
-          if (!c3Active[i] && c3Active[i - 1]) exitX.push(x[i]);
-        }
-        const _bY = tsPad * 0.88;
-        if (entryX.length) traces.push(mkTrace({
-          type: "scatter", x: entryX, y: constant(entryX.length, _bY),
-          mode: "markers", marker: { symbol: "triangle-up", size: 11, color: _badgeColor, line: { color: "rgba(0,0,0,0.25)", width: 1 } },
-          hovertemplate: "<b>C3 Entry</b><br>%{x}<extra></extra>",
-        }, 4, "TrendScore", false));
-        if (exitX.length) traces.push(mkTrace({
-          type: "scatter", x: exitX, y: constant(exitX.length, -_bY),
-          mode: "markers", marker: { symbol: "triangle-down", size: 11, color: "#ef4444", line: { color: "rgba(0,0,0,0.25)", width: 1 } },
-          hovertemplate: "<b>C3 Exit</b><br>%{x}<extra></extra>",
-        }, 4, "TrendScore", false));
-      }
     }
 
     // KPI Trend Heatmap (row 6) — uses scoreSlice when strategy is active
@@ -897,21 +881,7 @@
       const trCustom = heatmapSlice.kk.map(k => constant(n, shortLabel(k)));
       heatmapSlice.kk.forEach(k => trLabels.push(shortLabel(k)));
 
-      // C3 / C4 combo rows appended at top of heatmap (z=1→green, z=0→grey via existing colorscale)
-      if (!isStoof && c3Active && combo3kpis.length) {
-        const c3Label = "C3: " + combo3kpis.map(k => shortLabel(k)).join(" · ");
-        trLabels.push(c3Label);
-        trZ.push(c3Active.map(v => v ? 1 : 0));
-        trC.push(c3Active.map(v => v ? "active" : "—"));
-        trCustom.push(constant(n, c3Label));
-        if (c4Active && combo4kpis.length) {
-          const c4Label = "C4: " + combo4kpis.map(k => shortLabel(k)).join(" · ");
-          trLabels.push(c4Label);
-          trZ.push(c4Active.map(v => v ? 1 : 0));
-          trC.push(c4Active.map(v => v ? "active" : "—"));
-          trCustom.push(constant(n, c4Label));
-        }
-      }
+      // C3 / C4 moved to dedicated combo row (row 7) above TrendScore
 
       traces.push(mkTrace({
         type: "heatmap", x: x, y: trLabels, z: trZ,
@@ -920,6 +890,32 @@
         customdata: trCustom, text: trC,
         hovertemplate: "<b>%{customdata}</b><br>%{x}<br>%{text}<extra></extra>",
       }, 6, "KPI Trend", true));
+    }
+
+    // Combo row (row 7) — C3/C4 isolated above TrendScore with small gap
+    const comboLabels = [];
+    const comboZ = [], comboC = [];
+    if (!isStoof && c3Active && combo3kpis.length) {
+      const c3Label = "C3: " + combo3kpis.map(k => shortLabel(k)).join(" · ");
+      comboLabels.push(c3Label);
+      comboZ.push(c3Active.map(v => v ? 1 : 0));
+      comboC.push(c3Active.map(v => v ? "active" : "—"));
+      if (c4Active && combo4kpis.length) {
+        const c4Label = "C4: " + combo4kpis.map(k => shortLabel(k)).join(" · ");
+        comboLabels.push(c4Label);
+        comboZ.push(c4Active.map(v => v ? 1 : 0));
+        comboC.push(c4Active.map(v => v ? "active" : "—"));
+      }
+    }
+    if (comboLabels.length) {
+      const comboCustom = comboLabels.map(lbl => constant(n, lbl));
+      traces.push(mkTrace({
+        type: "heatmap", x: x, y: comboLabels, z: comboZ,
+        zmin: -3, zmax: 1, colorscale: colorscale, zsmooth: false,
+        showscale: false, xgap: 0, ygap: 3,
+        customdata: comboCustom, text: comboC,
+        hovertemplate: "<b>%{customdata}</b><br>%{x}<br>%{text}<extra></extra>",
+      }, 7, "Combo", true));
     }
 
     /* ============================================================ */
@@ -968,7 +964,7 @@
       // --- Build trade list from pre-computed events or fallback ---
       const _peByStrat = data.position_events_by_strategy || {};
       const _isAllStrats = _activeStrat === "all";
-      const _useStratEvents = isPolStrat && _peByStrat[_activeStrat] && _peByStrat[_activeStrat].length;
+      const _useStratEvents = (isPolStrat || isStoof) && _peByStrat[_activeStrat] && _peByStrat[_activeStrat].length;
       const _useAllOverlay = _isAllStrats && Object.keys(_peByStrat).length > 0;
 
       function _pushEvents(evList, stratKey) {
@@ -1392,15 +1388,28 @@
         line: { color: "rgba(148,163,184,0.3)", width: 1, dash: "dot" },
         hoverinfo: "skip",
       }, 2, "P&L", true));
-      // Equity curve line
+      // Equity curve line — no tooltip (bars carry all trade detail).
       traces.push(mkTrace({
         type: "scatter", x: x, y: eqCurve, mode: "lines",
         line: { color: eqCurve[n - 1] >= 0 ? "#26a65b" : "#ea3943", width: 1.8 },
-        hovertemplate: "<b>Cum. Return</b>: %{y:.1f}%<extra></extra>",
+        hoverinfo: "skip",
       }, 2, "P&L", true));
 
-      // Per-trade P&L bars centered on trade midpoint, width = trade duration
+      // Per-trade P&L bars centered on trade midpoint, width = trade duration.
+      // Each bar carries rich customdata: [entryPx, exitPx, retStr, durationStr]
+      // so the hovertemplate can show full trade detail without any extra fetch.
       if (trades.length) {
+        // Adaptive duration: converts bar-count × timeframe to a human label.
+        // Days < 14 → "Nd", days 14-60 → "N.Nw", days > 60 → "N.Nmo".
+        const _tfDays = { "4H": 1 / 6, "1D": 1, "1W": 7, "2W": 14, "1M": 30 };
+        const _daysPerBar = _tfDays[(tf || "").toUpperCase()] || 1;
+        function _adaptiveLen(bars) {
+          const d = bars * _daysPerBar;
+          if (d < 14)  return Math.round(d) + "d";
+          if (d < 60)  return (d / 7).toFixed(1) + "w";
+          return (d / 30).toFixed(1) + "mo";
+        }
+
         const barX = trades.map(t => {
           const t0 = new Date(x[t.entryIdx]).getTime(), t1 = new Date(x[t.exitIdx]).getTime();
           return new Date((t0 + t1) / 2).toISOString();
@@ -1414,10 +1423,28 @@
           if (t._stratColor && t.ret >= 0) return _hexToRgba(t._stratColor, 0.75);
           return t.ret >= 0 ? "rgba(34,197,94,0.75)" : "rgba(239,68,68,0.75)";
         });
+
+        // Pre-format customdata per trade so hovertemplate stays simple.
+        // Entry fill = open of entry bar; exit fill = open of next bar if not
+        // "Open" reason and not last bar, else close of exit bar (matches sim).
+        const barCustom = trades.map(t => {
+          const entryPx = O[t.entryIdx] || C[t.entryIdx];
+          const xFill = (t.exitIdx < n - 1 && t.reason !== "Open") ? t.exitIdx + 1 : t.exitIdx;
+          const exitPx = xFill !== t.exitIdx ? (O[xFill] || C[xFill]) : C[t.exitIdx];
+          const weighted = t.ret * (t.scaled ? 1.5 : 1.0);
+          const retStr = (weighted >= 0 ? "+" : "") + weighted.toFixed(2) + "%" + (t.scaled ? " (×1.5)" : "");
+          return [entryPx.toFixed(2), exitPx.toFixed(2), retStr, _adaptiveLen(t.hold)];
+        });
+
         traces.push(mkTrace({
           type: "bar", x: barX, y: barY, width: barW,
           marker: { color: barColors, line: { width: 0 } },
-          hovertemplate: "<b>Trade P&L</b>: %{y:.2f}%<extra></extra>",
+          customdata: barCustom,
+          hovertemplate:
+            "<b>Entry</b> %{customdata[0]} → <b>Exit</b> %{customdata[1]}<br>" +
+            "<b>Return</b> %{customdata[2]}<br>" +
+            "<b>Duration</b> %{customdata[3]}" +
+            "<extra></extra>",
         }, 2, "P&L", true));
       }
 
@@ -1462,13 +1489,16 @@
     const tsShare = 0.09;
     const pnlShare = 0.08;
     const priceShare = 0.27;
-    const oscShare = 1 - priceShare - pnlShare - brShare - trShare - tsShare;
+    const comboShare = comboLabels.length ? 0.04 : 0;
+    const oscShare = 1 - priceShare - pnlShare - brShare - trShare - tsShare - comboShare;
     const gap = 0.015;
+    const comboGap = 0.008; // tighter gap between combo row and TrendScore
 
     const r6Bot = 0, r6Top = r6Bot + trShare;
     const r5Bot = r6Top + gap, r5Top = r5Bot + brShare;
     const r4Bot = r5Top + gap, r4Top = r4Bot + tsShare;
-    const r3Bot = r4Top + gap, r3Top = r3Bot + oscShare;
+    const rCBot = r4Top + (comboLabels.length ? comboGap : gap), rCTop = rCBot + comboShare;
+    const r3Bot = rCTop + (comboLabels.length ? gap : 0), r3Top = r3Bot + oscShare;
     const r2Bot = r3Top + gap, r2Top = r2Bot + pnlShare;
     const r1Bot = r2Top + gap, r1Top = 1.0;
 
@@ -1512,7 +1542,7 @@
       shapes: shapes,
       meta: { combo_zones: comboZones, pnl_trades: data._pnlTrades || [], pnl_stats_fn: data._pnlStatsText || null, combo_3_kpis: combo3kpis, combo_4_kpis: combo4kpis },
       xaxis: xax1, xaxis2: makeXAxis(), xaxis3: makeXAxis(),
-      xaxis4: makeXAxis(), xaxis5: makeXAxis(), xaxis6: makeXAxis(),
+      xaxis4: makeXAxis(), xaxis5: makeXAxis(), xaxis6: makeXAxis(), xaxis7: makeXAxis(),
       yaxis: makeYAxis([r1Bot, r1Top]),
       yaxis2: makeYAxis([r2Bot, r2Top], {
         ticksuffix: "%", zeroline: true, zerolinecolor: _zeroLine,
@@ -1538,6 +1568,13 @@
         categoryorder: "array", categoryarray: trLabels.slice().reverse(),
         showgrid: true, gridcolor: _gridAlpha,
       } : makeYAxis([r6Bot, r6Top])),
+      yaxis7: (comboLabels.length ? {
+        domain: [rCBot, rCTop], tickmode: "array",
+        tickvals: comboLabels, ticktext: comboLabels, tickfont: { size: 8 },
+        ticklabelstandoff: 8, automargin: true,
+        categoryorder: "array", categoryarray: comboLabels.slice().reverse(),
+        showgrid: false,
+      } : makeYAxis([rCBot, rCTop])),
     };
 
     // Subplot titles as annotations
@@ -1548,10 +1585,14 @@
       { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: "KPI \u2014 " + (isStoof ? "Stoof" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
     ];
+    if (comboLabels.length) {
+      subplotTitles.push({ text: "Combos", xref: "paper", yref: "paper", x: 0.5, y: rCTop, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" });
+    }
     // Stash KPI counts in layout.meta for dynamic height in splitFigure
     layout.meta = layout.meta || {};
     layout.meta._nBr = nBr;
     layout.meta._nTr = nTr;
+    layout.meta._nCombo = comboLabels.length;
     // P&L dynamic stat banner (updates on zoom)
     if (data._pnlStats && data._pnlStats.text) {
       subplotTitles.push({

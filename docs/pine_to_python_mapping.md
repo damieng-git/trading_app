@@ -15,6 +15,7 @@ This file documents how each PineScript indicator was translated to Python.
 |---|---|---|
 | 000001.SS | 000001.SS | 000001.SS |
 | 0JDK.L | 0JDK.L | 0JDK.L |
+| 1810.HK | 1810.HK | 1810.HK |
 | 3BRL.L | 3BRL.L | 3BRL.L |
 | AAPL | AAPL | AAPL |
 | ACA.PA | ACA.PA | ACA.PA |
@@ -26,10 +27,13 @@ This file documents how each PineScript indicator was translated to Python.
 | ALREW.PA | ALREW.PA | ALREW.PA |
 | ALV.DE | ALV.DE | ALV.DE |
 | AMN | AMN | AMN |
+| APP | APP | APP |
+| ARDT | ARDT | ARDT |
 | ATE.PA | ATE.PA | ATE.PA |
-| BA.L | BA.L | BA.L |
+| AVGO | AVGO | AVGO |
 | BAS.DE | BAS.DE | BAS.DE |
 | BETZ | BETZ | BETZ |
+| BKTI | BKTI | BKTI |
 | BMPS.MI | BMPS.MI | BMPS.MI |
 | BNK.PA | BNK.PA | BNK.PA |
 | BNP.PA | BNP.PA | BNP.PA |
@@ -40,8 +44,8 @@ This file documents how each PineScript indicator was translated to Python.
 | CBBHF | CBBHF | CBBHF |
 | CE | CE | CE |
 | CLDD.DE | CLDD.DE | CLDD.DE |
-| CLDX | CLDX | CLDX |
 | CMCSA | CMCSA | CMCSA |
+| CNC | CNC | CNC |
 | CNI | CNI | CNI |
 | COCO.L | COCO.L | COCO.L |
 | COTN.SW | COTN.SW | COTN.SW |
@@ -53,6 +57,7 @@ This file documents how each PineScript indicator was translated to Python.
 | CYBR | CYBR | CYBR |
 | DANSKE.CO | DANSKE.CO | DANSKE.CO |
 | DASH | DASH | DASH |
+| DCOMP | DCOMP | DCOMP |
 | DEO | DEO | DEO |
 | DPGA.DE | DPGA.DE | DPGA.DE |
 | DSY.PA | DSY.PA | DSY.PA |
@@ -61,6 +66,7 @@ This file documents how each PineScript indicator was translated to Python.
 | EGLN.L | EGLN.L | EGLN.L |
 | EIDO | EIDO | EIDO |
 | ENGI.PA | ENGI.PA | ENGI.PA |
+| EQR | EQR | EQR |
 | ERA.PA | ERA.PA | ERA.PA |
 | ETH-USD | ETH-USD | ETH-USD |
 | EXH3D.XD | EXH3D.XD | EXH3D.XD |
@@ -78,8 +84,8 @@ This file documents how each PineScript indicator was translated to Python.
 | HAIN | HAIN | HAIN |
 | HLT.PA | HLT.PA | HLT.PA |
 | HUM | HUM | HUM |
-| HWDN.L | HWDN.L | HWDN.L |
 | IBB | IBB | IBB |
+| IGG.L | IGG.L | IGG.L |
 | IGV | IGV | IGV |
 | IHI | IHI | IHI |
 | INS.PA | INS.PA | INS.PA |
@@ -98,15 +104,16 @@ This file documents how each PineScript indicator was translated to Python.
 | IUUS.L | IUUS.L | IUUS.L |
 | JACK | JACK | JACK |
 | KBE | KBE | KBE |
+| KDK | KDK | KDK |
 | KFTK.DE | KFTK.DE | KFTK.DE |
 | KGRN | KGRN | KGRN |
 | KLAR | KLAR | KLAR |
 | KNIN.SW | KNIN.SW | KNIN.SW |
+| KURA | KURA | KURA |
 | LI | LI | LI |
-| LPL | LPL | LPL |
 | LULU | LULU | LULU |
 | LYP6.DE | LYP6.DE | LYP6.DE |
-| LYV | LYV | LYV |
+| MAC | MAC | MAC |
 | MBUU | MBUU | MBUU |
 | MEI | MEI | MEI |
 | MGPI | MGPI | MGPI |
@@ -120,6 +127,7 @@ This file documents how each PineScript indicator was translated to Python.
 | NKE | NKE | NKE |
 | NVO | NVO | NVO |
 | OFLX | OFLX | OFLX |
+| OLLI | OLLI | OLLI |
 | ORA.PA | ORA.PA | ORA.PA |
 | PACB | PACB | PACB |
 | PLUG | PLUG | PLUG |
@@ -157,6 +165,8 @@ This file documents how each PineScript indicator was translated to Python.
 | W3B3.DE | W3B3.DE | W3B3.DE |
 | WIG20.WA | WIG20.WA | WIG20.WA |
 | WIRUS.FGI | WIRUS.FGI | WIRUS.FGI |
+| WK | WK | WK |
+| WLTH | WLTH | WLTH |
 | XLB | XLB | XLB |
 | XLC | XLC | XLC |
 | XLE | XLE | XLE |
@@ -172,7 +182,6 @@ This file documents how each PineScript indicator was translated to Python.
 | XPEV | XPEV | XPEV |
 | XPH | XPH | XPH |
 | XS8R.DE | XS8R.DE | XS8R.DE |
-| YOU | YOU | YOU |
 | ^AEX | ^AEX | ^AEX |
 | ^ATX | ^ATX | ^ATX |
 | ^AXJO | ^AXJO | ^AXJO |
