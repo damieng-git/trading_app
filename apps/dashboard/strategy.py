@@ -13,27 +13,23 @@ See research/kpi_optimization/STRATEGY.md for full specification.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-_CONFIG_PATH = Path(__file__).resolve().parent / "configs" / "config.json"
+from apps.dashboard.config_loader import CONFIG_JSON as _CONFIG_PATH
+
 
 def _load_exit_params() -> dict[str, dict[str, int | float]]:
-    """Load EXIT_PARAMS from config.json with hardcoded fallback."""
-    defaults = {
-        "4H": {"T": 4, "M": 48, "K": 4.0},
-        "1D": {"T": 4, "M": 40, "K": 4.0},
-        "1W": {"T": 2, "M": 20, "K": 4.0},
-        "2W": {"T": 2, "M": 10, "K": 4.0},
-        "1M": {"T": 1, "M": 6, "K": 4.0},
-    }
+    """Load EXIT_PARAMS from config.json (single source of truth: config_loader path)."""
     try:
         cfg = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
-        return cfg.get("exit_params", defaults)
+        params = cfg.get("exit_params")
+        if isinstance(params, dict) and params:
+            return params
     except Exception:
-        return defaults
+        pass
+    return {}
 
 EXIT_PARAMS: dict[str, dict[str, int | float]] = _load_exit_params()
 ATR_PERIOD = 14

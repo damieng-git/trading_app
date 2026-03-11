@@ -2743,4 +2743,18 @@
       };
     })();
 
+    // Fetch screener data on startup — SCREENER object starts empty, populated here.
+    (function _initScreenerData() {
+      fetch(_BASE + "/api/screener-data", { cache: "no-store" })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(raw) {
+          var data = (raw && raw.data !== undefined) ? raw.data : raw;
+          if (!data) return;
+          if (data.rows_by_tf) SCREENER.rows_by_tf = data.rows_by_tf;
+          if (data.by_symbol) SCREENER.by_symbol = data.by_symbol;
+          if (currentTab === "screener") buildScreener();
+          buildSymbolList();
+        })
+        .catch(function() {});
+    })();
 

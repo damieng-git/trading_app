@@ -54,6 +54,7 @@ def write_lazy_dashboard_shell_html(
     data_health: dict,
     symbol_meta: dict,
     screener_summary: dict,
+    exit_params: dict | None = None,
     fx_rates: Dict[str, float] | None = None,
     symbol_currencies: Dict[str, str] | None = None,
 ) -> None:
@@ -103,14 +104,11 @@ def write_lazy_dashboard_shell_html(
     sym_meta_payload = json.dumps(symbol_meta or {}, allow_nan=False, separators=(",", ":"))
     sym_disp_payload = json.dumps(symbol_display or {}, allow_nan=False, separators=(",", ":"))
     sym_to_asset_payload = json.dumps(symbol_to_asset or {}, allow_nan=False, separators=(",", ":"))
-    screener_payload = json.dumps(screener_summary or {}, allow_nan=False, separators=(",", ":"))
     groups_payload = json.dumps(symbol_groups or {}, allow_nan=False, separators=(",", ":"))
-    exit_params_payload = json.dumps(
-        _load_config_field("exit_params", {"4H":{"T":4,"M":48,"K":4.0},"1D":{"T":4,"M":40,"K":4.0},"1W":{"T":2,"M":20,"K":4.0},"2W":{"T":2,"M":10,"K":4.0},"1M":{"T":1,"M":6,"K":4.0}}),
-        separators=(",", ":")
-    )
+    # exit_params: caller passes pre-loaded value (single source of truth: config.json via config_loader)
+    exit_params_payload = json.dumps(exit_params or {}, separators=(",", ":"))
     _kpi_w = _load_config_field("kpi_weights", {})
-    max_trend_score = sum(float(v) for v in _kpi_w.values()) if _kpi_w else 28.2
+    max_trend_score = sum(float(v) for v in _kpi_w.values()) if _kpi_w else None
     try:
         from trading_dashboard.kpis.catalog import KPI_ORDER  # local import (keeps UI aligned)
 
@@ -227,9 +225,9 @@ def write_lazy_dashboard_shell_html(
     const SYMBOL_META = {sym_meta_payload};
     const SYMBOL_DISPLAY = {sym_disp_payload};
     const SYMBOL_TO_ASSET = {sym_to_asset_payload};
-    const SCREENER = {screener_payload};
+    const SCREENER = {{}};  // populated on startup via /api/screener-data
     const EXIT_PARAMS_CFG = {exit_params_payload};
-    const MAX_TREND_SCORE = {max_trend_score};
+    const MAX_TREND_SCORE = {json.dumps(max_trend_score)};
     const DIMENSION_MAP = {_build_dimension_map_payload()};
     const DIMENSION_ORDER = {json.dumps([DIMENSIONS[k] for k in DIMENSION_ORDER])};
     const DEFAULT_SYMBOL = {json.dumps(default_symbol)};

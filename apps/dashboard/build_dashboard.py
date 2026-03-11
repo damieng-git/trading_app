@@ -1408,6 +1408,13 @@ def run_refresh_dashboard(
     except Exception:
         logger.debug("Failed to write FX rates cache")
 
+    # Load exit_params once from config.json (single source of truth)
+    _exit_params: dict = {}
+    try:
+        _exit_params = json.loads(CONFIG_JSON.read_text(encoding="utf-8")).get("exit_params") or {}
+    except Exception:
+        logger.debug("Failed to load exit_params from config.json")
+
     # Dashboard shell/HTML
     if cfg.dashboard_mode == "lazy_server":
         try:
@@ -1424,6 +1431,7 @@ def run_refresh_dashboard(
                 data_health=data_health,
                 symbol_meta=symbol_meta,
                 screener_summary=screener_summary,
+                exit_params=_exit_params,
                 fx_rates=fx_to_eur,
                 symbol_currencies=symbol_currencies,
             )
@@ -1450,6 +1458,7 @@ def run_refresh_dashboard(
                         data_health=data_health,
                         symbol_meta=symbol_meta,
                         screener_summary=screener_summary,
+                        exit_params=_exit_params,
                         fx_rates=fx_to_eur,
                         symbol_currencies=symbol_currencies,
                     )
@@ -1606,6 +1615,11 @@ def main(argv: list[str] | None = None, _on_export_progress=None) -> int:
         _tfs_ui = cfg.timeframes
         _groups_ui = getattr(cfg, "symbol_groups", None)
         _sym_to_asset_ui = {s: _safe_path_component(s) for s in _symbols_ui}
+        _exit_params_ui: dict = {}
+        try:
+            _exit_params_ui = json.loads(CONFIG_JSON.read_text(encoding="utf-8")).get("exit_params") or {}
+        except Exception:
+            logger.debug("Failed to load exit_params for rebuild-ui")
         write_lazy_dashboard_shell_html(
             output_path=paths.dashboard_shell_html,
             fig_source="server" if cfg.dashboard_mode == "lazy_server" else "static_js",
@@ -1619,6 +1633,7 @@ def main(argv: list[str] | None = None, _on_export_progress=None) -> int:
             data_health=_health_ui,
             symbol_meta={},
             screener_summary=_screener_ui,
+            exit_params=_exit_params_ui,
             fx_rates=_fx_ui,
             symbol_currencies={},
         )

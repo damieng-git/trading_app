@@ -200,6 +200,33 @@ class BuildPaths:
     output_mapping: Path
     output_readme: Path
 
+    def __post_init__(self) -> None:
+        """Validate that all data paths resolve under the project root."""
+        _root = REPO_DIR.resolve()
+        _data_paths = (
+            self.output_data_dir,
+            self.output_stock_data_dir,
+            self.output_raw_ohlcv_dir,
+            self.dashboard_assets_dir,
+            self.dashboard_shell_html,
+            self.run_metadata_json,
+            self.data_health_json,
+            self.screener_summary_json,
+            self.alert_files_dir,
+        )
+        for p in _data_paths:
+            try:
+                # Use the absolute (non-symlink-resolved) path so intentional symlinks
+                # pointing outside the repo (e.g. stock_data -> production) don't warn.
+                abs_p = str(p.absolute())
+                if not (abs_p == str(_root) or abs_p.startswith(str(_root) + "/")):
+                    logger.warning(
+                        "BuildPaths: path %s is outside TRADING_APP_ROOT %s",
+                        p, _root,
+                    )
+            except Exception as exc:
+                logger.debug("BuildPaths: could not validate path %s: %s", p, exc)
+
 
 @dataclass(frozen=True)
 class BuildConfig:

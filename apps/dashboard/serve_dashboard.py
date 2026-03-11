@@ -38,6 +38,7 @@ import mimetypes
 import os
 import re
 import threading
+from collections import deque
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -156,11 +157,15 @@ class _RateLimiter:
         import time
         now = time.time()
         with self._lock:
-            reqs = self._requests.setdefault(ip, [])
-            reqs[:] = [t for t in reqs if now - t < self._window]
+            reqs = [t for t in self._requests.get(ip, []) if now - t < self._window]
             if len(reqs) >= self._max:
+                if reqs:
+                    self._requests[ip] = reqs
+                else:
+                    self._requests.pop(ip, None)  # prune empty entry
                 return False
             reqs.append(now)
+            self._requests[ip] = reqs
             return True
 
 
@@ -188,7 +193,7 @@ class _ScanState:
         self._running = False
         self._thread: threading.Thread | None = None
         self._listeners: list[threading.Event] = []
-        self._event_log: list[tuple[str, dict]] = []
+        self._event_log: deque[tuple[str, dict]] = deque(maxlen=1000)
         self._finished_event = threading.Event()
         self._timeframe: str = "1D"
 
@@ -206,7 +211,7 @@ class _ScanState:
                 return False
             self._running = True
             self._timeframe = timeframe
-            self._event_log = []
+            self._event_log = deque(maxlen=1000)
             self._finished_event.clear()
             for ev in self._listeners:
                 ev.set()
@@ -234,7 +239,7 @@ class _ScanState:
 
     def get_events_since(self, idx: int) -> list[tuple[str, dict]]:
         with self._lock:
-            return list(self._event_log[idx:])
+            return list(self._event_log)[idx:]
 
     def _emit(self, event: str, data: dict) -> None:
         with self._lock:
@@ -319,7 +324,7 @@ class _RefreshState:
         self._running = False
         self._thread: threading.Thread | None = None
         self._listeners: list[threading.Event] = []
-        self._event_log: list[tuple[str, dict]] = []
+        self._event_log: deque[tuple[str, dict]] = deque(maxlen=1000)
         self._finished_event = threading.Event()
 
     @property
@@ -335,7 +340,7 @@ class _RefreshState:
             if self._running:
                 return False
             self._running = True
-            self._event_log = []
+            self._event_log = deque(maxlen=1000)
             self._finished_event.clear()
             for ev in self._listeners:
                 ev.set()
@@ -362,7 +367,7 @@ class _RefreshState:
 
     def get_events_since(self, idx: int) -> list[tuple[str, dict]]:
         with self._lock:
-            return list(self._event_log[idx:])
+            return list(self._event_log)[idx:]
 
     def _emit(self, event: str, data: dict) -> None:
         with self._lock:
@@ -431,7 +436,7 @@ class _RebuildUiState:
         self._running = False
         self._thread: threading.Thread | None = None
         self._listeners: list[threading.Event] = []
-        self._event_log: list[tuple[str, dict]] = []
+        self._event_log: deque[tuple[str, dict]] = deque(maxlen=1000)
         self._finished_event = threading.Event()
 
     @property
@@ -447,7 +452,7 @@ class _RebuildUiState:
             if self._running:
                 return False
             self._running = True
-            self._event_log = []
+            self._event_log = deque(maxlen=1000)
             self._finished_event.clear()
             for ev in self._listeners:
                 ev.set()
@@ -474,7 +479,7 @@ class _RebuildUiState:
 
     def get_events_since(self, idx: int) -> list[tuple[str, dict]]:
         with self._lock:
-            return list(self._event_log[idx:])
+            return list(self._event_log)[idx:]
 
     def _emit(self, event: str, data: dict) -> None:
         with self._lock:
@@ -532,7 +537,7 @@ class _EnrichState:
         self._running = False
         self._thread: threading.Thread | None = None
         self._listeners: list[threading.Event] = []
-        self._event_log: list[tuple[str, dict]] = []
+        self._event_log: deque[tuple[str, dict]] = deque(maxlen=1000)
         self._finished_event = threading.Event()
 
     @property
@@ -547,7 +552,7 @@ class _EnrichState:
             if self._running:
                 return False
             self._running = True
-            self._event_log = []
+            self._event_log = deque(maxlen=1000)
             self._finished_event.clear()
             for ev in self._listeners:
                 ev.set()
@@ -575,7 +580,7 @@ class _EnrichState:
 
     def get_events_since(self, idx: int) -> list[tuple[str, dict]]:
         with self._lock:
-            return list(self._event_log[idx:])
+            return list(self._event_log)[idx:]
 
     def _emit(self, event: str, data: dict) -> None:
         with self._lock:
@@ -601,13 +606,13 @@ class _EnrichState:
             self._emit("progress", {"phase": "init", "label": "Starting enrichment…",
                                      "pct": 0, "elapsed_s": 0, "total": len(tickers)})
 
-            from trading_dashboard.symbols.manager import SymbolManager
-            sm = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
+            sm = _get_sm()
             for t in tickers:
                 t_upper = t.strip().upper()
                 if group not in sm.find_groups(t_upper):
                     sm.add_symbol(t_upper, group=group)
             sm.sync_lists_dir(LISTS_DIR)
+            _invalidate_sm()
 
             def _on_progress(info: dict) -> None:
                 info["elapsed_s"] = _elapsed()
@@ -658,6 +663,28 @@ class _EnrichState:
 
 
 ENRICH = _EnrichState()
+
+
+# ---------------------------------------------------------------------------
+# SymbolManager singleton (#5) — one instance, invalidated after writes
+# ---------------------------------------------------------------------------
+_sm_instance: "SymbolManager | None" = None
+_sm_lock = threading.Lock()
+
+
+def _get_sm():
+    global _sm_instance
+    with _sm_lock:
+        if _sm_instance is None:
+            from trading_dashboard.symbols.manager import SymbolManager
+            _sm_instance = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
+        return _sm_instance
+
+
+def _invalidate_sm() -> None:
+    global _sm_instance
+    with _sm_lock:
+        _sm_instance = None
 
 
 _EXCHANGE_SUFFIXES = (
@@ -722,15 +749,14 @@ def _resolve_ticker_search(query: str) -> list[dict]:
 
 def _add_symbol_to_group(ticker: str, group: str) -> dict:
     """Add a ticker to a group CSV. Returns result dict."""
-    from trading_dashboard.symbols.manager import SymbolManager
-    sm = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
-
+    sm = _get_sm()
     existing_groups = sm.find_groups(ticker)
     if group in existing_groups:
         return {"ok": False, "error": f"{ticker} already in {group}"}
 
     sm.add_symbol(ticker, group=group)
     sm.sync_lists_dir(LISTS_DIR)
+    _invalidate_sm()
     return {"ok": True, "ticker": ticker, "group": group, "groups": sm.groups}
 
 
@@ -747,9 +773,7 @@ def _compute_pnl_summary(group: str, tf: str, strategy: str = "legacy") -> dict:
         compute_stoof_position_events,
     )
     from trading_dashboard.kpis.catalog import compute_kpi_state_map
-    from trading_dashboard.symbols.manager import SymbolManager
-
-    sm = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
+    sm = _get_sm()
     cfg = load_build_config()
 
     if group == "all":
@@ -1172,6 +1196,19 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_rebuild_ui_sse()
             return
 
+        if path == "/api/reload-config":
+            try:
+                _invalidate_sm()
+                CACHE.df_by_key.clear()
+                CACHE.fig_by_key.clear()
+                body = json.dumps({"ok": True, "message": "Config reloaded; symbol and figure caches cleared"}).encode("utf-8")
+                self._send(HTTPStatus.OK, body, content_type="application/json")
+                logger.info("Config reloaded via /api/reload-config")
+            except Exception as exc:
+                body = json.dumps({"error": str(exc)}).encode("utf-8")
+                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, body, content_type="application/json")
+            return
+
         if path == "/api/scan/status":
             status_obj = {
                 "scan_running": SCAN.running,
@@ -1185,8 +1222,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/groups":
             try:
-                from trading_dashboard.symbols.manager import SymbolManager
-                sm = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
+                sm = _get_sm()
                 body = json.dumps({"ok": True, "data": sm.groups}, indent=2).encode("utf-8")
                 self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
             except Exception as exc:
@@ -1229,8 +1265,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/symbol-data":
             try:
-                from trading_dashboard.symbols.manager import SymbolManager
-                sm = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
+                sm = _get_sm()
                 symbols = sorted(set(s for g in sm.groups.values() for s in g))
 
                 # Display names + currencies from sector_map
@@ -1354,8 +1389,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Invalid group name"}).encode(), content_type="application/json")
                     return
 
-                from trading_dashboard.symbols.manager import SymbolManager
-                sm = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
+                sm = _get_sm()
                 ok = sm.move_symbol(ticker, from_group=from_group, to_group=to_group)
                 if not ok:
                     actual_groups = sm.find_groups(ticker)
@@ -1364,6 +1398,7 @@ class Handler(BaseHTTPRequestHandler):
                         ok = sm.move_symbol(ticker, from_group=from_group, to_group=to_group)
                 if ok:
                     sm.sync_lists_dir(LISTS_DIR)
+                    _invalidate_sm()
                     result = {"ok": True, "moved": ticker.upper(), "from": from_group, "to": to_group, "groups": sm.groups}
                     logger.info("Moved %s: %s -> %s", ticker.upper(), from_group, to_group)
                 else:
@@ -1568,11 +1603,11 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(HTTPStatus.BAD_REQUEST, json.dumps({"error": "Invalid group name"}).encode(), content_type="application/json")
                     return
 
-                from trading_dashboard.symbols.manager import SymbolManager
-                sm = SymbolManager.from_lists_dir(LISTS_DIR, config_path=CONFIG_JSON)
+                sm = _get_sm()
                 ok = sm.remove_symbol(ticker, group=group)
                 if ok:
                     sm.sync_lists_dir(LISTS_DIR)
+                    _invalidate_sm()
 
                 still_in_groups = sm.find_groups(ticker) if ok else []
                 purged = 0
