@@ -29,6 +29,464 @@ from trading_dashboard.indicators.registry import (
 
 _CONFIGS_DIR = Path(__file__).resolve().parent / "configs"
 
+# Path to KPI optimization research results (20260315 run)
+_KPI_RESEARCH_DIR = (
+    Path(__file__).resolve().parent.parent.parent
+    / "research" / "kpi_optimization" / "20260315" / "data" / "results"
+)
+
+
+def _build_kpi_test_results() -> str:
+    """
+    Build the HTML content for the 'Test Results' info subtab.
+    Reads from the KPI optimization research results directory.
+    Returns a placeholder message if results are not available.
+    """
+    try:
+        import pandas as pd
+        import numpy as np
+    except ImportError:
+        return "<p class='info-note'>pandas not available — cannot render test results.</p>"
+
+    def _pct(v, dec=1):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return "—"
+        return f"{v * 100:.{dec}f}%"
+
+    def _f(v, dec=2):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return "—"
+        return f"{v:.{dec}f}"
+
+    def _grade(cagr, sharpe, max_dd):
+        if cagr <= 0 or max_dd > 0.35:
+            return "FAIL", "#ffc7ce", "✗"
+        if sharpe >= 1.2 and cagr >= 0.15:
+            return "STRONG", "#c6efce", "✓✓"
+        if sharpe >= 0.8 and cagr >= 0.09:
+            return "PASS", "#e2efda", "✓"
+        return "WEAK", "#ffeb9c", "~"
+
+    _STRAT_LABEL = {
+        "breakout":          "Breakout",
+        "pullback_trailing": "Pullback (Trailing ATR)",
+        "trend_following":   "Trend Following",
+        "momentum":          "Momentum Rotation",
+        "sr":                "Support/Resistance",
+    }
+    _SLOT_LABEL = {
+        "regime": "Regime Filter",
+        "entry":  "Entry Trigger",
+        "position": "Position Filter",
+        "exit":   "Exit Signal",
+        "multi_tf": "Multi-Timeframe",
+    }
+
+    # ── Load data ──────────────────────────────────────────────────────────
+    r = _KPI_RESEARCH_DIR
+    try:
+        baseline_df = pd.read_csv(r / "summary_baseline.csv").set_index("strategy")
+        baseline_df = baseline_df[baseline_df.index != "pullback_fixed"]
+    except Exception:
+        baseline_df = pd.DataFrame()
+
+    try:
+        dm = pd.read_csv(r / "summary_decision_matrix.csv")
+    except Exception:
+        dm = pd.DataFrame()
+
+    try:
+        frozen = json.loads((r / "frozen_config.json").read_text())
+    except Exception:
+        frozen = {}
+
+    try:
+        phase5 = json.loads((r / "phase5_winners.json").read_text())
+    except Exception:
+        phase5 = {}
+
+    group_b: dict = {}
+    for strat in ["breakout", "pullback_trailing", "trend_following"]:
+        try:
+            row = pd.read_parquet(r / f"group_b_{strat}.parquet").iloc[0].to_dict()
+            group_b[strat] = row
+        except Exception:
+            pass
+
+    if not group_b and baseline_df.empty and dm.empty:
+        return "<p class='info-note'>Test results not yet available — run the KPI optimization pipeline first.</p>"
+
+    # ── Grade colours (CSS-safe light/dark aware via opacity) ──────────────
+    # We embed inline styles only for coloured badges, rest uses CSS vars.
+
+    parts: list[str] = []
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECTION 0 — Executive Summary
+    # ══════════════════════════════════════════════════════════════════════
+    parts.append('<section class="info-section">')
+    parts.append('<h3>Executive Summary</h3>')
+
+    # Summary cards
+    strats_tested = ["breakout", "pullback_trailing", "trend_following"]
+    card_html = '<div class="tr-cards">'
+    for strat in strats_tested:
+        gb = group_b.get(strat, {})
+        ba = baseline_df.loc[strat] if (not baseline_df.empty and strat in baseline_df.index) else None
+        gb_cagr  = gb.get("cagr", 0)
+        gb_sharpe = gb.get("sharpe", 0)
+        gb_dd    = gb.get("max_dd", 1)
+        grade_label, grade_bg, grade_sym = _grade(gb_cagr, gb_sharpe, gb_dd)
+
+        rec_map = {
+            "STRONG": "Ready for live trading",
+            "PASS":   "Passes all gates — monitor closely",
+            "WEAK":   "Marginal — needs further tuning",
+            "FAIL":   "Do not deploy — failed risk gate",
+        }
+        rec_color = {
+            "STRONG": "var(--success)",
+            "PASS":   "var(--success)",
+            "WEAK":   "var(--warning)",
+            "FAIL":   "var(--danger)",
+        }
+        card_html += f'''<div class="tr-card">
+  <div class="tr-card-label">{_STRAT_LABEL.get(strat, strat)}</div>
+  <div class="tr-card-grade" style="color:{rec_color[grade_label]}">{grade_sym} {grade_label}</div>
+  <div class="tr-card-stat">Group B CAGR: <strong>{_pct(gb_cagr)}</strong></div>
+  <div class="tr-card-stat">Sharpe: <strong>{_f(gb_sharpe)}</strong> &nbsp; MaxDD: <strong>{_pct(gb_dd)}</strong></div>
+  <div class="tr-card-stat">Win Rate: <strong>{_pct(gb.get("win_rate"))}</strong> &nbsp; Trades: <strong>{int(gb.get("trade_count", 0))}</strong></div>
+  <div class="tr-card-rec" style="color:{rec_color[grade_label]}">{rec_map[grade_label]}</div>
+</div>'''
+    card_html += '</div>'
+    parts.append(card_html)
+
+    parts.append('''<div class="tr-exec-body">
+<p><strong>What we did:</strong> We ran a systematic 8-phase experiment to find the best technical indicators ("KPIs")
+for each trading strategy — replacing hand-picked defaults with statistically validated choices.
+We tested <strong>52 indicators</strong> across <strong>5 strategies</strong> on <strong>S&amp;P 500 stocks (2008–2021)</strong>,
+using 10 rolling walk-forward windows to avoid overfitting, and a held-out Group B stock universe for validation.</p>
+<p><strong>What we found:</strong>
+Breakout and Pullback pass the risk gates on out-of-sample data with modest but real improvements from the optimized KPIs.
+Trend Following showed the strongest Group A performance (19% CAGR, Sharpe 1.42) but failed the Group B MaxDD gate (46% drawdown),
+suggesting the strategy is currently overfit to the training universe — further tuning required before deploying.</p>
+<p><strong>Key caveat:</strong> Group B is a <em>cross-sectional</em> holdout (different stocks, same period) — not a temporal holdout.
+The 2022–2025 temporal holdout remains locked and will be the final confirmation step.</p>
+</div>''')
+    parts.append('</section>')
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECTION 1 — Research Pipeline Logigramme
+    # ══════════════════════════════════════════════════════════════════════
+    parts.append('<section class="info-section">')
+    parts.append('<h3>Research Pipeline — How the Test Worked</h3>')
+    parts.append('<p class="info-note">Plain-English explanation of each phase. No trading or coding knowledge required.</p>')
+
+    phases = [
+        ("Phase 0", "Bug Fixes", "done",
+         "Before running any tests, we audited every indicator formula and fixed 6 confirmed bugs "
+         "(wrong ATR calculation, incorrect PSAR initialisation, etc.). This ensures the test results are trustworthy."),
+        ("Phase 1", "Build the Universe", "done",
+         "We pulled the historical S&P 500 membership list — the 500 stocks that were actually <em>in</em> the index at each point in time "
+         "(not today's list, which would introduce survivorship bias). We then split them randomly into two groups: "
+         "<strong>Group A</strong> (used for all training and testing) and <strong>Group B</strong> (locked away for final validation)."),
+        ("Phase 2", "Download Price Data", "done",
+         "Daily price bars from 2008 to 2025 downloaded for every stock in our universe, plus macro data "
+         "(S&amp;P 500, VIX, 10yr Treasury yield). 2022–2025 is kept locked — the models never see it until the very last step."),
+        ("Phase 3", "Baseline Strategies", "done",
+         "We ran each of the 5 strategies with their <em>default</em> settings (no optimisation) to establish a baseline. "
+         "This tells us how the strategy performs before any indicator swaps — the benchmark to beat."),
+        ("Phase 4", "Walk-Forward Test (52 KPIs × 5 Strategies)", "done",
+         "The main experiment. For each of 52 indicators and 5 strategies, we ran 10 rolling tests: "
+         "train on 4 years, test on the following 1 year, slide forward, repeat. "
+         "This gives us 10 independent data points per indicator, reducing the risk of lucky flukes. "
+         "We collected 23 performance metrics per window (return, Sharpe, drawdown, win rate, etc.). "
+         "A statistical significance test (BH FDR) filters out indicators that only look good by chance."),
+        ("Phase 5", "Parameter Sensitivity", "done",
+         "For the indicators that survived Phase 4, we tested 3 parameter variants each "
+         "(e.g. tight / standard / loose thresholds) to find the most robust setting. "
+         "An indicator that only works with one very specific setting is fragile; "
+         "one that works across multiple settings is more trustworthy."),
+        ("Phase 6", "Group B Validation", "done",
+         "The winning indicator config was run — just once — on Group B (the stocks set aside at the very start). "
+         "This is the honest out-of-sample test: the model has never seen these stocks. "
+         "Pass criteria: CAGR &gt; 0%, MaxDD ≤ 35%. Strategies that fail here are flagged for further work."),
+        ("Phase 7", "Results Dashboard", "done",
+         "Automated HTML dashboard built showing equity curves, drawdowns, walk-forward heatmaps, "
+         "and KPI hit-rate / expectancy charts for all strategies."),
+        ("Phase 8", "Config Freeze", "done",
+         "The winning indicators per strategy are written to <code>frozen_config.json</code> — "
+         "a production-ready config that can be dropped into the live dashboard."),
+        ("Phase 7b", "Temporal Holdout (2022–2025)", "locked",
+         "🔒 LOCKED — only unlocked after Phase 6 passes for all strategies. "
+         "This is the ultimate out-of-sample test: running the frozen config on 3 years of data the model has never seen."),
+        ("Phase 5b/5c", "Param Tuning + Interactions", "todo",
+         "Further refinement: sweep each winning indicator's parameters more finely, "
+         "and test combinations of entry + exit indicators together. Not yet run."),
+        ("Phase 6b", "Regime Stratification", "todo",
+         "Break down results by market regime (Bull / Correction / Bear / Sideways) "
+         "to understand when each strategy works best. Not yet run."),
+    ]
+    STATUS_STYLE = {
+        "done":   ("var(--success)", "✓ Done"),
+        "locked": ("var(--warning)", "🔒 Locked"),
+        "todo":   ("var(--muted)",   "○ Pending"),
+    }
+    parts.append('<div class="tr-pipeline">')
+    for phase_id, phase_name, status, desc in phases:
+        color, status_label = STATUS_STYLE[status]
+        parts.append(f'''<div class="tr-phase-row">
+  <div class="tr-phase-id" style="color:{color}">{phase_id}</div>
+  <div class="tr-phase-body">
+    <div class="tr-phase-title">{phase_name} <span class="tr-phase-status" style="color:{color}">{status_label}</span></div>
+    <div class="tr-phase-desc">{desc}</div>
+  </div>
+</div>''')
+    parts.append('</div>')  # tr-pipeline
+    parts.append('</section>')
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECTION 2 — Per-Strategy Results
+    # ══════════════════════════════════════════════════════════════════════
+    parts.append('<section class="info-section">')
+    parts.append('<h3>Strategy Results — Baseline vs. Optimised vs. Group B</h3>')
+    parts.append('<p class="info-note">Group A = training universe (10 walk-forward windows, mean shown). Group B = held-out validation stocks (one shot).</p>')
+
+    all_strats_for_table = ["breakout", "pullback_trailing", "trend_following", "momentum", "sr"]
+
+    parts.append('<table class="info-tbl tr-results-tbl">')
+    parts.append('<thead><tr>'
+                 '<th>Strategy</th>'
+                 '<th>Group A CAGR</th><th>Group A Sharpe</th><th>Group A MaxDD</th>'
+                 '<th>Group A Win%</th><th>Trades/wf</th><th>Avg Hold</th>'
+                 '<th>Group B CAGR</th><th>Group B Sharpe</th><th>Group B MaxDD</th>'
+                 '<th>Group B Win%</th><th>Grade</th>'
+                 '</tr></thead><tbody>')
+
+    for strat in all_strats_for_table:
+        ba = baseline_df.loc[strat] if (not baseline_df.empty and strat in baseline_df.index) else None
+        gb = group_b.get(strat, {})
+
+        ga_cagr   = ba["cagr_mean"]   if ba is not None else None
+        ga_sharpe = ba["sharpe_mean"] if ba is not None else None
+        ga_dd     = ba["max_dd_mean"] if ba is not None else None
+        ga_wr     = ba["win_rate_mean"] if ba is not None else None
+        ga_tc     = ba["trade_count_mean"] if ba is not None else None
+        ga_hold   = ba["avg_holding_days_mean"] if ba is not None else None
+
+        gb_cagr   = gb.get("cagr")
+        gb_sharpe = gb.get("sharpe")
+        gb_dd     = gb.get("max_dd")
+        gb_wr     = gb.get("win_rate")
+        gb_tc     = gb.get("trade_count")
+
+        if gb_cagr is not None:
+            grade_label, _, grade_sym = _grade(gb_cagr, gb_sharpe or 0, gb_dd or 1)
+        elif ga_cagr is not None:
+            grade_label, _, grade_sym = _grade(ga_cagr, ga_sharpe or 0, ga_dd or 1)
+            grade_label = grade_label + "*"
+            grade_sym = "?"
+        else:
+            grade_label, grade_sym = "N/A", "—"
+
+        grade_colors = {"STRONG": "var(--success)", "PASS": "var(--success)",
+                        "WEAK": "var(--warning)", "FAIL": "var(--danger)", "N/A": "var(--muted)"}
+        grade_c = grade_colors.get(grade_label.rstrip("*"), "var(--muted)")
+
+        parts.append(f'<tr>'
+                     f'<td><strong>{_STRAT_LABEL.get(strat, strat)}</strong></td>'
+                     f'<td>{_pct(ga_cagr)}</td><td>{_f(ga_sharpe)}</td><td>{_pct(ga_dd)}</td>'
+                     f'<td>{_pct(ga_wr)}</td>'
+                     f'<td>{_f(ga_tc, 0) if ga_tc else "—"}</td>'
+                     f'<td>{_f(ga_hold, 1) + "d" if ga_hold else "—"}</td>'
+                     f'<td>{_pct(gb_cagr)}</td><td>{_f(gb_sharpe)}</td><td>{_pct(gb_dd)}</td>'
+                     f'<td>{_pct(gb_wr)}</td>'
+                     f'<td style="color:{grade_c};font-weight:700">{grade_sym} {grade_label}</td>'
+                     f'</tr>')
+
+    parts.append('</tbody></table>')
+    parts.append('</section>')
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECTION 3 — Winning KPI Config per Strategy
+    # ══════════════════════════════════════════════════════════════════════
+    parts.append('<section class="info-section">')
+    parts.append('<h3>Winning KPI Configuration (Frozen Config)</h3>')
+    parts.append('<p class="info-note">'
+                 'The final indicator selected for each role in each strategy, after all phases. '
+                 '"dCAGR" = improvement over baseline. "Robust" = fraction of parameter variants that also passed (1.0 = all 3 variants passed).'
+                 '</p>')
+
+    for strat in ["breakout", "pullback_trailing", "trend_following"]:
+        gb = group_b.get(strat, {})
+        gb_cagr = gb.get("cagr", 0)
+        gb_sharpe = gb.get("sharpe", 0)
+        gb_dd = gb.get("max_dd", 1)
+        grade_label, _, grade_sym = _grade(gb_cagr, gb_sharpe, gb_dd)
+        grade_colors = {"STRONG": "var(--success)", "PASS": "var(--success)",
+                        "WEAK": "var(--warning)", "FAIL": "var(--danger)"}
+        grade_c = grade_colors.get(grade_label, "var(--muted)")
+
+        slots = frozen.get("strategies", {}).get(strat, {})
+        parts.append(f'<h4>{_STRAT_LABEL.get(strat, strat)} '
+                     f'<span style="color:{grade_c}">— Group B: {grade_sym} {grade_label} '
+                     f'(CAGR {_pct(gb_cagr)}, Sharpe {_f(gb_sharpe)}, MaxDD {_pct(gb_dd)})</span></h4>')
+
+        parts.append('<table class="info-tbl">')
+        parts.append('<thead><tr><th>Role</th><th>Indicator</th><th>Variant / Setting</th>'
+                     '<th>CAGR (Group A)</th><th>Improvement</th><th>Win Rate</th>'
+                     '<th>Trades</th><th>Robustness</th><th>Source</th></tr></thead><tbody>')
+
+        for slot in ["regime", "entry", "position", "exit", "multi_tf"]:
+            if slot not in slots:
+                continue
+            entries = slots[slot]
+            if not isinstance(entries, list):
+                entries = [entries]
+            for e in entries:
+                kpi = e.get("kpi", "?")
+                p5  = phase5.get(kpi, {}).get(strat, {})
+                wr  = p5.get("win_rate")
+                tc  = p5.get("trade_count")
+                dcagr = e.get("delta_cagr", 0)
+                dcagr_str = ("+" if dcagr >= 0 else "") + _pct(dcagr)
+                dcagr_c = "var(--success)" if dcagr > 0.005 else ("var(--muted)" if abs(dcagr) < 0.005 else "var(--danger)")
+                rob = e.get("robustness_score")
+                sel = e.get("selection", "?")
+                sel_badge = ("improved" if sel == "improved"
+                             else "current" if sel == "fallback_current"
+                             else "phase4")
+                parts.append(f'<tr>'
+                              f'<td>{_SLOT_LABEL.get(slot, slot)}</td>'
+                              f'<td><strong>{kpi}</strong></td>'
+                              f'<td><code>{e.get("variant", "—")}</code></td>'
+                              f'<td>{_pct(e.get("cagr_group_a"))}</td>'
+                              f'<td style="color:{dcagr_c}">{dcagr_str}</td>'
+                              f'<td>{_pct(wr) if wr else "—"}</td>'
+                              f'<td>{int(tc) if tc else "—"}</td>'
+                              f'<td>{_f(rob) if rob is not None else "—"}</td>'
+                              f'<td><span class="tr-badge tr-badge-{sel_badge}">{sel_badge}</span></td>'
+                              f'</tr>')
+
+        parts.append('</tbody></table>')
+
+    parts.append('</section>')
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECTION 4 — KPI Family Leaderboard
+    # ══════════════════════════════════════════════════════════════════════
+    parts.append('<section class="info-section">')
+    parts.append('<h3>KPI Family Test Results — Top Performers per Family</h3>')
+    parts.append('<p class="info-note">'
+                 'Top 3 indicators per family per strategy. "Sig?" = statistically significant (BH FDR q &lt; 0.10). '
+                 '"dCAGR" = CAGR improvement vs. baseline. PF = Profit Factor.'
+                 '</p>')
+
+    if not dm.empty:
+        for strat in ["breakout", "pullback_trailing", "trend_following"]:
+            sub = dm[dm["strategy"] == strat].copy()
+            if sub.empty:
+                continue
+            parts.append(f'<h4>{_STRAT_LABEL.get(strat, strat)}</h4>')
+            parts.append('<table class="info-tbl">')
+            parts.append('<thead><tr><th>Family</th><th>Rank</th><th>Indicator</th>'
+                         '<th>CAGR</th><th>dCAGR</th><th>Sharpe</th>'
+                         '<th>Win Rate</th><th>PF</th><th>Trades</th><th>Significant?</th>'
+                         '</tr></thead><tbody>')
+
+            families = sorted(sub["family"].unique())
+            for fam in families:
+                rows = sub[(sub["family"] == fam) & (sub["rank"] <= 3)].sort_values("rank")
+                for i, (_, row) in enumerate(rows.iterrows()):
+                    sig = row.get("passes_significance", False)
+                    sig_html = ('<span style="color:var(--success)">✓ Yes</span>' if sig
+                                else '<span style="color:var(--muted)">No</span>')
+                    dcagr = row["delta_cagr"]
+                    dcagr_str = ("+" if dcagr >= 0 else "") + _pct(dcagr)
+                    dcagr_c = "var(--success)" if dcagr > 0.005 else ("var(--muted)" if abs(dcagr) < 0.005 else "var(--danger)")
+                    gate = row.get("passes_hard_gates", True)
+                    kpi_style = "" if gate else ' style="color:var(--muted)"'
+                    fam_cell = fam if i == 0 else ""
+                    parts.append(f'<tr>'
+                                  f'<td>{fam_cell}</td>'
+                                  f'<td style="color:var(--muted)">#{int(row["rank"])}</td>'
+                                  f'<td{kpi_style}><strong>{row["kpi"]}</strong>{"" if gate else " <em>(gate fail)</em>"}</td>'
+                                  f'<td>{_pct(row["cagr"])}</td>'
+                                  f'<td style="color:{dcagr_c}">{dcagr_str}</td>'
+                                  f'<td>{_f(row["sharpe"])}</td>'
+                                  f'<td>{_pct(row["win_rate"])}</td>'
+                                  f'<td>{_f(row["profit_factor"])}</td>'
+                                  f'<td>{int(row["trade_count"])}</td>'
+                                  f'<td>{sig_html}</td>'
+                                  f'</tr>')
+            parts.append('</tbody></table>')
+    else:
+        parts.append('<p class="info-note">Decision matrix not available.</p>')
+
+    parts.append('</section>')
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SECTION 5 — Recommendations & Next Steps
+    # ══════════════════════════════════════════════════════════════════════
+    parts.append('<section class="info-section">')
+    parts.append('<h3>Recommendations &amp; Next Steps</h3>')
+
+    recs = [
+        ("Breakout", "breakout", "WEAK",
+         "Passes the risk gates on Group B (CAGR 6.8%, MaxDD 23.9%). "
+         "The optimised KPIs (GMMA Weekly, VIX regime filter) show meaningful improvement over baseline (+3–6% CAGR). "
+         "Sharpe is low (0.59) — investigate regime stratification before deploying to production. "
+         "The strategy is most reliable in low-VIX, broad-market-healthy conditions.",
+         "Review — safe to paper-trade, not yet live"),
+        ("Pullback (Trailing ATR)", "pullback_trailing", "WEAK",
+         "Best Group B result of the three (CAGR 10.6%, Sharpe 0.80, MaxDD 23.1%). "
+         "CCI_Chop_BB entry and ATR_Expansion exit provided real improvement. "
+         "Still below Sharpe 1.0 threshold. The D4 bug (Exit KPI re-run for pullback) is pending — "
+         "results may improve after that fix. Recommended for near-term deployment after D4 re-run.",
+         "Near-deploy — fix D4, then promote to staging"),
+        ("Trend Following", "trend_following", "FAIL",
+         "Exceptional Group A performance (CAGR 18.7%, Sharpe 1.42) but failed Group B on MaxDD (46.2% > 35% gate). "
+         "The CAGR gap between Group A (18.7%) and Group B (9.5%) is a strong overfit signal — "
+         "the current config is tuned too tightly to the Group A universe. "
+         "Recommended fix: tighten the ATR stop multiplier, add a volatility-adjusted position size cap, "
+         "or restrict to bull-regime only (VIX &lt; 20, breadth &gt; 60%). Do not deploy until Phase 6 passes.",
+         "Do not deploy — fix MaxDD first"),
+    ]
+
+    for strat_name, strat_key, grade_label, analysis, action in recs:
+        grade_colors = {"STRONG": "var(--success)", "PASS": "var(--success)",
+                        "WEAK": "var(--warning)", "FAIL": "var(--danger)"}
+        grade_c = grade_colors.get(grade_label, "var(--muted)")
+        parts.append(f'''<div class="tr-rec-block">
+  <div class="tr-rec-header">
+    <span class="tr-rec-strat">{strat_name}</span>
+    <span class="tr-rec-grade" style="color:{grade_c}">● {grade_label}</span>
+    <span class="tr-rec-action" style="color:{grade_c}">→ {action}</span>
+  </div>
+  <p class="tr-rec-body">{analysis}</p>
+</div>''')
+
+    parts.append('<h4>Remaining Pipeline Steps</h4>')
+    next_steps = [
+        ("NOW",    "var(--danger)",   "Re-run Phase 4+9 for Pullback Exit KPIs (D4 bug fix) — see docs/AUDIT_FIXES.md"),
+        ("NOW",    "var(--danger)",   "Investigate Trend Following MaxDD on Group B — tighten stop or add position sizing"),
+        ("NEXT",   "var(--warning)",  "Run Phase 5b: parameter tuning for each winning KPI (currently on Phase 4 defaults)"),
+        ("NEXT",   "var(--warning)",  "Run Phase 6b: regime stratification (Bull/Correction/Bear/Sideways breakdown)"),
+        ("LATER",  "var(--muted)",    "Run Phase 5c: pairwise interaction effects (entry × exit combos)"),
+        ("LOCKED", "var(--muted)",    "Phase 7b: Temporal holdout 2022–2025 — unlock only after all Group B gates pass"),
+        ("DEPLOY", "var(--success)",  "Pullback: promote frozen_config.json to apps/dashboard/configs/config.json after D4 fix"),
+    ]
+    parts.append('<table class="info-tbl">')
+    parts.append('<thead><tr><th>Priority</th><th>Action</th></tr></thead><tbody>')
+    for priority, color, desc in next_steps:
+        parts.append(f'<tr><td style="color:{color};font-weight:700;white-space:nowrap">{priority}</td>'
+                     f'<td>{desc}</td></tr>')
+    parts.append('</tbody></table>')
+    parts.append('</section>')
+
+    return "\n".join(parts)
+
+
 def _load_config_field(field: str, default: Any = None) -> Any:
     """Load a single field from config.json, returning default on error."""
     try:
@@ -179,6 +637,7 @@ def write_lazy_dashboard_shell_html(
         return f'<div class="tab-tf-btn" data-tf="{tf}">{lbl}</div>'
     tf_buttons = "".join(_tf_btn(tf) for tf in timeframes)
     tf_options = "".join(f'<option value="{tf}">{tf}</option>' for tf in timeframes)
+    kpi_test_results = _build_kpi_test_results()
 
     def _build_head_section() -> str:
         """Build the <head> section with Plotly JS and CSS."""
@@ -584,6 +1043,15 @@ def write_lazy_dashboard_shell_html(
   <div id="infoWrap" style="display:none;">
     <div class="info-panel">
 
+      <!-- Info subtab nav -->
+      <div class="info-sub-tabs">
+        <div class="info-sub-tab active" data-info-sub="docs">Strategy Docs</div>
+        <div class="info-sub-tab" data-info-sub="testresults">Test Results</div>
+      </div>
+
+      <!-- ── Strategy Docs (existing content) ── -->
+      <div id="infoDocsContent">
+
       <h2 class="info-h2">Trading Strategy — Trend Position + Exit Flow v4</h2>
       <p class="info-sub">Status: Locked (v15) — Feb 2026 &nbsp;|&nbsp; PF-optimized combos (Phase 20) &nbsp;|&nbsp; Backtest: ~295 stocks, out-of-sample (last 30%)</p>
 
@@ -971,6 +1439,13 @@ def write_lazy_dashboard_shell_html(
           </tbody>
         </table>
       </section>
+
+      </div><!-- /infoDocsContent -->
+
+      <!-- ── Test Results (KPI Optimization) ── -->
+      <div id="infoTestResultsContent" style="display:none;">
+        {kpi_test_results}
+      </div>
 
     </div>
   </div>

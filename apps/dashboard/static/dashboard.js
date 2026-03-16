@@ -1979,6 +1979,23 @@
     document.getElementById("tabInfo").addEventListener("click", () => switchTab("info"));
     document.getElementById("tabPnl").addEventListener("click", () => switchTab("pnl"));
 
+    // Info subtab switching (Strategy Docs / Test Results)
+    (function() {
+      const infoSubTabs = document.querySelectorAll(".info-sub-tab");
+      const infoDocsEl  = document.getElementById("infoDocsContent");
+      const infoTestEl  = document.getElementById("infoTestResultsContent");
+      if (!infoSubTabs.length || !infoDocsEl || !infoTestEl) return;
+      const _savedInfoSub = (typeof _st0 !== "undefined" && _st0 && _st0.infoSub) ? _st0.infoSub : "docs";
+      function switchInfoSub(sub) {
+        infoSubTabs.forEach(t => t.classList.toggle("active", t.dataset.infoSub === sub));
+        infoDocsEl.style.display  = sub === "docs"        ? "" : "none";
+        infoTestEl.style.display  = sub === "testresults" ? "" : "none";
+        if (typeof saveState === "function") saveState({ infoSub: sub });
+      }
+      infoSubTabs.forEach(t => t.addEventListener("click", () => switchInfoSub(t.dataset.infoSub)));
+      switchInfoSub(_savedInfoSub);
+    })();
+
     // Foldable indicator panel
     const _indToggle = document.getElementById("indicatorToggle");
     const _indStrip = DOM.indicatorStrip;
