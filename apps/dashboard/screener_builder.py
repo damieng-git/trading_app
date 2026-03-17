@@ -12,6 +12,7 @@ from apps.dashboard.strategy import (
     compute_polarity_position_status,
     compute_polarity_trailing_pnl,
     compute_position_status,
+    compute_stoof_position_status,
     compute_stoof_trailing_pnl,
     compute_trailing_pnl,
 )
@@ -33,6 +34,7 @@ def build_screener_rows(
     data_health: dict,
     stoch_mtm_thresholds: dict | None = None,
     strategy_setups: dict | None = None,
+    scan_date_map: dict | None = None,
 ) -> tuple[dict[str, list[dict]], dict[str, dict[str, dict]], dict]:
     """
     Build screener rows and state cache from enriched data.
@@ -146,13 +148,18 @@ def build_screener_rows(
                             continue
                         ps = compute_polarity_position_status(df, st, sdef, tf)
                         tp = compute_polarity_trailing_pnl(df, st, sdef, tf)
+                        # All fields forwarded so every view has the same source of truth.
                         strat_statuses[skey] = {
                             "signal_action": ps["signal_action"],
                             "entry_price": ps["entry_price"],
                             "atr_stop": ps["atr_stop"],
                             "bars_held": ps["bars_held"],
                             "combo_bars": ps.get("combo_bars"),
+                            "exit_stage": ps.get("exit_stage"),
+                            "bearish_kpis": ps.get("bearish_kpis", 0),
                             "c4_scaled": ps["c4_scaled"],
+                            "last_exit_bars_ago": ps.get("last_exit_bars_ago"),
+                            "last_exit_reason": ps.get("last_exit_reason"),
                             "l12m_pnl": tp["l12m_pnl"],
                             "l12m_trades": tp["l12m_trades"],
                             "l12m_hit_rate": tp["l12m_hit_rate"],
@@ -165,29 +172,46 @@ def build_screener_rows(
                         from trading_dashboard.indicators.registry import get_kpi_trend_order as _gkto
                         from apps.dashboard.strategy import compute_atr as _catr
                         _sk = _gkto(skey)
-                        _thresh = int(sdef.get("threshold", 7))
+                        _thresh = int(sdef.get("threshold", 5))
                         _exit_thresh = int(sdef.get("exit_threshold", _thresh - 2))
                         _K = float(sdef.get("atr_multiplier", 3.0))
                         _atr_tf = sdef.get("atr_tf", "1W")
+                        _req_kpi = sdef.get("required_kpi", "MACD_BL")
+                        _c4_kpi = sdef.get("c4_kpi", "WT_MTF")
                         # Load cross-TF ATR (e.g. 1W ATR for 2W/1M entries)
                         _atr_override = None
                         if _atr_tf and _atr_tf != tf:
                             _atr_df = tf_map.get(_atr_tf)
                             if _atr_df is not None and not _atr_df.empty:
                                 _atr_override = _catr(_atr_df)
+                        ps = compute_stoof_position_status(
+                            df, st, _sk, _thresh, tf,
+                            exit_threshold=_exit_thresh,
+                            atr_override=_atr_override,
+                            K_override=_K,
+                            required_kpi=_req_kpi,
+                            c4_kpi=_c4_kpi,
+                        )
                         tp = compute_stoof_trailing_pnl(
                             df, st, _sk, _thresh, tf,
                             exit_threshold=_exit_thresh,
                             atr_override=_atr_override,
                             K_override=_K,
+                            required_kpi=_req_kpi,
+                            c4_kpi=_c4_kpi,
                         )
+                        # All fields forwarded so every view has the same source of truth.
                         strat_statuses[skey] = {
-                            "signal_action": "FLAT",
-                            "entry_price": None,
-                            "atr_stop": None,
-                            "bars_held": None,
-                            "combo_bars": None,
-                            "c4_scaled": False,
+                            "signal_action": ps["signal_action"],
+                            "entry_price": ps["entry_price"],
+                            "atr_stop": ps["atr_stop"],
+                            "bars_held": ps["bars_held"],
+                            "combo_bars": ps.get("combo_bars"),
+                            "exit_stage": ps.get("exit_stage"),
+                            "bearish_kpis": ps.get("bearish_kpis", 0),
+                            "c4_scaled": ps["c4_scaled"],
+                            "last_exit_bars_ago": ps.get("last_exit_bars_ago"),
+                            "last_exit_reason": ps.get("last_exit_reason"),
                             "l12m_pnl": tp["l12m_pnl"],
                             "l12m_trades": tp["l12m_trades"],
                             "l12m_hit_rate": tp["l12m_hit_rate"],
@@ -357,6 +381,7 @@ def build_screener_rows(
                 "market_cap": _fund.get("market_cap"),
                 "trailing_pe": _fund.get("trailing_pe"),
                 "pe_vs_sector": None,
+                "scan_date_added": (scan_date_map or {}).get(sym, ""),
             }
             by_symbol[sym][tf] = rec
             if tf in rows_by_tf:

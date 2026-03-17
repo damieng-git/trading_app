@@ -1054,6 +1054,7 @@ def _rebuild_screener_json(
     run_started_utc = _utc_now_iso()
     try:
         from apps.dashboard.screener_builder import build_screener_rows
+        from apps.screener.scan_strategy import _load_scan_list as _load_scan_date_map
         rows_by_tf, by_symbol, _ = build_screener_rows(
             all_data=all_data,
             timeframes=timeframes,
@@ -1067,6 +1068,7 @@ def _rebuild_screener_json(
             data_health={},
             stoch_mtm_thresholds=getattr(cfg, "stoch_mtm_thresholds", None),
             strategy_setups=_load_strategy_setups(),
+            scan_date_map=_load_scan_date_map(),
         )
         screener_summary = _sanitize_json({
             "generated_utc": run_started_utc,
@@ -1132,6 +1134,7 @@ def run_refresh_dashboard(
         except Exception as e:
             logger.warning("Could not create alert_files dir: %s", e)
 
+        from apps.screener.scan_strategy import _load_scan_list as _load_scan_date_map
         rows_by_tf, by_symbol, state_cache = build_screener_rows(
             all_data=all_data,
             timeframes=timeframes,
@@ -1145,6 +1148,7 @@ def run_refresh_dashboard(
             data_health=data_health,
             stoch_mtm_thresholds=getattr(cfg, "stoch_mtm_thresholds", None),
             strategy_setups=_load_strategy_setups(),
+            scan_date_map=_load_scan_date_map(),
         )
 
         screener_summary = _sanitize_json(  # inf/NaN → None for JSON compliance
@@ -1342,10 +1346,12 @@ def run_refresh_dashboard(
                 if (_stoof_def and kpi_st and df_full is not None and not df_full.empty
                         and (not _stoof_active_tfs or tf in _stoof_active_tfs)):
                     _stoof_kpis = _gkto("stoof")
-                    _stoof_thresh = int(_stoof_def.get("threshold", 7))
+                    _stoof_thresh = int(_stoof_def.get("threshold", 5))
                     _stoof_exit_thresh = int(_stoof_def.get("exit_threshold", _stoof_thresh - 2))
                     _stoof_K = float(_stoof_def.get("atr_multiplier", 3.0))
                     _stoof_atr_tf = _stoof_def.get("atr_tf", "1W")
+                    _stoof_req_kpi = _stoof_def.get("required_kpi", "MACD_BL")
+                    _stoof_c4_kpi = _stoof_def.get("c4_kpi", "WT_MTF")
                     _stoof_atr_override = None
                     if _stoof_atr_tf and _stoof_atr_tf != tf:
                         _stoof_atr_df = tf_map.get(_stoof_atr_tf)
@@ -1356,11 +1362,23 @@ def run_refresh_dashboard(
                         exit_threshold=_stoof_exit_thresh,
                         atr_override=_stoof_atr_override,
                         K_override=_stoof_K,
+                        required_kpi=_stoof_req_kpi,
+                        c4_kpi=_stoof_c4_kpi,
                     )
                     if raw_stoof:
                         pos_events_by_strategy["stoof"] = _remap_events(raw_stoof)
             except Exception as exc:
                 logger.debug("Stoof events failed for %s/%s: %s", sym, tf, exc)
+
+            # Per-bar C3/C4 arrays for every strategy — single source of truth
+            c3_states: dict = {}
+            try:
+                from apps.dashboard.strategy import compute_c3_states_by_strategy
+                _strat_setups_c3 = _load_strategy_setups()
+                c3_states = compute_c3_states_by_strategy(
+                    df_full, kpi_st, _strat_setups_c3, tf, plot_offset)
+            except Exception as exc:
+                logger.debug("c3_states_by_strategy failed for %s/%s: %s", sym, tf, exc)
 
             from apps.dashboard.data_exporter import export_symbol_data_json
             data_json = export_symbol_data_json(
@@ -1375,6 +1393,7 @@ def run_refresh_dashboard(
                 sma20_vals=sma20_vals,
                 position_events=pos_events,
                 position_events_by_strategy=pos_events_by_strategy,
+                c3_states_by_strategy=c3_states,
             )
             return sym, tf, data_json
 

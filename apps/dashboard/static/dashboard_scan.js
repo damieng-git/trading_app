@@ -220,10 +220,10 @@
     table.className = "scan-table";
     var thead = document.createElement("thead");
     var hdr = [
-      ["symbol","Stock","14%"],["combo","Combo","5%"],["strategies","Strategies","10%"],
-      ["action","Action","7%"],["sector","Sector","9%"],["price","Price","6%"],["risk","Risk%","6%"],
-      ["size","Size@1%","7%"],["fresh","Freshness","8%"],["align","TF Align","7%"],
-      ["ts","TrendScore","9%"],
+      ["symbol","Stock","13%"],["combo","Combo","5%"],["strategies","Strategies","9%"],
+      ["action","Action","6%"],["sector","Sector","8%"],["price","Price","6%"],["risk","Risk%","6%"],
+      ["size","Size@1%","6%"],["fresh","Freshness","7%"],["align","TF Align","6%"],
+      ["ts","TrendScore","8%"],["date_added","Added","8%"],
     ];
     var colgroup = document.createElement("colgroup");
     hdr.forEach(function(h) { var c = document.createElement("col"); c.style.width = h[2]; colgroup.appendChild(c); });
@@ -355,6 +355,10 @@
           }
           aSpan.textContent = act;
           td.appendChild(aSpan);
+
+        } else if (h[0] === "date_added") {
+          td.style.cssText = "font-size:10px;color:var(--muted);text-align:center;";
+          td.textContent = r.scan_date_added || "—";
         }
         tr.appendChild(td);
       });
@@ -625,6 +629,29 @@
     });
   }
 
+  // ── Scan Pass/Fail Stats Bar ──────────────────────────────────────────────
+  function _renderScanStats(logData) {
+    var el = document.getElementById("scanPassStats");
+    if (!el) return;
+    if (!logData || !logData.length) { el.innerHTML = ""; return; }
+    // Use the most recent entry
+    var latest = logData[logData.length - 1];
+    var raw = latest.raw_passed;
+    var filtered = latest.filtered_open;
+    var total = latest.total;
+    var ts = latest.ts ? latest.ts.replace("T", " ").replace("Z", " UTC") : "";
+    if (typeof raw !== "number") { el.innerHTML = ""; return; }
+    var added = latest.added ? latest.added.length : 0;
+    var removed = latest.removed ? latest.removed.length : 0;
+    el.innerHTML =
+      '<span class="scan-stat-pill scan-stat-pass">&#10003; ' + raw + ' passed gate</span>' +
+      '<span class="scan-stat-pill scan-stat-filtered">&#128683; ' + filtered + ' filtered (open pos)</span>' +
+      '<span class="scan-stat-pill scan-stat-total">&#8853; ' + total + ' in list</span>' +
+      (added ? '<span class="scan-stat-pill scan-stat-added">+' + added + ' added</span>' : '') +
+      (removed ? '<span class="scan-stat-pill scan-stat-removed">&#8722;' + removed + ' removed</span>' : '') +
+      (ts ? '<span class="scan-stat-ts">' + ts + '</span>' : '');
+  }
+
   // ── Section 5: Scan History (item 9) ─────────────────────────────────────
   function _renderScanHistory(logData) {
     var wrap = document.getElementById("scanHistory");
@@ -721,7 +748,10 @@
 
     // Reload scan log each time page opens (in case a new scan just ran)
     _scanLogLoaded = false;
-    _loadScanLog(_renderScanHistory);
+    _loadScanLog(function(entries) {
+      _renderScanStats(entries);
+      _renderScanHistory(entries);
+    });
   }
 
   // Wire TF pills and export on first load

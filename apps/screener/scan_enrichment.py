@@ -35,6 +35,8 @@ KPI_SCAN_MIN_BARS: dict[str, int] = {
     "ADX & DI": 30,
     "WT_LB": 55,
     "SQZMOM_LB": 25,
+    # Stoof (Band Light) KPIs
+    "MACD_BL": 50,     # EMA(23) slow → ~50 bars for stability
 }
 
 
@@ -183,6 +185,21 @@ def compute_scan_indicators(
         )
         out["SQZ_val"] = sqz["SQZ_val"]
 
+    # ── MACD_BL (Band Light — required KPI for stoof) ────────────────────────
+    if "MACD_BL" in kpi_set:
+        from trading_dashboard.indicators import macd as _macd
+        p = _load_params("MACD_BL")
+        macd_line, signal_line, hist = _macd(
+            out["Close"],
+            fast=int(p.get("fast", 15)),
+            slow=int(p.get("slow", 23)),
+            signal=int(p.get("signal", 5)),
+            signal_ma="EMA",
+        )
+        out["MACD_BL"] = macd_line
+        out["MACD_BL_signal"] = signal_line
+        out["MACD_BL_hist"] = hist
+
     # ── Quality gate helpers ─────────────────────────────────────────────────
     out["SMA20"] = out["Close"].rolling(window=20, min_periods=20).mean()
     out["SMA200"] = out["Close"].rolling(window=200, min_periods=200).mean()
@@ -214,6 +231,45 @@ def compute_scan_kpi_states(
         # pol 0 = always passes
 
     return result
+
+
+def check_quality_gates_raw(
+    df: pd.DataFrame,
+    scan_filters: dict,
+) -> bool:
+    """Check quality gates on raw OHLCV without pre-computed indicator columns.
+
+    Computes SMA20/SMA200 and Vol_MA20 inline so this can be called BEFORE
+    lean enrichment, allowing cheap pre-filtering of the universe.
+    """
+    if not scan_filters:
+        return True
+
+    close = df["Close"]
+    last = df.iloc[-1]
+
+    if scan_filters.get("sma20_gt_sma200"):
+        sma20 = close.rolling(20, min_periods=20).mean().iloc[-1]
+        sma200 = close.rolling(200, min_periods=200).mean().iloc[-1]
+        if not (pd.notna(sma20) and pd.notna(sma200) and sma20 > sma200):
+            return False
+
+    if scan_filters.get("volume_spike") and "Volume" in df.columns:
+        vol = last.get("Volume", np.nan)
+        vol_ma = df["Volume"].rolling(20, min_periods=20).mean().iloc[-1]
+        if not (pd.notna(vol) and pd.notna(vol_ma) and vol_ma > 0 and vol > 1.5 * vol_ma):
+            return False
+
+    if scan_filters.get("sr_break"):
+        if len(df) >= 21 and "High" in df.columns and "Close" in df.columns:
+            prior_high = df["High"].iloc[-21:-1].max()
+            close_last = last.get("Close", np.nan)
+            if not (pd.notna(close_last) and pd.notna(prior_high) and close_last > prior_high):
+                return False
+        else:
+            return False
+
+    return True
 
 
 def check_quality_gates(

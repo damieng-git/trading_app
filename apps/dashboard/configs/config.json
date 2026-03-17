@@ -293,14 +293,16 @@
     "stoof": {
       "label": "Stoof",
       "entry_type": "threshold",
-      "threshold": 7,
-      "exit_threshold": 5,
-      "total": 10,
+      "required_kpi": "MACD_BL",
+      "c4_kpi": "WT_MTF",
+      "threshold": 5,
+      "exit_threshold": 3,
+      "total": 9,
       "active_tfs": ["2W", "1M"],
       "atr_multiplier": 3.0,
       "atr_tf": "1W",
       "color": "#fb923c",
-      "description": "Band Light: WT MTF oversold cross (wt1 < -60, bullish onset) + 7/10 KPI score. Active on 2W and 1M. Exit at score ≤5. Stop: 3×ATR14(1W).",
+      "description": "Band Light: C3 entry = MACD_BL green + 5/9 score KPIs green (onset). C4 scale-up (1.5x) = C3 + WT_MTF green. Score pool: 9 KPIs incl. LuxAlgo v1+v2 (duplicate). Active on 2W and 1M. Exit: MACD_BL turns red OR any 1 score KPI turns red (score < 5). Stop: 3×ATR14(1W).",
       "scan_filters": {}
     }
   }

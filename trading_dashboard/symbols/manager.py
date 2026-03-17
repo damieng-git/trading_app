@@ -355,12 +355,12 @@ class SymbolManager:
 
         return removed
 
-    _EXCLUSIVE_GROUPS = {"portfolio", "watchlist"}
+    _EXCLUSIVE_GROUPS = {"damien", "watchlist"}
 
     def move_symbol(self, symbol: str, *, from_group: str, to_group: str) -> bool:
         """Move a symbol from one group to another.
 
-        Enforces mutual exclusivity between portfolio and watchlist:
+        Enforces mutual exclusivity between damien and watchlist:
         moving to one automatically removes from the other.
         """
         sym = normalize_symbol(symbol)

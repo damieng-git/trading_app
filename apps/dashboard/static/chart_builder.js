@@ -833,7 +833,7 @@
       });
     }
 
-    if (scoreSlice.kk.length && scoreSlice.zz.length) {
+    if (_activeStrat !== "all" && scoreSlice.kk.length && scoreSlice.zz.length) {
       const tsValues = new Array(n).fill(0);
       scoreSlice.kk.forEach((k, i) => {
         const w = (isStoof || isPolStrat) ? 1 : (kpiWeights[k] != null ? kpiWeights[k] : 1);
@@ -853,9 +853,10 @@
       }, 4, "TrendScore", true));
 
       if (isStoof) {
-        // Threshold line at 7 (the "7/10 rule")
+        // Threshold line at the configured threshold
+        const _stoofThreshLine = (_stratSetups["stoof"] || {}).threshold || 5;
         traces.push(mkTrace({
-          type: "scatter", x: [x[0], x[n-1]], y: [7, 7],
+          type: "scatter", x: [x[0], x[n-1]], y: [_stoofThreshLine, _stoofThreshLine],
           mode: "lines", line: { color: "rgba(59,130,246,0.6)", width: 1.5, dash: "dash" },
           hoverinfo: "skip",
         }, 4, "TrendScore", true));
@@ -864,9 +865,18 @@
       const tsMax = Math.max(...tsValues.map(Math.abs), 1);
       tsPad = (isStoof || isPolStrat) ? Math.max(scoreSlice.kk.length + 1, 5) : Math.max(tsMax * 1.1, 1);
 
-      if (!isStoof) {
-        c3Active = comboBool(combo3kpis, combo3pols);
-        c4Active = combo4kpis.length ? comboBool(combo4kpis, combo4pols) : null;
+      // C3/C4 active arrays: use server-computed states (single source of truth).
+      // strategy.py is the only place where entry logic lives — the chart just renders it.
+      const _serverC3 = (data.c3_states_by_strategy || {})[_activeStrat];
+      if (_serverC3) {
+        c3Active = _serverC3.c3 || null;
+        c4Active = _serverC3.c4 || null;
+      } else {
+        // Fallback for assets built before this feature (combo strategies only)
+        if (!isStoof) {
+          c3Active = comboBool(combo3kpis, combo3pols);
+          c4Active = combo4kpis.length ? comboBool(combo4kpis, combo4pols) : null;
+        }
       }
 
     }
@@ -895,16 +905,29 @@
     // Combo row (row 7) — C3/C4 isolated above TrendScore with small gap
     const comboLabels = [];
     const comboZ = [], comboC = [];
-    if (!isStoof && c3Active && combo3kpis.length) {
-      const c3Label = "C3: " + combo3kpis.map(k => shortLabel(k)).join(" · ");
-      comboLabels.push(c3Label);
-      comboZ.push(c3Active.map(v => v ? 1 : 0));
-      comboC.push(c3Active.map(v => v ? "active" : "—"));
-      if (c4Active && combo4kpis.length) {
-        const c4Label = "C4: " + combo4kpis.map(k => shortLabel(k)).join(" · ");
+    if (c3Active) {
+      let c3Label, c4Label;
+      if (isStoof) {
+        const _sd = _stratSetups["stoof"] || {};
+        const _rk = _sd.required_kpi || "MACD_BL";
+        const _c4k = _sd.c4_kpi || "WT_MTF";
+        const _thr = _sd.threshold != null ? _sd.threshold : 5;
+        const _tot = _sd.total != null ? _sd.total : 9;
+        c3Label = "Entry C3: " + shortLabel(_rk) + " + \u2265" + _thr + "/" + _tot + " score";
+        c4Label = c4Active ? "Entry C4: C3 + " + shortLabel(_c4k) : null;
+      } else if (combo3kpis.length) {
+        c3Label = "Entry C3: " + combo3kpis.map(k => shortLabel(k)).join(" \u00b7 ");
+        c4Label = (c4Active && combo4kpis.length) ? "Entry C4: " + combo4kpis.map(k => shortLabel(k)).join(" \u00b7 ") : null;
+      }
+      if (c3Label) {
+        comboLabels.push(c3Label);
+        comboZ.push(c3Active.map(v => v ? 1 : 0));
+        comboC.push(c3Active.map(v => v ? "active" : "\u2014"));
+      }
+      if (c4Label) {
         comboLabels.push(c4Label);
         comboZ.push(c4Active.map(v => v ? 1 : 0));
-        comboC.push(c4Active.map(v => v ? "active" : "—"));
+        comboC.push(c4Active.map(v => v ? "active" : "\u2014"));
       }
     }
     if (comboLabels.length) {

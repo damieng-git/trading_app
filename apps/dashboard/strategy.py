@@ -364,7 +364,7 @@ def compute_position_status(
 
     Returns the same dict shape as before (signal_action, entry_bar_idx, etc.)
     but delegates all position logic to the single-source-of-truth event engine.
-    Only scans the last 500 bars for screener performance.
+    Scan window is TF-aware (see _STATUS_SCAN_BARS) to avoid missing long holds.
     """
     flat_result = {
         "signal_action": "FLAT", "entry_bar_idx": None, "entry_price": None,
@@ -380,7 +380,7 @@ def compute_position_status(
         return flat_result
 
     n = len(df)
-    scan_start = max(0, n - 500)
+    scan_start = max(0, n - _STATUS_SCAN_BARS.get(tf, 1500))
     events = compute_position_events(df, st, c3_kpis, c4_kpis, tf,
                                      scan_start=scan_start)
 
@@ -688,7 +688,7 @@ def compute_polarity_position_status(
         return flat_result
 
     n = len(df)
-    scan_start = max(0, n - 500)
+    scan_start = max(0, n - _STATUS_SCAN_BARS.get(tf, 1500))
     events = compute_polarity_position_events(
         df, st, c3_kpis, c3_pols, c4_kpis, c4_pols, tf,
         exit_kpis=exit_kpis, exit_pols=exit_pols,
@@ -779,6 +779,17 @@ def _status_from_polarity_events(
 
 # Trailing-12-month bar counts per timeframe
 _L12M_BARS = {"4H": 6 * 252, "1D": 252, "1W": 52, "2W": 26, "1M": 12}
+
+# Screener status scan window (bars): how far back to look for an open position.
+# Must be large enough to catch any realistic hold; short TFs need more bars.
+# 4H: 2000 bars ≈ 13 months | 1D: 1500 bars ≈ 6 years | weekly+: 500 bars ≥ 9 years.
+_STATUS_SCAN_BARS: dict[str, int] = {
+    "4H": 2000,
+    "1D": 1500,
+    "1W": 500,
+    "2W": 500,
+    "1M": 500,
+}
 
 
 def compute_trailing_pnl(
@@ -880,7 +891,7 @@ def compute_polarity_trailing_pnl(
 
 
 # ---------------------------------------------------------------------------
-# Stoof threshold-based position engine (BUG-ST2/ST3)
+# Stoof threshold-based position engine
 # ---------------------------------------------------------------------------
 
 def compute_stoof_position_events(
@@ -894,21 +905,30 @@ def compute_stoof_position_events(
     exit_threshold: int | None = None,
     atr_override: "pd.Series | None" = None,
     K_override: float | None = None,
+    required_kpi: str | None = "MACD_BL",
+    c4_kpi: str | None = "WT_MTF",
 ) -> list[dict]:
     """Threshold-based (Band Light) position engine for the Stoof strategy.
 
-    Entry: WT_MTF bullish cross (wt1 crosses above wt2, onset) while wt1 < -60,
-           AND score KPI count (excl. WT_MTF) >= threshold.
-    No SMA/volume/overextension gates — pure oversold momentum reversal.
-    No C4 / position scaling (single entry level).
+    C3 entry (1x):   required_kpi (MACD_BL) green AND score KPI count >= threshold.
+                     Triggers on onset — the combined condition was false the prior bar.
+    C4 scale-up (1.5x): C3 conditions + c4_kpi (WT_MTF) also green.
+                     WT_MTF is optional confirmation only — never blocks entry.
+                     C4 can fire at the signal bar or at any bar while in position.
+
+    Score pool: stoof_kpis excluding required_kpi and c4_kpi.
+    No SMA/volume/overextension gates — pure momentum.
+
     Exit: score <= exit_threshold, or ATR stop breached.
           Checkpoint (M bars): exit if score < threshold, else trail stop.
 
-    atr_override: pre-aligned ATR series (e.g. 1W ATR aligned to this TF's index).
-    K_override: ATR multiplier override (default: from exit_params).
-    exit_threshold: score level at or below which position exits (default: threshold - 2).
+    required_kpi:   KPI that must be green for C3 entry (default: MACD_BL).
+    c4_kpi:         Optional C4 confirmation KPI — sets scaled=True when green (default: WT_MTF).
+    atr_override:   Pre-aligned ATR series (e.g. 1W ATR aligned to this TF's index).
+    K_override:     ATR multiplier override (default: from exit_params).
+    exit_threshold: Score level at or below which position exits (default: threshold - 2).
 
-    ret_pct is unweighted (scaled=False always); consumers apply weight if needed.
+    ret_pct is unweighted; consumers apply 1.5x weight when scaled=True.
     """
     params = EXIT_PARAMS.get(tf)
     if not params or df is None or df.empty or len(df) < 20 or not stoof_kpis:
@@ -931,15 +951,27 @@ def compute_stoof_position_events(
 
     n = len(df)
 
-    # WT_MTF gate: extract raw wt1/wt2 for bullish cross + oversold check
-    _WT_MTF_KPI = "WT_MTF"
-    _wt1_col, _wt2_col = "WT_MTF_wt1", "WT_MTF_wt2"
-    _wt_gate = _wt1_col in df.columns and _wt2_col in df.columns
-    wt1_arr = df[_wt1_col].to_numpy(float) if _wt_gate else None
-    wt2_arr = df[_wt2_col].to_numpy(float) if _wt_gate else None
+    # Required KPI (MACD_BL): mandatory gate — must be green for C3 entry
+    _req = required_kpi or ""
+    req_series = st.get(_req) if _req else None
+    req_bull = [
+        bool(req_series is not None and idx < len(req_series)
+             and not pd.isna(v := req_series.iloc[idx]) and int(v) == 1)
+        for idx in range(n)
+    ]
 
-    # Score KPIs: exclude WT_MTF (it's the trigger gate, not the score)
-    score_kpis = [k for k in stoof_kpis if k != _WT_MTF_KPI]
+    # C4 KPI (WT_MTF): optional confirmation — sets scaled=True when green
+    _c4 = c4_kpi or ""
+    c4_series = st.get(_c4) if _c4 else None
+    c4_bull = [
+        bool(c4_series is not None and idx < len(c4_series)
+             and not pd.isna(v := c4_series.iloc[idx]) and int(v) == 1)
+        for idx in range(n)
+    ]
+
+    # Score KPIs: exclude required_kpi and c4_kpi (neither contributes to threshold score)
+    _excluded = {k for k in [_req, _c4] if k}
+    score_kpis = [k for k in stoof_kpis if k not in _excluded]
     avail_kpis = [k for k in score_kpis if st.get(k) is not None]
     if not avail_kpis:
         return []
@@ -956,28 +988,15 @@ def compute_stoof_position_events(
 
     start = scan_start if scan_start is not None else 0
     events: list[dict] = []
-    i = max(start, 1)  # need i-1 for cross onset check
+    i = max(start, 1)  # need i-1 for onset check
 
     while i < n:
-        # Gate 1: score meets threshold
-        if bull_counts[i] < threshold:
+        # C3 condition: required_kpi green AND score >= threshold
+        c3_on = req_bull[i] and bull_counts[i] >= threshold
+        # Onset: C3 was not true the previous bar
+        if not c3_on or (req_bull[i - 1] and bull_counts[i - 1] >= threshold):
             i += 1
             continue
-
-        # Gate 2: WT_MTF bullish cross onset while wt1 < -60
-        if _wt_gate and wt1_arr is not None and wt2_arr is not None:
-            w1, w2 = wt1_arr[i], wt2_arr[i]
-            w1p, w2p = wt1_arr[i - 1], wt2_arr[i - 1]
-            # Onset: wt1 just crossed above wt2, and wt1 is still in deep oversold
-            if (np.isnan(w1) or np.isnan(w2) or np.isnan(w1p) or np.isnan(w2p)
-                    or not (w1 > w2 and w1p <= w2p and w1 < -60.0)):
-                i += 1
-                continue
-        else:
-            # No WT_MTF columns — fall back to score onset (backward compat)
-            if bull_counts[i - 1] >= threshold:
-                i += 1
-                continue
 
         signal_idx = i
         fill_bar = i + 1
@@ -996,6 +1015,10 @@ def compute_stoof_position_events(
         bars_since_reset = 0
         entry_idx = fill_bar
         stop_trail: list[float] = [stop]
+
+        # C4 at signal bar: WT_MTF already green → scale-up from entry
+        scaled = c4_bull[i]
+        scale_idx: int | None = i if scaled else None
 
         exit_idx = None
         exit_reason = None
@@ -1017,25 +1040,31 @@ def compute_stoof_position_events(
 
             cnt = int(bull_counts[j])
 
-            # Exit: score drops to exit_threshold or below (2 KPIs flipped from entry)
-            if cnt <= _exit_thresh:
+            # Exit: required KPI (MACD_BL) turns red
+            if not req_bull[j]:
+                exit_idx = j
+                exit_reason = "MACD_BL exit"
+                break
+
+            # Exit: any 1 score KPI turns red (score drops below entry threshold)
+            if cnt < threshold:
                 exit_idx = j
                 exit_reason = f"Score {cnt}/{len(avail_kpis)} exit"
                 break
 
-            # M-bar checkpoint: trail stop forward if score holds, else exit
+            # Mid-position C4 scale-up: first bar WT_MTF turns green
+            if not scaled and c4_bull[j]:
+                scaled = True
+                scale_idx = j
+
+            # M-bar checkpoint: trail stop forward if score holds
             if bars_since_reset >= M:
-                if cnt >= threshold:
-                    stop_price = c
-                    a_val = atr[j] if j < len(atr) else np.nan
-                    stop = (stop_price - K * a_val
-                            if not np.isnan(a_val) and a_val > 0
-                            else stop)
-                    bars_since_reset = 0
-                else:
-                    exit_idx = j
-                    exit_reason = "Checkpoint exit"
-                    break
+                stop_price = c
+                a_val = atr[j] if j < len(atr) else np.nan
+                stop = (stop_price - K * a_val
+                        if not np.isnan(a_val) and a_val > 0
+                        else stop)
+                bars_since_reset = 0
 
             stop_trail.append(stop)
             j += 1
@@ -1062,8 +1091,8 @@ def compute_stoof_position_events(
             "exit_idx": exit_idx,
             "exit_price": round(xp, 4) if not is_open else None,
             "exit_reason": exit_reason,
-            "scaled": False,
-            "scale_idx": None,
+            "scaled": scaled,
+            "scale_idx": scale_idx,
             "stop_trail": [round(s, 4) if np.isfinite(s) else None for s in stop_trail],
             "hold": hold,
             "ret_pct": round(ret_pct, 2) if ret_pct is not None else None,
@@ -1084,6 +1113,8 @@ def compute_stoof_trailing_pnl(
     exit_threshold: int | None = None,
     atr_override: "pd.Series | None" = None,
     K_override: float | None = None,
+    required_kpi: str | None = "MACD_BL",
+    c4_kpi: str | None = "WT_MTF",
 ) -> dict:
     """Trailing 12-month P&L for the Stoof strategy."""
     empty = {"l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None}
@@ -1098,13 +1129,16 @@ def compute_stoof_trailing_pnl(
         exit_threshold=exit_threshold,
         atr_override=atr_override,
         K_override=K_override,
+        required_kpi=required_kpi,
+        c4_kpi=c4_kpi,
     )
 
     closed = [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None]
     if not closed:
         return {"l12m_pnl": 0.0, "l12m_trades": 0, "l12m_hit_rate": None}
 
-    total_ret = sum(e["ret_pct"] for e in closed)  # Stoof has no scaling, no weight needed
+    # Apply 1.5x weight for C4-scaled trades (same convention as other strategies).
+    total_ret = sum(e["ret_pct"] * (1.5 if e.get("scaled") else 1.0) for e in closed)
     wins = sum(1 for e in closed if e["ret_pct"] >= 0)
     hr = (wins / len(closed)) * 100
     return {
@@ -1112,3 +1146,196 @@ def compute_stoof_trailing_pnl(
         "l12m_trades": len(closed),
         "l12m_hit_rate": round(hr, 1),
     }
+
+
+def compute_stoof_position_status(
+    df: pd.DataFrame,
+    st: dict,
+    stoof_kpis: list[str],
+    threshold: int,
+    tf: str,
+    *,
+    exit_threshold: int | None = None,
+    atr_override: "pd.Series | None" = None,
+    K_override: float | None = None,
+    required_kpi: str | None = "MACD_BL",
+    c4_kpi: str | None = "WT_MTF",
+) -> dict:
+    """Derive current screener-facing position status for the Stoof strategy.
+
+    Wraps compute_stoof_position_events with a TF-aware scan window so the
+    screener correctly reports signal_action, entry_price, atr_stop, bars_held,
+    and c4_scaled — matching what the chart renders.
+
+    Returns the same dict shape as compute_position_status / compute_polarity_position_status.
+    """
+    flat_result = {
+        "signal_action": "FLAT", "entry_bar_idx": None, "entry_price": None,
+        "atr_stop": None, "bars_held": None, "exit_stage": None,
+        "bearish_kpis": 0, "c4_scaled": False, "combo_bars": None,
+        "last_exit_bars_ago": None, "last_exit_reason": None,
+    }
+    params = EXIT_PARAMS.get(tf)
+    if not params or df is None or df.empty or len(df) < 20 or not stoof_kpis:
+        return flat_result
+    if not {"High", "Low", "Close"}.issubset(df.columns):
+        return flat_result
+
+    n = len(df)
+    scan_start = max(0, n - _STATUS_SCAN_BARS.get(tf, 1500))
+    events = compute_stoof_position_events(
+        df, st, stoof_kpis, threshold, tf,
+        scan_start=scan_start,
+        exit_threshold=exit_threshold,
+        atr_override=atr_override,
+        K_override=K_override,
+        required_kpi=required_kpi,
+        c4_kpi=c4_kpi,
+    )
+
+    if not events or events[-1]["exit_reason"] != "Open":
+        result = dict(flat_result)
+        if events:
+            last = events[-1]
+            result["last_exit_bars_ago"] = (n - 1) - last["exit_idx"]
+            result["last_exit_reason"] = last["exit_reason"]
+        return result
+
+    T = params["T"]
+    cl = df["Close"].to_numpy(float)
+
+    last = events[-1]
+    entry_idx = last["entry_idx"]
+    scaled = last["scaled"]
+    scale_idx = last["scale_idx"]
+    bars_held = (n - 1) - entry_idx
+    combo_anchor = scale_idx if scale_idx is not None else entry_idx
+    combo_bars = (n - 1) - combo_anchor
+    stage = "lenient" if bars_held <= T else "strict"
+
+    stop_trail = last.get("stop_trail", [])
+    stop = stop_trail[-1] if stop_trail else float(cl[entry_idx]) * 0.95
+
+    # Count score KPIs currently not bullish (excludes required_kpi and c4_kpi)
+    _excluded = {k for k in [required_kpi or "", c4_kpi or ""] if k}
+    score_kpis = [k for k in stoof_kpis if k not in _excluded]
+    nb_bearish = 0
+    for k in score_kpis:
+        s = st.get(k)
+        if s is not None and (n - 1) < len(s):
+            v = s.iloc[n - 1]
+            if pd.isna(v) or int(v) != 1:
+                nb_bearish += 1
+
+    action = ("ENTRY 1.5x" if scaled else "ENTRY 1x") if combo_bars == 0 else "HOLD"
+
+    return {
+        "signal_action": action,
+        "entry_bar_idx": entry_idx,
+        "entry_price": last["entry_price"],
+        "atr_stop": round(stop, 2) if np.isfinite(stop) else None,
+        "bars_held": bars_held,
+        "combo_bars": combo_bars,
+        "exit_stage": stage,
+        "bearish_kpis": nb_bearish,
+        "c4_scaled": scaled,
+        "last_exit_bars_ago": None,
+        "last_exit_reason": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Per-bar C3/C4 state arrays — single source of truth for chart rendering
+# ---------------------------------------------------------------------------
+
+def compute_c3_states_by_strategy(
+    df: "pd.DataFrame",
+    kpi_st: dict,
+    strategy_setups: dict,
+    tf: str,
+    plot_offset: int = 0,
+) -> dict:
+    """Return per-bar C3/C4 boolean arrays for every strategy.
+
+    Output: {strategy_key: {"c3": [bool, ...], "c4": [bool, ...]}}.
+    Consumed by chart_builder.js to render the combo-row heatmap without
+    re-implementing any strategy logic client-side.  Adding a new strategy
+    here automatically makes it consistent across all dashboard tabs.
+    """
+    import numpy as np
+
+    if df is None or df.empty or not kpi_st:
+        return {}
+
+    n = len(df)
+    result: dict = {}
+
+    for skey, sdef in strategy_setups.items():
+        entry_type = sdef.get("entry_type")
+        try:
+            c3_arr = None
+            c4_arr = None
+
+            if entry_type == "polarity_combo":
+                _cbytf = sdef.get("combos_by_tf", {})
+                combos = _cbytf.get(tf) or sdef.get("combos", {})
+                c3d = combos.get("c3", {})
+                c4d = combos.get("c4")
+                c3_kpis = c3d.get("kpis", [])
+                c3_pols = c3d.get("pols", [])
+                c4_kpis = c4d.get("kpis") if c4d else []
+                c4_pols = c4d.get("pols") if c4d else []
+                if not c3_kpis:
+                    continue
+
+                def _combo(kpis, pols, _n=n, _kpi_st=kpi_st):
+                    active = np.ones(_n, dtype=bool)
+                    for kpi, pol in zip(kpis, pols):
+                        s = _kpi_st.get(kpi)
+                        if s is None:
+                            active[:] = False
+                            break
+                        arr = s.to_numpy()
+                        if pol == 1:
+                            active &= (arr == 1)
+                        elif pol == -1:
+                            active &= (arr == -1)
+                    return active
+
+                c3_arr = _combo(c3_kpis, c3_pols)
+                c4_arr = _combo(c4_kpis, c4_pols) if c4_kpis else None
+
+            elif entry_type == "threshold":
+                from trading_dashboard.indicators.registry import get_kpi_trend_order as _gkto
+                _s_kpis = _gkto(skey)
+                _s_thresh = int(sdef.get("threshold", 5))
+                _s_req = sdef.get("required_kpi", "MACD_BL")
+                _s_c4 = sdef.get("c4_kpi", "WT_MTF")
+                _excluded = {k for k in [_s_req, _s_c4] if k}
+                _score_kpis = [k for k in _s_kpis if k not in _excluded]
+
+                req_s = kpi_st.get(_s_req)
+                c4_s = kpi_st.get(_s_c4)
+
+                bull_counts = np.zeros(n, dtype=int)
+                for k in _score_kpis:
+                    s = kpi_st.get(k)
+                    if s is not None:
+                        bull_counts += (s.to_numpy() == 1).astype(int)
+
+                req_arr = req_s.to_numpy() if req_s is not None else np.zeros(n, dtype=int)
+                c3_arr = (req_arr == 1) & (bull_counts >= _s_thresh)
+                c4_arr = c3_arr & (c4_s.to_numpy() == 1) if c4_s is not None else None
+
+            else:
+                continue
+
+            entry = {"c3": c3_arr[plot_offset:].tolist()}
+            if c4_arr is not None:
+                entry["c4"] = c4_arr[plot_offset:].tolist()
+            result[skey] = entry
+
+        except Exception as exc:
+            logger.debug("compute_c3_states_by_strategy failed for %s/%s: %s", skey, tf, exc)
+
+    return result

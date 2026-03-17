@@ -286,6 +286,9 @@ class _ScanState:
                     self._emit("complete", {
                         "total": event.get("count", 0),
                         "detail": detail,
+                        "enriched_ok": event.get("enriched_ok", 0),
+                        "enriched_fail": event.get("enriched_fail", 0),
+                        "enriched_total": event.get("enriched_total", 0),
                         "elapsed_s": _elapsed(),
                     })
                 elif etype == "error":

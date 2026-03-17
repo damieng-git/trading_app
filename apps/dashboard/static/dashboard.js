@@ -2,7 +2,7 @@
     const DOM = {
       chartUpper: null, chartLower: null, sidebar: null,
       stockTitle: null, screener: null, loadingEl: null,
-      fileWarn: null, indicatorStrip: null, themeToggle: null,
+      fileWarn: null, themeToggle: null,
       status: null, signalCard: null, dataWarn: null,
     };
     function initDOMCache() {
@@ -13,7 +13,6 @@
       DOM.screener = document.getElementById("screener");
       DOM.loadingEl = document.getElementById("loadingOverlay");
       DOM.fileWarn = document.getElementById("fileWarn");
-      DOM.indicatorStrip = document.getElementById("indicatorStrip");
       DOM.themeToggle = document.getElementById("themeToggle");
       DOM.status = document.getElementById("status");
       DOM.signalCard = document.getElementById("signalCard");
@@ -24,7 +23,7 @@
     // UI state (persisted)
     // NOTE: bump key to reset prior default indicator selections.
     const _LS_SUFFIX = window.location.pathname.startsWith("/test/") ? "_test" : "";
-    const LS_KEY = "td_dash_shell_state_v1_2" + _LS_SUFFIX;
+    const LS_KEY = "td_dash_shell_state_v1_3" + _LS_SUFFIX;
     function loadState() {
       try {
         return JSON.parse(localStorage.getItem(LS_KEY) || "{}") || {};
@@ -82,7 +81,7 @@
       } catch (e) {}
     }
     setTopbarHeightVar();
-    const _chartHeights = { chartUpper: 500, chartPnl: 160, chartTs: 140, chartOsc: 350, chartLower: 1200 };
+    const _chartHeights = { chartUpper: 380, chartPnl: 160, chartTs: 140, chartOsc: 220, chartLower: 1200 };
     function _resizeWidthOnly(gd, id) {
       if (!gd || !gd.data) return;
       const w = gd.parentElement ? gd.parentElement.clientWidth : gd.clientWidth;
@@ -508,14 +507,23 @@
       return "Other";
     }
 
+    function _closeIndDropdowns(exceptWrap) {
+      document.querySelectorAll(".ind-dd-wrap.open").forEach(w => {
+        if (w !== exceptWrap) {
+          w.classList.remove("open");
+          const p = w.querySelector(".ind-dd-panel");
+          if (p) p.hidden = true;
+        }
+      });
+    }
+
     function buildIndicatorPanel(fig) {
-      const wrap = DOM.indicatorStrip;
-      if (!wrap) return;
-      wrap.innerHTML = "";
+      const container = document.getElementById("indicatorDropdowns");
+      if (!container) return;
+      container.innerHTML = "";
       indicatorKeys = [];
       if (!fig || !fig.data) return;
 
-      // Combo KPIs for golden highlight
       const meta = (fig.layout && fig.layout.meta) || {};
       const comboKpis = new Set([...(meta.combo_3_kpis || []), ...(meta.combo_4_kpis || [])]);
 
@@ -530,7 +538,6 @@
       });
       const plottableKeys = new Set(traceKeys);
 
-      // Strategy filter: if a strategy is active, show only its KPIs
       const heatmapOnlyKeys = new Set();
       const stratKpis = (typeof _getStrategyKpis === "function") ? _getStrategyKpis() : null;
       if (stratKpis) {
@@ -546,10 +553,8 @@
         });
       }
 
-      const keys = new Set(plottableKeys);
-      indicatorKeys = Array.from(keys);
+      indicatorKeys = Array.from(plottableKeys);
 
-      // Group indicators by dimension
       const grouped = {};
       const otherKey = "Other";
       indicatorKeys.forEach(k => {
@@ -557,7 +562,6 @@
         if (!grouped[dim]) grouped[dim] = [];
         grouped[dim].push(k);
       });
-      // Sort within each group by KPI_KEYS order (= bar chart order)
       const _kpiIdx = {};
       (KPI_KEYS || []).forEach((k, i) => { _kpiIdx[k] = i; });
       Object.values(grouped).forEach(arr => arr.sort((a, b) => {
@@ -567,112 +571,146 @@
         return displayIndicatorKey(a).localeCompare(displayIndicatorKey(b));
       }));
 
-      // Ordered dimension groups: follow DIMENSION_ORDER, then any leftover
       const dimOrder = (typeof DIMENSION_ORDER !== "undefined" && Array.isArray(DIMENSION_ORDER)) ? DIMENSION_ORDER : [];
       const orderedDims = [];
       dimOrder.forEach(d => { if (grouped[d]) orderedDims.push(d); });
       Object.keys(grouped).forEach(d => { if (!orderedDims.includes(d)) orderedDims.push(d); });
 
-      // Flatten for stable ordering
       indicatorKeys = [];
       orderedDims.forEach(d => { (grouped[d] || []).forEach(k => indicatorKeys.push(k)); });
 
-      // Get KPI states for current symbol+TF to color chips
       const sc = (SCREENER && SCREENER.by_symbol && SCREENER.by_symbol[currentSymbol] && SCREENER.by_symbol[currentSymbol][currentTF]) ? SCREENER.by_symbol[currentSymbol][currentTF] : null;
       const kpiSt = (sc && sc.kpi_states) ? sc.kpi_states : {};
 
-      orderedDims.forEach((dim, di) => {
+      orderedDims.forEach(dim => {
         const items = grouped[dim] || [];
         if (!items.length) return;
-        if (di > 0) {
-          const sep = document.createElement("div");
-          sep.className = "dim-sep";
-          wrap.appendChild(sep);
-        }
-        const groupDiv = document.createElement("div");
-        groupDiv.className = "dim-group";
-        const hdr = document.createElement("div");
-        hdr.className = "dim-header";
-        hdr.textContent = dim;
-        groupDiv.appendChild(hdr);
-        const chipsDiv = document.createElement("div");
-        chipsDiv.className = "dim-chips";
+
+        const selCount = items.filter(k => selectedIndicators.has(k) || heatmapOnlyKeys.has(k)).length;
+
+        const wrap = document.createElement("div");
+        wrap.className = "ind-dd-wrap";
+
+        const trigger = document.createElement("button");
+        trigger.className = "ind-dd-trigger" + (selCount > 0 ? " has-sel" : "");
+        trigger.innerHTML =
+          '<span class="ind-dd-label">' + dim + '</span>' +
+          (selCount > 0
+            ? '<span class="ind-dd-badge">' + selCount + '</span>'
+            : '<span class="ind-dd-total">' + items.length + '</span>') +
+          '<span class="ind-dd-arrow">&#9660;</span>';
+        trigger.title = dim + " indicators";
+
+        const panel = document.createElement("div");
+        panel.className = "ind-dd-panel";
+        panel.hidden = true;
+
         items.forEach(k => {
-          const label = document.createElement("label");
-          label.className = "chip";
           const isCombo = comboKpis.has(k);
           const isHeatmapOnly = heatmapOnlyKeys.has(k);
-          if (isCombo) label.classList.add("combo-kpi");
-          if (isHeatmapOnly) label.classList.add("heatmap-only");
+          const isSelected = isHeatmapOnly || selectedIndicators.has(k);
+          const kState = (kpiSt[k] !== undefined) ? kpiSt[k] : -2;
+
+          const row = document.createElement("label");
+          row.className = "ind-dd-item" + (isSelected ? " on" : "") + (isCombo ? " combo" : "");
+          if (isHeatmapOnly) row.classList.add("heatmap-only");
+
+          const dot = document.createElement("span");
+          dot.className = "ind-dd-dot";
+          dot.style.background =
+            kState === 1 ? "var(--candle-up)" :
+            kState === -1 ? "var(--candle-down)" :
+            "var(--border-strong)";
+
+          const name = document.createElement("span");
+          name.className = "ind-dd-name";
+          name.textContent = displayIndicatorKey(k);
+
           const cb = document.createElement("input");
           cb.type = "checkbox";
-          if (isHeatmapOnly) {
-            cb.checked = true;
-            cb.disabled = true;
-            label.classList.add("on");
-          } else {
-            cb.checked = selectedIndicators.has(k);
-            label.classList.toggle("on", cb.checked);
-          }
+          cb.checked = isSelected;
+          if (isHeatmapOnly) cb.disabled = true;
 
-          const kState = (kpiSt[k] !== undefined) ? kpiSt[k] : -2;
-          function _applyChipStyle() {
-            if (isCombo) return;
-            const on = cb.checked;
-            if (kState === 1) {
-              label.style.borderColor = on ? "var(--bull-br)" : "";
-              label.style.background = on ? "var(--bull-bg)" : "";
-            } else if (kState === -1) {
-              label.style.borderColor = on ? "var(--bear-br)" : "";
-              label.style.background = on ? "var(--bear-bg)" : "";
-            } else {
-              label.style.borderColor = "";
-              label.style.background = "";
-            }
+          if (isCombo) {
+            const star = document.createElement("span");
+            star.className = "ind-dd-star";
+            star.textContent = "★";
+            star.title = "Combo KPI";
+            row.appendChild(star);
           }
-          _applyChipStyle();
+          row.appendChild(dot);
+          row.appendChild(name);
+          row.appendChild(cb);
+
+          const help = (INDICATOR_HELP && INDICATOR_HELP[k]) ? INDICATOR_HELP[k] : "";
+          if (help) row.title = help;
 
           if (!isHeatmapOnly) {
             cb.addEventListener("change", () => {
               if (cb.checked) selectedIndicators.add(k);
               else selectedIndicators.delete(k);
-              label.classList.toggle("on", cb.checked);
-              _applyChipStyle();
+              row.classList.toggle("on", cb.checked);
               saveState({ indicators: Array.from(selectedIndicators) });
               applyIndicatorVisibility();
+              const newSel = items.filter(i => selectedIndicators.has(i) || heatmapOnlyKeys.has(i)).length;
+              trigger.className = "ind-dd-trigger" + (newSel > 0 ? " has-sel" : "");
+              trigger.innerHTML =
+                '<span class="ind-dd-label">' + dim + '</span>' +
+                (newSel > 0
+                  ? '<span class="ind-dd-badge">' + newSel + '</span>'
+                  : '<span class="ind-dd-total">' + items.length + '</span>') +
+                '<span class="ind-dd-arrow">&#9660;</span>';
+              _updateIndicatorToggleBadge();
             });
           }
-          const dot = document.createElement("span");
-          dot.style.cssText = "display:inline-block;width:6px;height:6px;border-radius:50%;flex-shrink:0;";
-          if (kState === 1) dot.style.background = "var(--candle-up)";
-          else if (kState === -1) dot.style.background = "var(--candle-down)";
-          else dot.style.background = "var(--border-strong)";
-          label.appendChild(dot);
 
-          const span = document.createElement("span");
-          span.textContent = displayIndicatorKey(k);
-          const help = (INDICATOR_HELP && INDICATOR_HELP[k]) ? INDICATOR_HELP[k] : "";
-          if (help) label.title = isCombo ? ("★ Combo KPI" + (help ? " — " + help : "")) : help;
-          label.appendChild(cb);
-          label.appendChild(span);
-          chipsDiv.appendChild(label);
+          panel.appendChild(row);
         });
-        groupDiv.appendChild(chipsDiv);
-        wrap.appendChild(groupDiv);
+
+        trigger.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const isOpen = wrap.classList.contains("open");
+          _closeIndDropdowns(null);
+          if (!isOpen) {
+            wrap.classList.add("open");
+            panel.hidden = false;
+          }
+        });
+
+        wrap.appendChild(trigger);
+        wrap.appendChild(panel);
+        container.appendChild(wrap);
       });
 
-      // "Clear" button to deactivate all indicators
-      const clearBtn = document.createElement("button");
-      clearBtn.className = "chip clear-btn";
-      clearBtn.textContent = "Clear";
-      clearBtn.title = "Deactivate all indicators";
-      clearBtn.addEventListener("click", () => {
-        selectedIndicators.clear();
-        saveState({ indicators: [] });
-        buildIndicatorPanel(fig);
-        applyIndicatorVisibility();
-      });
-      wrap.appendChild(clearBtn);
+      const totalSelected = indicatorKeys.filter(k => selectedIndicators.has(k)).length;
+      if (totalSelected > 0) {
+        const clearWrap = document.createElement("div");
+        clearWrap.className = "ind-dd-wrap ind-dd-clear-wrap";
+        const clearBtn = document.createElement("button");
+        clearBtn.className = "ind-dd-trigger ind-dd-clear";
+        clearBtn.textContent = "Clear all";
+        clearBtn.title = "Deactivate all indicators";
+        clearBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          selectedIndicators.clear();
+          saveState({ indicators: [] });
+          buildIndicatorPanel(fig);
+          applyIndicatorVisibility();
+        });
+        clearWrap.appendChild(clearBtn);
+        container.appendChild(clearWrap);
+      }
+
+      if (!document._indDdOutsideListener) {
+        document._indDdOutsideListener = true;
+        document.addEventListener("click", () => _closeIndDropdowns(null));
+      }
+
+      _updateIndicatorToggleBadge();
+    }
+
+    function _updateIndicatorToggleBadge() {
+      // No-op: foldable indicator panel removed.
     }
 
     let sidebarSortMode = _st0.sidebarSort || "name";
@@ -1860,7 +1898,7 @@
       };
       ids.strategy.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isStrategy ? "" : "none"; });
       ids.chart.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isStrategy ? "none" : ""; });
-      const indWrap = document.getElementById("indicatorWrap");
+      const indWrap = document.getElementById("indicatorDropdowns");
       if (indWrap) indWrap.style.display = isStrategy ? "none" : "";
       if (currentTab === "strategy" || currentTab === "chart") {
         document.getElementById("tabStrategy").classList.toggle("active", isStrategy);
@@ -1996,16 +2034,6 @@
       switchInfoSub(_savedInfoSub);
     })();
 
-    // Foldable indicator panel
-    const _indToggle = document.getElementById("indicatorToggle");
-    const _indStrip = DOM.indicatorStrip;
-    if (_indToggle && _indStrip) {
-      _indToggle.addEventListener("click", () => {
-        const collapsed = _indStrip.classList.toggle("collapsed");
-        _indToggle.innerHTML = collapsed ? "Indicators &#9654;" : "Indicators &#9660;";
-      });
-    }
-
     // Foldable oscillator panel (collapsed by default)
     const _oscToggle = document.getElementById("oscToggle");
     const _oscChart = document.getElementById("chartOsc");
@@ -2052,6 +2080,7 @@
             _updateAllStrategyDropdowns();
             _build();
             _syncStrategyFilter();
+            _updateStrategyDef(currentStrategy);
             renderChart();
           });
           menu.appendChild(item);
@@ -2079,8 +2108,71 @@
         if (typeof Dashboard !== "undefined" && Dashboard.buildScreener) Dashboard.buildScreener();
       }
 
+      // ── Strategy condition description (C3/C4 bar) ──────────────────────
+      function _shortKpiLocal(k) {
+        const abbr = {
+          "Nadaraya-Watson Smoother": "NW Smoother",
+          "Madrid Ribbon": "Madrid Ribbon",
+          "GK Trend Ribbon": "GK Trend",
+          "DEMA": "DEMA",
+          "cRSI": "cRSI",
+          "Stoch_MTM": "Stoch MTM",
+          "Volume + MA20": "Vol > MA20",
+          "ADX & DI": "ADX & DI",
+          "WT_LB": "WT LB",
+          "WT_MTF": "WT MTF",
+          "MACD_BL": "MACD BL",
+        };
+        return abbr[k] || k;
+      }
+      function _updateStrategyDef(key) {
+        const el = document.getElementById("strategyDef");
+        const elBar = document.getElementById("strategyDefBar");
+        if (!key || key === "all") {
+          if (el) el.innerHTML = "";
+          if (elBar) elBar.innerHTML = "";
+          return;
+        }
+        const def = setupDefs[key] || {};
+        let c3Parts = [], c4Parts = [];
+        const _polArrow = pol => pol === -1
+          ? "<span class='sdef-pol down'>\u2193</span>"
+          : "<span class='sdef-pol up'>\u2191</span>";
+
+        if (def.entry_type === "threshold") {
+          const rk = def.required_kpi ? _shortKpiLocal(def.required_kpi) : null;
+          const c4k = def.c4_kpi ? _shortKpiLocal(def.c4_kpi) : null;
+          const thr = def.threshold != null ? def.threshold : "?";
+          const tot = def.total != null ? def.total : "?";
+          if (rk) c3Parts.push(rk + " " + _polArrow(1));
+          c3Parts.push("\u2265" + thr + "/" + tot + " score");
+          if (c4k) { c4Parts.push("C3"); c4Parts.push(c4k + " " + _polArrow(1)); }
+        } else {
+          const byTf = def.combos_by_tf || {};
+          const tfKey = (typeof currentTF === "string") ? currentTF.toUpperCase() : "";
+          const tfCombos = byTf[tfKey] || byTf["1D"] || {};
+          const flatCombos = def.combos || {};
+          const src = Object.keys(tfCombos).length ? tfCombos : flatCombos;
+          const c3d = src.c3 || {};
+          const c4d = src.c4 || {};
+          const c3pols = c3d.pols || [];
+          const c4pols = c4d.pols || [];
+          (c3d.kpis || []).forEach((k, i) => c3Parts.push(_shortKpiLocal(k) + " " + _polArrow(c3pols[i])));
+          (c4d.kpis || []).forEach((k, i) => c4Parts.push(_shortKpiLocal(k) + " " + _polArrow(c4pols[i])));
+        }
+        const parts = [];
+        if (c3Parts.length) parts.push("<span class=\"sdef-label\">C3:</span> " + c3Parts.join(" \u00b7 "));
+        if (c4Parts.length) parts.push("<span class=\"sdef-label\">C4:</span> " + c4Parts.join(" \u00b7 "));
+        const html = parts.length ? parts.join("<span class=\"sdef-sep\">&nbsp;&nbsp;|&nbsp;&nbsp;</span>") : "";
+        if (el) el.innerHTML = html;
+        if (elBar) elBar.innerHTML = html;
+      }
+      // Expose so _selectTF can refresh on TF change
+      window._updateStrategyDef = _updateStrategyDef;
+
       _build();
       trigger.innerHTML = _getLabel(currentStrategy) + " &#9662;";
+      _updateStrategyDef(currentStrategy);
 
       trigger.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2124,6 +2216,7 @@
               _build();
               _buildPlaceholder();
               _syncStrategyFilter();
+              _updateStrategyDef(currentStrategy);
               renderChart();
             });
             phMenu.appendChild(item);
@@ -2174,6 +2267,7 @@
       setStatus();
       buildScreener();
       buildSymbolList();
+      if (typeof window._updateStrategyDef === "function") window._updateStrategyDef(currentStrategy);
       if (currentTab === "pnl") buildPnlTab();
       else if (DOM.chartUpper && DOM.chartUpper.style.display !== "none") renderChart();
     }
@@ -2486,7 +2580,7 @@
         bar.classList.remove("hidden");
         fill.classList.remove("done", "partial", "error");
         fill.style.width = "0%";
-        closeBtn.classList.add("hidden");
+        closeBtn.classList.remove("hidden");
         _setRunning(true);
         label.textContent = initLabel || "Initialising\u2026";
         detail.textContent = "";
@@ -2626,7 +2720,11 @@
               setTimeout(function() { location.reload(); }, 1200);
             } else {
               label.textContent = "Scan complete";
-              detail.textContent = (d.total != null ? d.total + " signals found" : d.detail || "");
+              var _sigStr = d.total != null ? d.total + " signal(s) found" : (d.detail || "");
+              var _refStr = (d.enriched_total > 0)
+                ? " · " + d.enriched_ok + "/" + d.enriched_total + " stocks refreshed" + (d.enriched_fail > 0 ? " (" + d.enriched_fail + " failed)" : "")
+                : "";
+              detail.textContent = _sigStr + _refStr;
             }
           } catch (_) {
             label.textContent = "Done";
