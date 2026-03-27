@@ -1349,6 +1349,23 @@ def run_refresh_dashboard(
             except Exception as exc:
                 logger.debug("Stoof events failed for %s/%s: %s", sym, tf, exc)
 
+            # Architecture A position events
+            try:
+                from apps.dashboard.strategy import compute_arch_a_position_events
+                _arch_a_def = _load_strategy_setups().get("arch_a", {})
+                _arch_a_active_tfs = _arch_a_def.get("active_tfs")
+                if (_arch_a_def and df_full is not None and not df_full.empty
+                        and (not _arch_a_active_tfs or tf in _arch_a_active_tfs)):
+                    _arch_a_K = float(_arch_a_def.get("atr_multiplier", 2.5))
+                    _arch_a_weekly = tf_map.get("1W") if tf != "1W" else None
+                    raw_arch_a = compute_arch_a_position_events(
+                        df_full, tf, K=_arch_a_K, weekly_df=_arch_a_weekly
+                    )
+                    if raw_arch_a:
+                        pos_events_by_strategy["arch_a"] = _remap_events(raw_arch_a)
+            except Exception as exc:
+                logger.debug("Arch A events failed for %s/%s: %s", sym, tf, exc)
+
             # Per-bar C3/C4 arrays for every strategy — single source of truth
             c3_states: dict = {}
             try:

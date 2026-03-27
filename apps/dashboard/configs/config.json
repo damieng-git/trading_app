@@ -142,7 +142,7 @@
       "badge_label": "D",
       "badge_prio": 1,
       "entry_type": "polarity_combo",
-      "description": "1D dip-buy: entry on oversold KPIs, exits via dedicated exit_combos (~2 week hold). entry_tf/exit_tf are both 1D — the engine always runs on entry-TF data and params.",
+      "description": "1D dip-buy: entry on oversold KPIs, exits via dedicated exit_combos (~2 week hold). entry_tf/exit_tf are both 1D \u2014 the engine always runs on entry-TF data and params.",
       "entry_tf": "1D",
       "exit_tf": "1D",
       "entry_gates": {
@@ -159,48 +159,67 @@
       "color": "#facc15",
       "combos": {
         "c3": {
-          "kpis": ["Nadaraya-Watson Smoother", "ADX & DI", "WT_LB"],
-          "pols": [1, -1, -1]
+          "kpis": [
+            "Nadaraya-Watson Smoother",
+            "ADX & DI",
+            "WT_LB"
+          ],
+          "pols": [
+            1,
+            -1,
+            -1
+          ]
         },
         "c4": {
-          "kpis": ["Nadaraya-Watson Smoother", "ADX & DI", "WT_LB", "SQZMOM_LB"],
-          "pols": [1, -1, -1, -1]
+          "kpis": [
+            "Nadaraya-Watson Smoother",
+            "ADX & DI",
+            "WT_LB",
+            "SQZMOM_LB"
+          ],
+          "pols": [
+            1,
+            -1,
+            -1,
+            -1
+          ]
         }
       },
       "exit_combos": {
-        "kpis": ["Nadaraya-Watson Smoother", "ADX & DI", "Stoch_MTM"],
-        "pols": [1, -1, 1]
+        "kpis": [
+          "Nadaraya-Watson Smoother",
+          "ADX & DI",
+          "Stoch_MTM"
+        ],
+        "pols": [
+          1,
+          -1,
+          1
+        ]
       }
     },
-    "swing": {
-      "label": "Swing Trading",
-      "badge_label": "S",
+    "arch_a": {
+      "label": "Architecture A",
+      "badge_label": "A",
       "badge_prio": 2,
-      "entry_type": "polarity_combo",
-      "description": "1W swing trading with momentum confirmation (4-7 week hold)",
-      "entry_tf": "1W",
-      "exit_tf": "1W",
+      "entry_type": "arch_a",
+      "description": "Pullback in uptrend (1D/1W): SMA50W>SMA200W context + RSI14<50 dip + MACD hist crossover reversal. Exit: Chandelier Exit (22,3\u00d7) or ATR backstop 2.5\u00d7ATR14.",
+      "active_tfs": [
+        "1D",
+        "1W"
+      ],
+      "atr_multiplier": 2.5,
+      "color": "#34d399",
       "entry_gates": {
-        "sma20_gt_sma200": true,
-        "volume_spike": true,
-        "sr_break": true,
+        "sma20_gt_sma200": false,
+        "volume_spike": false,
+        "sr_break": false,
         "overextension": false,
         "mansfield_rs_positive": false,
         "overext_pct": 15.0,
         "overext_lookback": 5,
         "vol_spike_mult": 1.5,
         "vol_spike_lookback": 5
-      },
-      "color": "#60a5fa",
-      "combos": {
-        "c3": {
-          "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI"],
-          "pols": [1, 1, 1]
-        },
-        "c4": {
-          "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
-          "pols": [1, 1, 1, 1]
-        }
       }
     },
     "trend": {
@@ -223,53 +242,143 @@
       "color": "#c084fc",
       "combos": {
         "c3": {
-          "kpis": ["Nadaraya-Watson Smoother", "DEMA", "cRSI"],
-          "pols": [1, 1, 1]
+          "kpis": [
+            "Nadaraya-Watson Smoother",
+            "DEMA",
+            "cRSI"
+          ],
+          "pols": [
+            1,
+            1,
+            1
+          ]
         },
         "c4": {
-          "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
-          "pols": [1, 1, 1, 1]
+          "kpis": [
+            "Nadaraya-Watson Smoother",
+            "Stoch_MTM",
+            "cRSI",
+            "Volume + MA20"
+          ],
+          "pols": [
+            1,
+            1,
+            1,
+            1
+          ]
         }
       },
       "combos_by_tf": {
         "1D": {
           "c3": {
-            "kpis": ["Nadaraya-Watson Smoother", "Madrid Ribbon", "Volume + MA20"],
-            "pols": [1, 1, 1]
+            "kpis": [
+              "Nadaraya-Watson Smoother",
+              "Madrid Ribbon",
+              "Volume + MA20"
+            ],
+            "pols": [
+              1,
+              1,
+              1
+            ]
           },
           "c4": {
-            "kpis": ["Nadaraya-Watson Smoother", "Madrid Ribbon", "GK Trend Ribbon", "cRSI"],
-            "pols": [1, 1, 1, 1]
+            "kpis": [
+              "Nadaraya-Watson Smoother",
+              "Madrid Ribbon",
+              "GK Trend Ribbon",
+              "cRSI"
+            ],
+            "pols": [
+              1,
+              1,
+              1,
+              1
+            ]
           }
         },
         "1W": {
           "c3": {
-            "kpis": ["Nadaraya-Watson Smoother", "DEMA", "cRSI"],
-            "pols": [1, 1, 1]
+            "kpis": [
+              "Nadaraya-Watson Smoother",
+              "DEMA",
+              "cRSI"
+            ],
+            "pols": [
+              1,
+              1,
+              1
+            ]
           },
           "c4": {
-            "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
-            "pols": [1, 1, 1, 1]
+            "kpis": [
+              "Nadaraya-Watson Smoother",
+              "Stoch_MTM",
+              "cRSI",
+              "Volume + MA20"
+            ],
+            "pols": [
+              1,
+              1,
+              1,
+              1
+            ]
           }
         },
         "2W": {
           "c3": {
-            "kpis": ["Nadaraya-Watson Smoother", "DEMA", "cRSI"],
-            "pols": [1, 1, 1]
+            "kpis": [
+              "Nadaraya-Watson Smoother",
+              "DEMA",
+              "cRSI"
+            ],
+            "pols": [
+              1,
+              1,
+              1
+            ]
           },
           "c4": {
-            "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
-            "pols": [1, 1, 1, 1]
+            "kpis": [
+              "Nadaraya-Watson Smoother",
+              "Stoch_MTM",
+              "cRSI",
+              "Volume + MA20"
+            ],
+            "pols": [
+              1,
+              1,
+              1,
+              1
+            ]
           }
         },
         "1M": {
           "c3": {
-            "kpis": ["Nadaraya-Watson Smoother", "DEMA", "cRSI"],
-            "pols": [1, 1, 1]
+            "kpis": [
+              "Nadaraya-Watson Smoother",
+              "DEMA",
+              "cRSI"
+            ],
+            "pols": [
+              1,
+              1,
+              1
+            ]
           },
           "c4": {
-            "kpis": ["Nadaraya-Watson Smoother", "Stoch_MTM", "cRSI", "Volume + MA20"],
-            "pols": [1, 1, 1, 1]
+            "kpis": [
+              "Nadaraya-Watson Smoother",
+              "Stoch_MTM",
+              "cRSI",
+              "Volume + MA20"
+            ],
+            "pols": [
+              1,
+              1,
+              1,
+              1
+            ]
           }
         }
       }
@@ -284,11 +393,14 @@
       "threshold": 5,
       "exit_threshold": 3,
       "total": 9,
-      "active_tfs": ["2W", "1M"],
+      "active_tfs": [
+        "2W",
+        "1M"
+      ],
       "atr_multiplier": 3.0,
       "atr_tf": "1W",
       "color": "#fb923c",
-      "description": "Band Light: C3 entry = MACD_BL green + 5/9 score KPIs green (onset). C4 scale-up (1.5x) = C3 + WT_MTF green. Score pool: 9 KPIs incl. LuxAlgo v1+v2 (duplicate). Active on 2W and 1M. Exit: MACD_BL turns red OR any 1 score KPI turns red (score < 5). Stop: 3×ATR14(1W).",
+      "description": "Band Light: C3 entry = MACD_BL green + 5/9 score KPIs green (onset). C4 scale-up (1.5x) = C3 + WT_MTF green. Score pool: 9 KPIs incl. LuxAlgo v1+v2 (duplicate). Active on 2W and 1M. Exit: MACD_BL turns red OR any 1 score KPI turns red (score < 5). Stop: 3\u00d7ATR14(1W).",
       "entry_gates": {
         "sma20_gt_sma200": false,
         "volume_spike": false,

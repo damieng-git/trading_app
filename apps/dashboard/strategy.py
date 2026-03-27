@@ -1185,6 +1185,193 @@ def compute_stoof_position_events(
     return events
 
 
+def compute_arch_a_position_events(
+    df: pd.DataFrame,
+    tf: str,
+    *,
+    weekly_df: "pd.DataFrame | None" = None,
+    K: float = 2.5,
+    scan_start: int | None = None,
+) -> list[dict]:
+    """Architecture A — pullback-in-uptrend long-only engine.
+
+    Five gates (computed directly from indicator columns):
+      Gate 1 (context)  : SMA50W > SMA200W — weekly trend bullish.
+      Gate 2 (dip)      : RSI14 < 50 — price has pulled back.
+      Gate 3 (exhaustion): always True (OFF — not screened here).
+      Gate 4 (reversal) : MACD hist crosses above zero — momentum shift.
+      Gate 5 (exit)     : close < Chandelier Exit long level — trend broken.
+
+    Entry: G1 AND G2 AND G4(onset) AND NOT G5.
+    Exit: G5 fires OR ATR stop (K×ATR14) OR M-bar trailing checkpoint.
+
+    weekly_df: weekly OHLCV+indicator DataFrame aligned to the same symbol.
+               Required for 1D charts (Gate 1). If None, df is used for Gate 1
+               (correct when tf == "1W").
+    K: ATR multiplier for the backstop (default 2.5 from pilot research).
+    """
+    params = EXIT_PARAMS.get(tf)
+    if not params or df is None or df.empty or len(df) < 30:
+        return []
+    if not {"High", "Low", "Close", "Open"}.issubset(df.columns):
+        return []
+
+    from trading_dashboard.indicators._base import rsi_wilder as _rsi
+
+    M = params["M"]
+    n = len(df)
+
+    cl = df["Close"].to_numpy(float)
+    op = df["Open"].to_numpy(float)
+    hi = df["High"].to_numpy(float)
+    lo = df["Low"].to_numpy(float)
+    atr_s = compute_atr(df, ATR_PERIOD).to_numpy(float)
+
+    # ── Gate 1: SMA50W > SMA200W ─────────────────────────────────────────────
+    _wdf = weekly_df if (weekly_df is not None and not weekly_df.empty) else df
+    w_close = _wdf["Close"]
+    sma50w = w_close.rolling(50, min_periods=1).mean()
+    sma200w = w_close.rolling(200, min_periods=1).mean()
+    g1_weekly = (sma50w > sma200w)
+    if weekly_df is not None and not weekly_df.empty:
+        g1_aligned = g1_weekly.reindex(g1_weekly.index.union(df.index)).ffill().reindex(df.index)
+    else:
+        g1_aligned = g1_weekly
+    g1 = g1_aligned.fillna(False).to_numpy(bool)
+
+    # ── Gate 2: RSI14 < 50 (dip / pullback territory) ───────────────────────
+    rsi14 = _rsi(df["Close"], length=14)
+    g2 = (rsi14 < 50).fillna(False).to_numpy(bool)
+
+    # ── Gate 4: MACD hist crosses above zero ─────────────────────────────────
+    if "MACD_hist" in df.columns:
+        hist = df["MACD_hist"].to_numpy(float)
+    elif "MACD" in df.columns and "MACD_signal" in df.columns:
+        hist = df["MACD"].to_numpy(float) - df["MACD_signal"].to_numpy(float)
+    else:
+        from trading_dashboard.indicators._base import ema as _ema
+        macd_line = _ema(df["Close"], 12) - _ema(df["Close"], 26)
+        hist = (macd_line - macd_line.rolling(9).mean()).to_numpy(float)
+    g4_cross = np.zeros(n, dtype=bool)
+    for _i in range(1, n):
+        if not np.isnan(hist[_i]) and not np.isnan(hist[_i - 1]):
+            if hist[_i] > 0 and hist[_i - 1] <= 0:
+                g4_cross[_i] = True
+
+    # ── Gate 5: Chandelier Exit (close < CE_long = HH22 - 3×ATR22) ──────────
+    _ce_period = 22
+    _ce_mult = 3.0
+    atr22 = compute_atr(df, _ce_period).to_numpy(float)
+    hh22 = np.full(n, np.nan)
+    for _i in range(n):
+        _start = max(0, _i - _ce_period + 1)
+        hh22[_i] = np.nanmax(hi[_start:_i + 1])
+    ce_long = hh22 - _ce_mult * atr22
+    g5 = np.zeros(n, dtype=bool)
+    for _i in range(n):
+        if not np.isnan(ce_long[_i]) and not np.isnan(cl[_i]):
+            g5[_i] = cl[_i] < ce_long[_i]
+
+    # ── Walk-forward position engine ─────────────────────────────────────────
+    COMMISSION = 0.001
+    SLIPPAGE = 0.001
+    start = scan_start if scan_start is not None else 0
+    events: list[dict] = []
+    i = max(start, 1)
+
+    while i < n:
+        entry_cond = g1[i] and g2[i] and g4_cross[i] and not g5[i]
+        if not entry_cond:
+            i += 1
+            continue
+
+        signal_idx = i
+        fill_bar = i + 1
+        if fill_bar >= n:
+            break
+
+        entry_price = float(op[fill_bar])
+        if entry_price <= 0 or np.isnan(entry_price):
+            i += 1
+            continue
+
+        atr_val = atr_s[i]
+        stop = (entry_price - K * atr_val
+                if not np.isnan(atr_val) and atr_val > 0
+                else entry_price * 0.95)
+        stop = min(stop, entry_price * 0.99)
+        stop_price = entry_price
+        bars_since_reset = 0
+        entry_idx = fill_bar
+        stop_trail: list[float] = [stop]
+
+        exit_idx = None
+        exit_reason = None
+
+        j = fill_bar + 1
+        while j < n:
+            bars_since_reset += 1
+            c = float(cl[j])
+            if np.isnan(c):
+                stop_trail.append(stop_trail[-1] if stop_trail else stop)
+                j += 1
+                continue
+
+            if c < stop:
+                exit_idx = j
+                exit_reason = "ATR stop"
+                break
+
+            if g5[j]:
+                exit_idx = j
+                exit_reason = "CE exit"
+                break
+
+            if bars_since_reset >= M:
+                stop_price = c
+                a_val = atr_s[j] if j < len(atr_s) else np.nan
+                stop = (stop_price - K * a_val
+                        if not np.isnan(a_val) and a_val > 0
+                        else stop)
+                bars_since_reset = 0
+
+            stop_trail.append(stop)
+            j += 1
+
+        if exit_idx is None:
+            exit_idx = n - 1
+            exit_reason = "Open"
+
+        while len(stop_trail) < (exit_idx - entry_idx + 1):
+            stop_trail.append(stop_trail[-1] if stop_trail else stop)
+
+        is_open = exit_reason == "Open"
+        exit_fill = min(exit_idx + 1, n - 1) if not is_open and exit_idx < n - 1 else exit_idx
+        xp = float(op[exit_fill]) if exit_fill != exit_idx else float(cl[exit_idx])
+        hold = exit_idx - entry_idx
+        cost = COMMISSION + SLIPPAGE
+        ret_pct = (((xp - entry_price) / entry_price - cost) * 100
+                   if entry_price > 0 and not is_open else None)
+
+        events.append({
+            "signal_idx": signal_idx,
+            "entry_idx": entry_idx,
+            "entry_price": round(entry_price, 4),
+            "exit_idx": exit_idx,
+            "exit_price": round(xp, 4) if not is_open else None,
+            "exit_reason": exit_reason,
+            "scaled": False,
+            "scale_idx": None,
+            "stop_trail": [round(s, 4) if np.isfinite(s) else None for s in stop_trail],
+            "hold": hold,
+            "ret_pct": round(ret_pct, 2) if ret_pct is not None else None,
+        })
+
+        i = exit_idx + 1 if not is_open else n
+
+    return events
+
+
 def compute_stoof_trailing_pnl(
     df: pd.DataFrame,
     st: dict,
@@ -1418,6 +1605,32 @@ def compute_c3_states_by_strategy(
                 req_arr = req_s.to_numpy() if req_s is not None else np.zeros(n, dtype=int)
                 c3_arr = (req_arr == 1) & (bull_counts >= _s_thresh)
                 c4_arr = c3_arr & (c4_s.to_numpy() == 1) if c4_s is not None else None
+
+            elif entry_type == "arch_a":
+                # C3 regime: G1 (SMA50W>SMA200W) AND G2 (RSI14<50) AND NOT G5 (CE).
+                # G4 onset is the trade trigger; showing the regime helps interpret the chart.
+                from trading_dashboard.indicators._base import rsi_wilder as _rsi_c3
+                rsi14_c3 = _rsi_c3(df["Close"], length=14)
+                g2_c3 = (rsi14_c3 < 50).fillna(False).to_numpy(bool)
+
+                w_close_c3 = df["Close"]
+                sma50_c3 = w_close_c3.rolling(50, min_periods=1).mean()
+                sma200_c3 = w_close_c3.rolling(200, min_periods=1).mean()
+                g1_c3 = (sma50_c3 > sma200_c3).fillna(False).to_numpy(bool)
+
+                _ce_period_c3 = 22
+                _ce_mult_c3 = 3.0
+                atr22_c3 = compute_atr(df, _ce_period_c3).to_numpy(float)
+                hi_c3 = df["High"].to_numpy(float)
+                cl_c3 = df["Close"].to_numpy(float)
+                hh22_c3 = np.array([np.nanmax(hi_c3[max(0, _ii - _ce_period_c3 + 1):_ii + 1]) for _ii in range(n)])
+                ce_long_c3 = hh22_c3 - _ce_mult_c3 * atr22_c3
+                g5_c3 = np.array([
+                    not np.isnan(ce_long_c3[_ii]) and not np.isnan(cl_c3[_ii]) and cl_c3[_ii] < ce_long_c3[_ii]
+                    for _ii in range(n)
+                ])
+                c3_arr = g1_c3 & g2_c3 & ~g5_c3
+                c4_arr = None
 
             else:
                 continue

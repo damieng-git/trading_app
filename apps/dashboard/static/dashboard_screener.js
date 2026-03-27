@@ -143,7 +143,7 @@
     else if (screenerFilter === "strat_active") filtered = filtered.filter(function(r) { var ss = r.strat_statuses || {}; for (var sk in ss) { var sa = ss[sk].signal_action || ""; if (sa.indexOf("ENTRY") === 0 || sa === "HOLD") return true; } return false; });
     else if (screenerFilter === "strat_any")   filtered = filtered.filter(function(r) { var ss = r.strat_statuses || {}; return STRAT_PRIO.some(function(sp) { var s = ss[sp.key]; if (!s) return false; var a = s.signal_action || ""; return a.indexOf("ENTRY") === 0 || a === "HOLD"; }); });
     else if (screenerFilter === "strat_dip")  filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).dip_buy; return s && (s.signal_action || "").indexOf("ENTRY") === 0; });
-    else if (screenerFilter === "strat_swing") filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).swing; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
+    else if (screenerFilter === "strat_arch_a") filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).arch_a; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
     else if (screenerFilter === "strat_trend") filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).trend; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
     else if (screenerFilter === "strat_stoof") filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).stoof; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
 

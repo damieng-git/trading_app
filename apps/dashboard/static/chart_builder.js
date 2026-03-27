@@ -810,12 +810,13 @@
     // TrendScore / StoofScore (row 4)
     let tsPad = 1;
     const isStoof = _activeStrat === "stoof";
+    const isArchA = _activeStrat === "arch_a";
     const isPolStrat = !!_polStratKpiNames;
     const polStratSlice = isPolStrat ? kpiSlice(_polStratKpiNames) : null;
     const scoreSlice = isPolStrat ? polStratSlice
       : (isStoof ? stoofSlice : trend);
     const scoreLabel = isPolStrat ? (_activeDef.label || _activeStrat) + " Score"
-      : (isStoof ? "StoofScore" : "TrendScore");
+      : (isStoof ? "StoofScore" : isArchA ? "ArchAScore" : "TrendScore");
 
     // Build polarity map for polarity strategies: KPI name → expected polarity
     // Bug-C fix: prefer TF-specific combos (combos_by_tf) over flat combos, mirroring entry logic.
@@ -987,7 +988,7 @@
       // --- Build trade list from pre-computed events or fallback ---
       const _peByStrat = data.position_events_by_strategy || {};
       const _isAllStrats = _activeStrat === "all";
-      const _useStratEvents = (isPolStrat || isStoof) && _peByStrat[_activeStrat] && _peByStrat[_activeStrat].length;
+      const _useStratEvents = (isPolStrat || isStoof || isArchA) && _peByStrat[_activeStrat] && _peByStrat[_activeStrat].length;
       const _useAllOverlay = _isAllStrats && Object.keys(_peByStrat).length > 0;
 
       function _pushEvents(evList, stratKey) {
@@ -1434,7 +1435,7 @@
       { text: "Oscillators", xref: "paper", yref: "paper", x: 0.5, y: r3Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: scoreLabel, xref: "paper", yref: "paper", x: 0.5, y: r4Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
-      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
+      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isArchA ? "Arch A" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
     ];
     if (comboLabels.length) {
       subplotTitles.push({ text: "Combos", xref: "paper", yref: "paper", x: 0.5, y: rCTop, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" });
@@ -1483,11 +1484,12 @@
     const _sDef2a = _stSetups2a[_cStrat2a];
     const _isPolStrat2 = _sDef2a && _sDef2a.entry_type === "polarity_combo";
     const _isStoof2 = _cStrat2a === "stoof";
-    // prefer strategy-specific events; for Stoof use its own events; never fall back to Trend events for Stoof
-    const _stratEvents2 = (_isPolStrat2 || _isStoof2) ? (_peByStrat2[_cStrat2a] || null) : null;
-    // BUG-ST1 fix: suppress Trend event fallback when Stoof is selected
+    const _isArchA2 = _cStrat2a === "arch_a";
+    // prefer strategy-specific events; for Stoof/ArchA use their own events; never fall back to Trend events
+    const _stratEvents2 = (_isPolStrat2 || _isStoof2 || _isArchA2) ? (_peByStrat2[_cStrat2a] || null) : null;
+    // BUG-ST1 fix: suppress Trend event fallback when Stoof/ArchA is selected
     const _useEvents2 = (_stratEvents2 && _stratEvents2.length) ? _stratEvents2
-      : (!_isStoof2 && payload.position_events && payload.position_events.length ? payload.position_events : null);
+      : (!_isStoof2 && !_isArchA2 && payload.position_events && payload.position_events.length ? payload.position_events : null);
 
     if (_useEvents2) {
       for (const ev of _useEvents2) {
