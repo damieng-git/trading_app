@@ -36,6 +36,7 @@ include = ["trading_dashboard*", "apps*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+base_url = "http://localhost:8051"
 
 [tool.coverage.run]
 source = ["trading_dashboard", "apps"]

@@ -66,20 +66,19 @@ YFINANCE_TICKER_MAP: Dict[str, str] = {
 }
 
 # Date range for download (daily), then resampled to weekly:
-START_DATE = "2018-01-01"
+START_DATE = "1993-01-01"
 END_DATE = None  # None = up to latest
 
 # Mandatory weekly timeline:
 WEEKLY_RULE = "W-FRI"  # recommended by your instructions
 
 # Supported timeline toggles for the dashboard:
-# - 4H is built from 1h data resampled to 4h
 # - 1D uses yfinance 1d candles
 # - 1W uses 1d candles resampled to W-FRI
 # - 2W uses 1d candles resampled to 2W-FRI (bi-weekly)
 # - 1M uses 1d candles resampled to month-end
-DEFAULT_TIMEFRAMES: list[str] = ["4H", "1D", "1W", "2W", "1M"]
-VALID_TIMEFRAMES: set[str] = {"4H", "1D", "1W", "2W", "1M"}
+DEFAULT_TIMEFRAMES: list[str] = ["1D", "1W", "2W", "1M"]
+VALID_TIMEFRAMES: set[str] = {"1D", "1W", "2W", "1M"}
 TIMEFRAMES: List[str] = list(DEFAULT_TIMEFRAMES)
 
 
@@ -91,20 +90,28 @@ class Timeframe:
     min_bars: int
     enrich_buffer_bars: int
     bars_per_year: int
+    min_enrich_bars: int = 0  # floor for enrichment bar count regardless of _ENRICH_YEARS
 
 
 TIMEFRAME_REGISTRY: Dict[str, Timeframe] = {
-    "4H": Timeframe(key="4H", max_plot_bars=5000, min_bars=500, enrich_buffer_bars=600, bars_per_year=1512),
     "1D": Timeframe(key="1D", max_plot_bars=600, min_bars=200, enrich_buffer_bars=300, bars_per_year=252),
     "1W": Timeframe(key="1W", max_plot_bars=140, min_bars=80, enrich_buffer_bars=60, bars_per_year=52),
-    "2W": Timeframe(key="2W", max_plot_bars=70, min_bars=40, enrich_buffer_bars=30, bars_per_year=26),
-    "1M": Timeframe(key="1M", max_plot_bars=36, min_bars=18, enrich_buffer_bars=15, bars_per_year=12),
+    "2W": Timeframe(key="2W", max_plot_bars=70, min_bars=40, enrich_buffer_bars=30, bars_per_year=26, min_enrich_bars=100),
+    "1M": Timeframe(key="1M", max_plot_bars=36, min_bars=18, enrich_buffer_bars=15, bars_per_year=12, min_enrich_bars=120),
 }
 
 
 def get_timeframe(key: str) -> Timeframe:
     """Look up a Timeframe by key, raising KeyError if unknown."""
     return TIMEFRAME_REGISTRY[key]
+
+
+def validate_timeframe(tf: str) -> str:
+    """Return tf uppercased if valid, raise ValueError if not in VALID_TIMEFRAMES."""
+    tfu = str(tf).upper()
+    if tfu not in VALID_TIMEFRAMES:
+        raise ValueError(f"Unknown timeframe {tf!r}. Valid: {sorted(VALID_TIMEFRAMES)}")
+    return tfu
 
 # Paths (robust to current working directory).
 # This file lives in: trading_app/apps/dashboard/config_loader.py

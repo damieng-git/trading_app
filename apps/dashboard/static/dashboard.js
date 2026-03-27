@@ -1767,11 +1767,44 @@
     let _lastSyncedRange = null;
     let _initialXRange = null;
 
+    function _visibleYRange(gd, yKey, r0, r1) {
+      if (!gd || !gd.data) return null;
+      const t0 = new Date(r0).getTime(), t1 = new Date(r1).getTime();
+      const yRef = yKey === "yaxis" ? "y" : "y" + yKey.replace("yaxis", "");
+      let lo = Infinity, hi = -Infinity;
+      for (const tr of gd.data) {
+        if (tr.visible === false || tr.visible === "legendonly") continue;
+        if ((tr.yaxis || "y") !== yRef) continue;
+        if (!tr.x) continue;
+        const lows = tr.low != null ? tr.low : tr.y;
+        const highs = tr.high != null ? tr.high : tr.y;
+        if (!lows || !highs) continue;
+        for (let i = 0; i < tr.x.length; i++) {
+          const t = new Date(tr.x[i]).getTime();
+          if (t < t0 || t > t1) continue;
+          const l = +lows[i], h = +highs[i];
+          if (isFinite(l)) lo = Math.min(lo, l);
+          if (isFinite(h)) hi = Math.max(hi, h);
+        }
+      }
+      if (!isFinite(lo) || !isFinite(hi)) return null;
+      if (lo === hi) { const p = Math.abs(lo) * 0.05 || 0.5; return [lo - p, hi + p]; }
+      const pad = (hi - lo) * 0.05;
+      return [lo - pad, hi + pad];
+    }
+
     function _buildRelayoutUpdate(target, r0, r1) {
       const upd = { "xaxis.range": [r0, r1] };
       if (target._fullLayout) {
         for (const k of Object.keys(target._fullLayout)) {
           if (/^xaxis[0-9]+$/.test(k)) upd[k + ".range"] = [r0, r1];
+        }
+        for (const k of Object.keys(target._fullLayout)) {
+          if (/^yaxis[0-9]*$/.test(k) && !target._fullLayout[k].fixedrange) {
+            const yr = _visibleYRange(target, k, r0, r1);
+            if (yr) { upd[k + ".range"] = yr; upd[k + ".autorange"] = false; }
+            else upd[k + ".autorange"] = true;
+          }
         }
       }
       return upd;
@@ -2327,7 +2360,7 @@
         return;
       }
       // 1,2,3 switch TF
-      const tfMap = { "1": "4H", "2": "1D", "3": "1W", "4": "2W", "5": "1M" };
+      const tfMap = { "1": "1D", "2": "1W", "3": "2W", "4": "1M" };
       if (tfMap[key]) {
         currentTF = tfMap[key];
         saveState({ tf: currentTF });
@@ -2725,6 +2758,7 @@
                 ? " · " + d.enriched_ok + "/" + d.enriched_total + " stocks refreshed" + (d.enriched_fail > 0 ? " (" + d.enriched_fail + " failed)" : "")
                 : "";
               detail.textContent = _sigStr + _refStr;
+              if (typeof _renderScanStats === "function") _renderScanStats(d);
             }
           } catch (_) {
             label.textContent = "Done";
@@ -2792,9 +2826,6 @@
       if (scanBtn) scanBtn.addEventListener("click", function() {
         var activePill = document.querySelector(".scan-tf-pill.active");
         var timeframe = activePill ? activePill.dataset.tf : "1D";
-        // 4H is not a scan target — it's used for entry confirmation only.
-        // If 4H pill is selected and Scan is clicked, scan 1D instead.
-        if (timeframe === "4H") timeframe = "1D";
         var url = _BASE + "/api/scan?timeframe=" + encodeURIComponent(timeframe);
         _connectSSE(url, "Scan");
       });
@@ -2855,6 +2886,25 @@
         var ccy = (typeof SYMBOL_CURRENCIES !== "undefined" && SYMBOL_CURRENCIES[symbol]) || "";
         if (!ccy || ccy === "EUR") return "";
         return " \u20AC";
+      };
+    })();
+
+    // Toast notification for stale chart assets (no pre-computed strategy events).
+    window._showStaleToast = (function () {
+      var _timer = null;
+      return function _showStaleToast(stratKey) {
+        var existing = document.getElementById("_stale-toast");
+        if (existing) { clearTimeout(_timer); existing.remove(); }
+        var t = document.createElement("div");
+        t.id = "_stale-toast";
+        t.className = "_stale-toast";
+        t.innerHTML = "<strong>Asset stale</strong> &mdash; no trade data for <em>" + (stratKey || "this strategy") + "</em>. Click <strong>UI Refresh</strong> to rebuild.";
+        document.body.appendChild(t);
+        requestAnimationFrame(function () { t.classList.add("_stale-toast--visible"); });
+        _timer = setTimeout(function () {
+          t.classList.remove("_stale-toast--visible");
+          setTimeout(function () { if (t.parentNode) t.remove(); }, 400);
+        }, 7000);
       };
     })();
 

@@ -847,7 +847,6 @@ def write_lazy_dashboard_shell_html(
         <div class="scan-controls-left">
           <span class="scan-controls-label">Timeframe</span>
           <div id="scanTfSelector" class="scan-tf-pills">
-            <button class="scan-tf-pill scan-tf-confirm" data-tf="4H" title="4H is not scanned — used only to confirm 1D entry timing">4H &#10003;</button>
             <button class="scan-tf-pill active" data-tf="1D">1D</button>
             <button class="scan-tf-pill" data-tf="1W">1W</button>
             <button class="scan-tf-pill" data-tf="2W">2W</button>
@@ -861,6 +860,9 @@ def write_lazy_dashboard_shell_html(
         </div>
       </div>
 
+      <!-- ── Scan Stats Bar ────────────────────────────────────────────── -->
+      <div id="scanStatsBar" style="display:none;"></div>
+
       <!-- ── New Signals ───────────────────────────────────────────────── -->
       <section class="scan-section" id="scanSectionNew">
         <div class="scan-section-header">
@@ -868,6 +870,7 @@ def write_lazy_dashboard_shell_html(
           <span class="scan-section-sub" id="scanNewMeta"></span>
         </div>
         <div id="scanPassStats" class="scan-pass-stats"></div>
+        <div id="scanDownloadHealth"></div>
         <div id="scanNewSignals"></div>
       </section>
 
@@ -1740,7 +1743,6 @@ python -m trading_dashboard symbols sync
 ## Notes
 
 - Data is downloaded via `yfinance`:
-  - hourly (`60m`) then resampled to 4H
   - daily (`1d`) then optionally resampled to 1W (`W-FRI`)
 - If a symbol is not found, the script tries common exchange suffixes (e.g. `.PA`).
 """

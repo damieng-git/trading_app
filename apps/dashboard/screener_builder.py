@@ -20,6 +20,19 @@ from apps.dashboard.strategy import (
 logger = logging.getLogger(__name__)
 
 
+def _scan_field(scan_date_map: dict | None, sym: str, field: str) -> str:
+    """Extract a field from scan_date_map, which may be {sym: dict} or {sym: str} (legacy)."""
+    if not scan_date_map:
+        return ""
+    entry = scan_date_map.get(sym)
+    if entry is None:
+        return ""
+    if isinstance(entry, dict):
+        return entry.get(field, "")
+    # Legacy format: flat string — only date_added existed
+    return entry if field == "date_added" else ""
+
+
 def build_screener_rows(
     *,
     all_data: dict,
@@ -163,6 +176,11 @@ def build_screener_rows(
                             "l12m_pnl": tp["l12m_pnl"],
                             "l12m_trades": tp["l12m_trades"],
                             "l12m_hit_rate": tp["l12m_hit_rate"],
+                            "l12m_max_dd": tp.get("l12m_max_dd"),
+                            "l24m_pnl": tp.get("l24m_pnl"),
+                            "l24m_trades": tp.get("l24m_trades"),
+                            "l24m_hit_rate": tp.get("l24m_hit_rate"),
+                            "l24m_max_dd": tp.get("l24m_max_dd"),
                         }
                     elif sdef.get("entry_type") == "threshold":
                         # Stoof: only active on configured timeframes (default 2W, 1M)
@@ -215,6 +233,11 @@ def build_screener_rows(
                             "l12m_pnl": tp["l12m_pnl"],
                             "l12m_trades": tp["l12m_trades"],
                             "l12m_hit_rate": tp["l12m_hit_rate"],
+                            "l12m_max_dd": tp.get("l12m_max_dd"),
+                            "l24m_pnl": tp.get("l24m_pnl"),
+                            "l24m_trades": tp.get("l24m_trades"),
+                            "l24m_hit_rate": tp.get("l24m_hit_rate"),
+                            "l24m_max_dd": tp.get("l24m_max_dd"),
                         }
                 except Exception as e:
                     logger.warning("Strategy %s failed for %s/%s: %s", skey, sym, tf, e)
@@ -228,6 +251,11 @@ def build_screener_rows(
                     "l12m_pnl": _ts["l12m_pnl"],
                     "l12m_trades": _ts["l12m_trades"],
                     "l12m_hit_rate": _ts["l12m_hit_rate"],
+                    "l12m_max_dd": _ts.get("l12m_max_dd"),
+                    "l24m_pnl": _ts.get("l24m_pnl"),
+                    "l24m_trades": _ts.get("l24m_trades"),
+                    "l24m_hit_rate": _ts.get("l24m_hit_rate"),
+                    "l24m_max_dd": _ts.get("l24m_max_dd"),
                 }
 
             n = int(max(1, min(int(cfg_alerts_lookback_bars), len(df))))
@@ -271,6 +299,9 @@ def build_screener_rows(
             for k in KPI_BREAKOUT_ORDER:
                 s = st.get(k)
                 kpi_states[k] = int(s.iloc[-1]) if (s is not None and len(s) and pd.notna(s.iloc[-1])) else -2
+
+            # Conviction score: count of all KPIs that are currently bullish (state == 1)
+            conviction_score = sum(1 for v in kpi_states.values() if v == 1)
 
             # 13-bar conviction trend: per bar, ratio of bull vs bear trend KPIs
             _conv10_bars = min(13, len(df))
@@ -377,11 +408,18 @@ def build_screener_rows(
                 "l12m_pnl": trailing_pnl["l12m_pnl"],
                 "l12m_trades": trailing_pnl["l12m_trades"],
                 "l12m_hit_rate": trailing_pnl["l12m_hit_rate"],
+                "l12m_max_dd": trailing_pnl.get("l12m_max_dd"),
+                "l24m_pnl": trailing_pnl.get("l24m_pnl"),
+                "l24m_trades": trailing_pnl.get("l24m_trades"),
+                "l24m_hit_rate": trailing_pnl.get("l24m_hit_rate"),
+                "l24m_max_dd": trailing_pnl.get("l24m_max_dd"),
+                "conviction_score": conviction_score,
                 "recommendation": _fund.get("recommendation", ""),
                 "market_cap": _fund.get("market_cap"),
                 "trailing_pe": _fund.get("trailing_pe"),
                 "pe_vs_sector": None,
-                "scan_date_added": (scan_date_map or {}).get(sym, ""),
+                "scan_date_added": _scan_field(scan_date_map, sym, "date_added"),
+                "scan_last_confirmed": _scan_field(scan_date_map, sym, "last_scan_date"),
             }
             by_symbol[sym][tf] = rec
             if tf in rows_by_tf:

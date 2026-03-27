@@ -1,0 +1,13 @@
+[Unit]
+Description=Trading Dashboard Test — EOD scan + Telegram alert (staging)
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/damiverse_apps/trading_app_test
+ExecStart=/root/damiverse_apps/trading_app/.venv/bin/python -m apps.screener.scan_strategy --strategy all --cached --no-dashboard
+Environment=PYTHONUNBUFFERED=1
+Environment=TRADING_APP_ROOT=/root/damiverse_apps/trading_app_test
+# After the scan, send Telegram/email alerts for new signals
+ExecStartPost=/root/damiverse_apps/trading_app/.venv/bin/python -m apps.dashboard.alert_notifier

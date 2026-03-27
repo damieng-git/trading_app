@@ -99,7 +99,7 @@ Indicators output numeric columns into enriched DataFrames. `kpis/catalog.py` ma
 
 ### Timeframes
 
-5 timeframes: `4H`, `1D`, `1W`, `2W`, `1M`. 4H is resampled from 1H yfinance data; 2W/1M are resampled from 1D. Weekly resampling anchors to Friday (`W-FRI`).
+4 timeframes: `1D`, `1W`, `2W`, `1M`. 2W/1M are resampled from 1D. Weekly resampling anchors to Friday (`W-FRI`).
 
 ### Dashboard output
 

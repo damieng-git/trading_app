@@ -42,6 +42,10 @@ venv/
 .coverage
 htmlcov/
 
+# Playwright artifacts (screenshots, videos, traces)
+tests/playwright/artifacts/
+test-results/
+
 # Logs
 *.log
 

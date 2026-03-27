@@ -18,7 +18,7 @@ from apps.dashboard.config_loader import (
 
 class TestTimeframeRegistry:
     def test_all_timeframes_registered(self):
-        for tf in ("4H", "1D", "1W"):
+        for tf in ("1D", "1W"):
             assert tf in TIMEFRAME_REGISTRY
 
     def test_get_timeframe(self):
@@ -44,7 +44,7 @@ class TestLoadBuildConfig:
 
     def test_has_timeframes(self):
         cfg = load_build_config()
-        assert set(cfg.timeframes) >= {"4H", "1D", "1W"}
+        assert set(cfg.timeframes) >= {"1D", "1W"}
 
     def test_has_kpi_weights(self):
         cfg = load_build_config()

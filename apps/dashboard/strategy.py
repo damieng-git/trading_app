@@ -17,7 +17,11 @@ import json
 import numpy as np
 import pandas as pd
 
+import logging
+
 from apps.dashboard.config_loader import CONFIG_JSON as _CONFIG_PATH
+
+_logger = logging.getLogger(__name__)
 
 
 def _load_exit_params() -> dict[str, dict[str, int | float]]:
@@ -27,21 +31,19 @@ def _load_exit_params() -> dict[str, dict[str, int | float]]:
         params = cfg.get("exit_params")
         if isinstance(params, dict) and params:
             return params
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("Could not load exit_params from config.json: %s", exc)
     return {}
 
 EXIT_PARAMS: dict[str, dict[str, int | float]] = _load_exit_params()
 ATR_PERIOD = 14
 
-# 1W overextension filter: block C3 entry if Close > 15% above Close[5 bars ago]
-_OVEREXT_LOOKBACK = 5
-_OVEREXT_PCT = 15.0
-
-# v5: Volume spike confirmation — entry blocked unless vol >= 1.5× vol_ma20
-# within the last 5 bars (inclusive of entry bar)
-_VOL_SPIKE_MULT = 1.5
-_VOL_SPIKE_LOOKBACK = 5
+# Default entry-gate thresholds — used when not overridden per-strategy in config.json.
+# Override by adding these keys inside a strategy's entry_gates block.
+_OVEREXT_LOOKBACK = 5       # bars back for overextension reference close
+_OVEREXT_PCT = 15.0         # % above reference close that triggers the block
+_VOL_SPIKE_MULT = 1.5       # volume must be >= this × MA20 to count as spike
+_VOL_SPIKE_LOOKBACK = 5     # window (bars, inclusive) in which spike must appear
 
 
 def compute_atr(df: pd.DataFrame, period: int = ATR_PERIOD) -> pd.Series:
@@ -439,11 +441,12 @@ def compute_polarity_position_events(
     ----------
     exit_kpis/exit_pols : optional separate exit KPI set.  If None, uses the
                           entry combo for exit checks.
-    entry_gates : optional dict controlling which v5 entry gates are active.
-                  Keys: "sma20_gt_sma200", "volume_spike", "overextension".
-                  Default None → all gates enabled (legacy behaviour).
-                  Set a key to False to disable that gate for this strategy.
-                  Example: Buy Dip disables all gates to catch oversold entries.
+    entry_gates : dict controlling which entry gates are active.
+                  Keys: "sma20_gt_sma200", "volume_spike", "sr_break", "overextension".
+                  All keys default to False (opt-in). Must match config.json entry_gates
+                  exactly — same keys are read by both scan and screener pipelines.
+                  Example: Buy Dip sets all False to catch oversold entries regardless
+                  of trend direction.
     """
     params = EXIT_PARAMS.get(tf)
     if not params or df is None or df.empty or len(df) < 20 or not c3_kpis:
@@ -464,38 +467,62 @@ def compute_polarity_position_events(
 
     c4_avail = c4_kpis and c4_pols and all(st.get(k) is not None for k in c4_kpis)
 
-    # BUG-D4: resolve which gates are active from entry_gates config
+    # Resolve which gates are active from entry_gates config.
+    # All gates default to False (opt-in). Config keys are identical to the
+    # scan pipeline's entry_gates — both pipelines must agree on every entry.
+    # Threshold values can be overridden per-strategy via entry_gates; module
+    # constants are used as fallbacks.
     _gates = entry_gates or {}
-    _gate_sma = _gates.get("sma20_gt_sma200", True)
-    _gate_vol = _gates.get("volume_spike", True)
-    _gate_overext = _gates.get("overextension", True)
+    _gate_sma = _gates.get("sma20_gt_sma200", False)
+    _gate_vol = _gates.get("volume_spike", False)
+    _gate_sr = _gates.get("sr_break", False)
+    _gate_overext = _gates.get("overextension", False)
+    _gate_mrs = _gates.get("mansfield_rs_positive", False)
 
-    # v5 gates: SMA20 > SMA200
+    # Per-strategy threshold overrides (fall back to module-level defaults)
+    _overext_pct = float(_gates.get("overext_pct", _OVEREXT_PCT))
+    _overext_lookback = int(_gates.get("overext_lookback", _OVEREXT_LOOKBACK))
+    _vol_spike_mult = float(_gates.get("vol_spike_mult", _VOL_SPIKE_MULT))
+    _vol_spike_lookback = int(_gates.get("vol_spike_lookback", _VOL_SPIKE_LOOKBACK))
+
+    # Gate: SMA20 > SMA200 (1D/1W only)
+    _sma_tfs = {"1D", "1W"}
     sma_gate = None
-    if _gate_sma and tf in ("1D", "1W") and n >= 200:
+    if _gate_sma and tf in _sma_tfs and n >= 200:
         sma200 = pd.Series(cl).rolling(200, min_periods=200).mean().to_numpy()
         sma20 = pd.Series(cl).rolling(20, min_periods=20).mean().to_numpy()
         sma_gate = sma20 >= sma200
 
+    # Gate: overextension — close > close[N bars ago] by >X% (1D/1W only)
     overext_filter = None
-    if _gate_overext and tf in ("1D", "1W") and n > _OVEREXT_LOOKBACK:
+    if _gate_overext and tf in _sma_tfs and n > _overext_lookback:
         ref = np.empty(n, dtype=float)
-        ref[:_OVEREXT_LOOKBACK] = np.nan
-        ref[_OVEREXT_LOOKBACK:] = cl[:-_OVEREXT_LOOKBACK]
+        ref[:_overext_lookback] = np.nan
+        ref[_overext_lookback:] = cl[:-_overext_lookback]
         with np.errstate(divide="ignore", invalid="ignore"):
             pct_chg = (cl - ref) / ref * 100
-        overext_filter = ~(pct_chg > _OVEREXT_PCT)
+        overext_filter = ~(pct_chg > _overext_pct)
 
+    # Gate: volume spike — volume >= X× MA20 within last N bars
     vol_spike_ok = None
     if _gate_vol and "Volume" in df.columns:
         vol = df["Volume"].to_numpy(float)
         vol_ma20 = pd.Series(vol).rolling(20, min_periods=20).mean().to_numpy()
         with np.errstate(invalid="ignore"):
-            spike_raw = (vol >= _VOL_SPIKE_MULT * vol_ma20).astype(float)
+            spike_raw = (vol >= _vol_spike_mult * vol_ma20).astype(float)
         spike_raw = np.nan_to_num(spike_raw, nan=0.0)
         vol_spike_ok = pd.Series(spike_raw).rolling(
-            _VOL_SPIKE_LOOKBACK, min_periods=1
+            _vol_spike_lookback, min_periods=1
         ).max().to_numpy().astype(bool)
+
+    # Gate: Mansfield RS positive — MRS column > 0 at entry bar
+    mrs_arr = df["MRS"].to_numpy(float) if (_gate_mrs and "MRS" in df.columns) else None
+
+    # Gate: S/R breakout — close > max(high of prior 20 bars)
+    sr_break_gate = None
+    if _gate_sr and "High" in df.columns and n >= 21:
+        prior_high = df["High"].shift(1).rolling(20, min_periods=20).max().to_numpy()
+        sr_break_gate = cl > prior_high
 
     start = scan_start if scan_start is not None else 0
     events: list[dict] = []
@@ -514,6 +541,12 @@ def compute_polarity_position_events(
             i += 1
             continue
         if vol_spike_ok is not None and not vol_spike_ok[i]:
+            i += 1
+            continue
+        if sr_break_gate is not None and not sr_break_gate[i]:
+            i += 1
+            continue
+        if mrs_arr is not None and (np.isnan(mrs_arr[i]) or mrs_arr[i] <= 0):
             i += 1
             continue
 
@@ -778,18 +811,50 @@ def _status_from_polarity_events(
     }
 
 # Trailing-12-month bar counts per timeframe
-_L12M_BARS = {"4H": 6 * 252, "1D": 252, "1W": 52, "2W": 26, "1M": 12}
+_L12M_BARS = {"1D": 252, "1W": 52, "2W": 26, "1M": 12}
+# Trailing-24-month bar counts per timeframe
+_L24M_BARS = {"1D": 504, "1W": 104, "2W": 52, "1M": 24}
 
 # Screener status scan window (bars): how far back to look for an open position.
-# Must be large enough to catch any realistic hold; short TFs need more bars.
-# 4H: 2000 bars ≈ 13 months | 1D: 1500 bars ≈ 6 years | weekly+: 500 bars ≥ 9 years.
+# Must be large enough to catch any realistic hold.
+# 1D: 1500 bars ≈ 6 years | weekly+: 500 bars ≥ 9 years.
 _STATUS_SCAN_BARS: dict[str, int] = {
-    "4H": 2000,
     "1D": 1500,
     "1W": 500,
     "2W": 500,
     "1M": 500,
 }
+
+
+def _pnl_stats(closed: list[dict]) -> dict:
+    """Compute P&L stats from a list of closed trade dicts.
+
+    Returns: pnl (float), trades (int), hit_rate (float|None), max_dd (float).
+    max_dd is the worst peak-to-trough in the cumulative return series (always <= 0).
+    """
+    if not closed:
+        return {"pnl": 0.0, "trades": 0, "hit_rate": None, "max_dd": 0.0}
+    rets = [e["ret_pct"] * (1.5 if e.get("scaled") else 1.0) for e in closed]
+    total_ret = sum(rets)
+    wins = sum(1 for e in closed if e["ret_pct"] >= 0)
+    hr = (wins / len(closed)) * 100
+    # Peak-to-trough max drawdown over the cumulative P&L series
+    cum = 0.0
+    peak = 0.0
+    max_dd = 0.0
+    for r in rets:
+        cum += r
+        if cum > peak:
+            peak = cum
+        dd = cum - peak
+        if dd < max_dd:
+            max_dd = dd
+    return {
+        "pnl": round(total_ret, 2),
+        "trades": len(closed),
+        "hit_rate": round(hr, 1),
+        "max_dd": round(max_dd, 2),
+    }
 
 
 def compute_trailing_pnl(
@@ -799,35 +864,42 @@ def compute_trailing_pnl(
     c4_kpis: list,
     tf: str,
 ) -> dict:
-    """Trailing 12-month P&L derived from ``compute_position_events``.
+    """Trailing 12-month and 24-month P&L derived from ``compute_position_events``.
 
-    Returns dict with:
-      l12m_pnl: float or None  — cumulative return %
-      l12m_trades: int          — number of closed trades
-      l12m_hit_rate: float or None — win rate %
+    Returns dict with l12m_pnl/trades/hit_rate/max_dd and l24m equivalents.
+    Runs the engine once from the 24M start; l12m stats are filtered by entry_idx.
     """
-    empty = {"l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None}
+    _empty_keys = {
+        "l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None, "l12m_max_dd": None,
+        "l24m_pnl": None, "l24m_trades": 0, "l24m_hit_rate": None, "l24m_max_dd": None,
+    }
     if not EXIT_PARAMS.get(tf) or df is None or df.empty or len(df) < 20 or not c3_kpis:
-        return empty
+        return _empty_keys
 
-    lookback = _L12M_BARS.get(tf, 252)
-    start = max(0, len(df) - lookback)
-    events = compute_position_events(df, st, c3_kpis, c4_kpis, tf,
-                                     scan_start=start)
+    n = len(df)
+    l24m = _L24M_BARS.get(tf, 504)
+    l12m = _L12M_BARS.get(tf, 252)
+    start = max(0, n - l24m)
+    # BUG-PL1 fix: ret_pct is unweighted; _pnl_stats applies 1.5x for C4 trades.
+    events = compute_position_events(df, st, c3_kpis, c4_kpis, tf, scan_start=start)
 
-    closed = [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None]
-    if not closed:
-        return {"l12m_pnl": 0.0, "l12m_trades": 0, "l12m_hit_rate": None}
+    closed_24 = sorted(
+        [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None],
+        key=lambda e: e["entry_idx"],
+    )
+    closed_12 = [e for e in closed_24 if e["entry_idx"] >= n - l12m]
 
-    # BUG-PL1 fix: ret_pct is now unweighted; apply 1.5x for C4 trades here.
-    total_ret = sum(e["ret_pct"] * (1.5 if e.get("scaled") else 1.0) for e in closed)
-    wins = sum(1 for e in closed if e["ret_pct"] >= 0)
-    hr = (wins / len(closed)) * 100
-
+    s12 = _pnl_stats(closed_12)
+    s24 = _pnl_stats(closed_24)
     return {
-        "l12m_pnl": round(total_ret, 2),
-        "l12m_trades": len(closed),
-        "l12m_hit_rate": round(hr, 1),
+        "l12m_pnl": s12["pnl"],
+        "l12m_trades": s12["trades"],
+        "l12m_hit_rate": s12["hit_rate"],
+        "l12m_max_dd": s12["max_dd"],
+        "l24m_pnl": s24["pnl"],
+        "l24m_trades": s24["trades"],
+        "l24m_hit_rate": s24["hit_rate"],
+        "l24m_max_dd": s24["max_dd"],
     }
 
 
@@ -837,13 +909,15 @@ def compute_polarity_trailing_pnl(
     setup: dict,
     tf: str,
 ) -> dict:
-    """Trailing 12-month P&L for a polarity_combo strategy."""
-    empty = {"l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None}
+    """Trailing 12-month and 24-month P&L for a polarity_combo strategy."""
+    _empty_keys = {
+        "l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None, "l12m_max_dd": None,
+        "l24m_pnl": None, "l24m_trades": 0, "l24m_hit_rate": None, "l24m_max_dd": None,
+    }
 
     entry_tf = setup.get("entry_tf", tf)
-    exit_tf = setup.get("exit_tf", tf)
     if entry_tf != tf:
-        return empty
+        return _empty_keys
 
     # TF-specific combos take precedence over global combos
     combos_by_tf = setup.get("combos_by_tf", {})
@@ -864,10 +938,13 @@ def compute_polarity_trailing_pnl(
 
     # BUG-D1/D2 fix: use entry TF params and data (not exit_tf).
     if not EXIT_PARAMS.get(tf) or df is None or df.empty or len(df) < 20 or not c3_kpis:
-        return empty
+        return _empty_keys
 
-    lookback = _L12M_BARS.get(tf, 252)
-    start = max(0, len(df) - lookback)
+    n = len(df)
+    l24m = _L24M_BARS.get(tf, 504)
+    l12m = _L12M_BARS.get(tf, 252)
+    start = max(0, n - l24m)
+    # BUG-PL1 fix: ret_pct is unweighted; _pnl_stats applies 1.5x for C4 trades.
     events = compute_polarity_position_events(
         df, st, c3_kpis, c3_pols, c4_kpis, c4_pols, tf,
         exit_kpis=exit_kpis, exit_pols=exit_pols,
@@ -875,18 +952,23 @@ def compute_polarity_trailing_pnl(
         entry_gates=entry_gates,
     )
 
-    closed = [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None]
-    if not closed:
-        return {"l12m_pnl": 0.0, "l12m_trades": 0, "l12m_hit_rate": None}
+    closed_24 = sorted(
+        [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None],
+        key=lambda e: e["entry_idx"],
+    )
+    closed_12 = [e for e in closed_24 if e["entry_idx"] >= n - l12m]
 
-    # BUG-PL1 fix: ret_pct is unweighted; apply 1.5x for C4 trades here.
-    total_ret = sum(e["ret_pct"] * (1.5 if e.get("scaled") else 1.0) for e in closed)
-    wins = sum(1 for e in closed if e["ret_pct"] >= 0)
-    hr = (wins / len(closed)) * 100
+    s12 = _pnl_stats(closed_12)
+    s24 = _pnl_stats(closed_24)
     return {
-        "l12m_pnl": round(total_ret, 2),
-        "l12m_trades": len(closed),
-        "l12m_hit_rate": round(hr, 1),
+        "l12m_pnl": s12["pnl"],
+        "l12m_trades": s12["trades"],
+        "l12m_hit_rate": s12["hit_rate"],
+        "l12m_max_dd": s12["max_dd"],
+        "l24m_pnl": s24["pnl"],
+        "l24m_trades": s24["trades"],
+        "l24m_hit_rate": s24["hit_rate"],
+        "l24m_max_dd": s24["max_dd"],
     }
 
 
@@ -1116,13 +1198,18 @@ def compute_stoof_trailing_pnl(
     required_kpi: str | None = "MACD_BL",
     c4_kpi: str | None = "WT_MTF",
 ) -> dict:
-    """Trailing 12-month P&L for the Stoof strategy."""
-    empty = {"l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None}
+    """Trailing 12-month and 24-month P&L for the Stoof strategy."""
+    _empty_keys = {
+        "l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None, "l12m_max_dd": None,
+        "l24m_pnl": None, "l24m_trades": 0, "l24m_hit_rate": None, "l24m_max_dd": None,
+    }
     if not EXIT_PARAMS.get(tf) or df is None or df.empty or len(df) < 20 or not stoof_kpis:
-        return empty
+        return _empty_keys
 
-    lookback = _L12M_BARS.get(tf, 252)
-    start = max(0, len(df) - lookback)
+    n = len(df)
+    l24m = _L24M_BARS.get(tf, 504)
+    l12m = _L12M_BARS.get(tf, 252)
+    start = max(0, n - l24m)
     events = compute_stoof_position_events(
         df, st, stoof_kpis, threshold, tf,
         scan_start=start,
@@ -1133,18 +1220,23 @@ def compute_stoof_trailing_pnl(
         c4_kpi=c4_kpi,
     )
 
-    closed = [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None]
-    if not closed:
-        return {"l12m_pnl": 0.0, "l12m_trades": 0, "l12m_hit_rate": None}
+    closed_24 = sorted(
+        [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None],
+        key=lambda e: e["entry_idx"],
+    )
+    closed_12 = [e for e in closed_24 if e["entry_idx"] >= n - l12m]
 
-    # Apply 1.5x weight for C4-scaled trades (same convention as other strategies).
-    total_ret = sum(e["ret_pct"] * (1.5 if e.get("scaled") else 1.0) for e in closed)
-    wins = sum(1 for e in closed if e["ret_pct"] >= 0)
-    hr = (wins / len(closed)) * 100
+    s12 = _pnl_stats(closed_12)
+    s24 = _pnl_stats(closed_24)
     return {
-        "l12m_pnl": round(total_ret, 2),
-        "l12m_trades": len(closed),
-        "l12m_hit_rate": round(hr, 1),
+        "l12m_pnl": s12["pnl"],
+        "l12m_trades": s12["trades"],
+        "l12m_hit_rate": s12["hit_rate"],
+        "l12m_max_dd": s12["max_dd"],
+        "l24m_pnl": s24["pnl"],
+        "l24m_trades": s24["trades"],
+        "l24m_hit_rate": s24["hit_rate"],
+        "l24m_max_dd": s24["max_dd"],
     }
 
 
@@ -1336,6 +1428,6 @@ def compute_c3_states_by_strategy(
             result[skey] = entry
 
         except Exception as exc:
-            logger.debug("compute_c3_states_by_strategy failed for %s/%s: %s", skey, tf, exc)
+            _logger.debug("compute_c3_states_by_strategy failed for %s/%s: %s", skey, tf, exc)
 
     return result

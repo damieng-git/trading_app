@@ -11,7 +11,6 @@ Workflow (high level)
 For each symbol in `SYMBOLS`:
   - Resolve to a yfinance ticker (fast path for fully-qualified tickers like "KER.PA").
   - Download 1D candles (for 1D, and resample to 1W W-FRI).
-  - Download 1H candles (resample to 4H).
   - Compute all indicator columns per timeframe and write CSVs to `output_data/`.
 
 Then:
@@ -80,10 +79,7 @@ from apps.dashboard.templates import (
 from trading_dashboard.data.downloader import (
     download_daily_batch,
     download_daily_ohlcv,
-    download_hourly_batch,
-    download_hourly_ohlcv,
     maybe_load_tradingview_ohlcv,
-    resample_to_4h,
     resample_to_biweekly,
     resample_to_monthly,
     resample_to_weekly,
@@ -282,10 +278,6 @@ def _download_daily_ohlcv(ticker: str, start: str, end: Optional[str]) -> pd.Dat
     return download_daily_ohlcv(ticker, start, end)
 
 
-def _download_hourly_ohlcv(ticker: str, period: str = "729d") -> pd.DataFrame:
-    return download_hourly_ohlcv(ticker, period)
-
-
 def _resample_to_weekly(daily: pd.DataFrame, rule: str) -> pd.DataFrame:
     return resample_to_weekly(daily, rule)
 
@@ -296,10 +288,6 @@ def _resample_to_biweekly(daily: pd.DataFrame, rule: str = "2W-FRI") -> pd.DataF
 
 def _resample_to_monthly(daily: pd.DataFrame) -> pd.DataFrame:
     return resample_to_monthly(daily)
-
-
-def _resample_to_4h(hourly: pd.DataFrame) -> pd.DataFrame:
-    return resample_to_4h(hourly)
 
 
 _CONFIGS_DIR = Path(__file__).resolve().parent / "configs"
@@ -650,19 +638,17 @@ def run_stock_export(
             sym_to_ticker[sym] = ticker
             ticker_to_sym[ticker] = sym
 
-        # Batch download: daily + hourly in two calls (chunked internally)
+        # Batch download: daily candles only
         if on_progress:
             on_progress({"phase": "download", "label": "Downloading\u2026",
                          "detail": f"{len(yf_tickers)} symbols", "pct": 5})
         t_dl_start = time.time()
         daily_batch = download_daily_batch(yf_tickers, START_DATE, END_DATE)
-        hourly_batch = download_hourly_batch(yf_tickers)
         t_dl_end = time.time()
-        logger.info("  [timing] Batch download: %.1fs (%d daily, %d hourly)",
-                     t_dl_end - t_dl_start, len(daily_batch), len(hourly_batch))
+        logger.info("  [timing] Batch download: %.1fs (%d daily)", t_dl_end - t_dl_start, len(daily_batch))
         if on_progress:
             on_progress({"phase": "download_done", "label": "Download complete",
-                         "detail": f"{len(daily_batch)} daily, {len(hourly_batch)} hourly",
+                         "detail": f"{len(daily_batch)} daily",
                          "pct": 30})
 
         # Process each symbol: resample, merge incremental, enrich
@@ -675,9 +661,8 @@ def run_stock_export(
                 continue
 
             daily_1d = daily_batch.get(ticker, pd.DataFrame())
-            hourly_1h = hourly_batch.get(ticker, pd.DataFrame())
 
-            if daily_1d.empty and hourly_1h.empty:
+            if daily_1d.empty:
                 logger.warning("Skipping %s (no data in batch result)", sym)
                 continue
 
@@ -686,12 +671,11 @@ def run_stock_export(
                 _resample_to_weekly(daily_1d, WEEKLY_RULE) if not daily_1d.empty else pd.DataFrame()
             )
             weekly_source = "tradingview_csv" if (weekly_override is not None and not weekly_override.empty) else "yfinance_resample"
-            candles_4h = _resample_to_4h(hourly_1h) if not hourly_1h.empty else pd.DataFrame()
             biweekly_2w = _resample_to_biweekly(daily_1d) if not daily_1d.empty else pd.DataFrame()
             monthly_1m = _resample_to_monthly(daily_1d) if not daily_1d.empty else pd.DataFrame()
 
             tf_map_raw: dict[str, pd.DataFrame] = {}
-            for tf, raw_df in {"4H": candles_4h, "1D": daily_1d, "1W": weekly_1w, "2W": biweekly_2w, "1M": monthly_1m}.items():
+            for tf, raw_df in {"1D": daily_1d, "1W": weekly_1w, "2W": biweekly_2w, "1M": monthly_1m}.items():
                 if raw_df is not None and not raw_df.empty:
                     tf_map_raw[tf] = incremental.merge_new_bars(sym, tf, raw_df)
                 else:
@@ -862,11 +846,17 @@ def enrich_symbols(
     tickers: list[str],
     *,
     on_progress: "Callable[[dict], None] | None" = None,
+    update_screener: bool = True,
 ) -> dict:
     """Download, resample, enrich, and update screener for a batch of new tickers.
 
     Returns {"ok": True/False, "enriched": [...], "failed": [...], "total": N}.
     Much faster than a full rebuild — only processes the given tickers.
+
+    update_screener: if False, skip accumulating enriched data in memory and
+      skip the _rebuild_screener_json call.  Use this when enriching scan
+      candidates (parquets on disk are all that's needed); it dramatically
+      reduces peak memory when the candidate list is large (hundreds of symbols).
     """
     cfg = load_build_config()
     paths = resolve_paths(cfg)
@@ -920,7 +910,6 @@ def enrich_symbols(
                       "completed": 0, "total": total})
 
     daily_batch = download_daily_batch(yf_tickers, START_DATE, END_DATE)
-    hourly_batch = download_hourly_batch(yf_tickers)
 
     if on_progress:
         on_progress({"phase": "enrich", "label": "Enriching…", "pct": 40,
@@ -930,9 +919,8 @@ def enrich_symbols(
     for sym in list(sym_to_ticker.keys()):
         ticker = sym_to_ticker[sym]
         daily_1d = daily_batch.get(ticker, pd.DataFrame())
-        hourly_1h = hourly_batch.get(ticker, pd.DataFrame())
 
-        if daily_1d.empty and hourly_1h.empty:
+        if daily_1d.empty:
             logger.warning("No data for %s", sym)
             failed_syms.append(sym)
             done += 1
@@ -942,12 +930,11 @@ def enrich_symbols(
         weekly_1w = weekly_override if (weekly_override is not None and not weekly_override.empty) else (
             _resample_to_weekly(daily_1d, WEEKLY_RULE) if not daily_1d.empty else pd.DataFrame()
         )
-        candles_4h = _resample_to_4h(hourly_1h) if not hourly_1h.empty else pd.DataFrame()
         biweekly_2w = _resample_to_biweekly(daily_1d) if not daily_1d.empty else pd.DataFrame()
         monthly_1m = _resample_to_monthly(daily_1d) if not daily_1d.empty else pd.DataFrame()
 
         tf_map_raw: dict[str, pd.DataFrame] = {}
-        for tf, raw_df in {"4H": candles_4h, "1D": daily_1d, "1W": weekly_1w,
+        for tf, raw_df in {"1D": daily_1d, "1W": weekly_1w,
                             "2W": biweekly_2w, "1M": monthly_1m}.items():
             if raw_df is not None and not raw_df.empty:
                 tf_map_raw[tf] = incremental.merge_new_bars(sym, tf, raw_df)
@@ -980,7 +967,8 @@ def enrich_symbols(
                 logger.warning("Enrichment failed for %s/%s: %s", sym, tf, exc)
 
         if tf_map_enriched:
-            all_data[sym] = tf_map_enriched
+            if update_screener:
+                all_data[sym] = tf_map_enriched
             enriched_syms.append(sym)
         else:
             failed_syms.append(sym)
@@ -992,24 +980,25 @@ def enrich_symbols(
                           "detail": sym, "pct": pct,
                           "completed": done, "total": total})
 
-    if on_progress:
-        on_progress({"phase": "sector_map", "label": "Updating metadata…", "pct": 92,
-                      "completed": done, "total": total})
+    if update_screener:
+        if on_progress:
+            on_progress({"phase": "sector_map", "label": "Updating metadata…", "pct": 92,
+                          "completed": done, "total": total})
 
-    try:
-        from apps.dashboard.sector_map import fetch_sector_map
-        fetch_sector_map(enriched_syms, refresh_fundamentals=True)
-    except Exception as exc:
-        logger.warning("sector_map update failed: %s", exc)
+        try:
+            from apps.dashboard.sector_map import fetch_sector_map
+            fetch_sector_map(enriched_syms, refresh_fundamentals=True)
+        except Exception as exc:
+            logger.warning("sector_map update failed: %s", exc)
 
-    if on_progress:
-        on_progress({"phase": "screener", "label": "Updating screener…", "pct": 95,
-                      "completed": done, "total": total})
+        if on_progress:
+            on_progress({"phase": "screener", "label": "Updating screener…", "pct": 95,
+                          "completed": done, "total": total})
 
-    try:
-        _rebuild_screener_json(cfg, paths, all_data_override=all_data)
-    except Exception as exc:
-        logger.warning("Screener JSON update failed: %s", exc)
+        try:
+            _rebuild_screener_json(cfg, paths, all_data_override=all_data)
+        except Exception as exc:
+            logger.warning("Screener JSON update failed: %s", exc)
 
     return {"ok": len(enriched_syms) > 0, "enriched": enriched_syms,
             "failed": failed_syms, "total": total}
@@ -1290,16 +1279,6 @@ def run_refresh_dashboard(
                     out.append(mapped)
                 return out
 
-            pos_events = None
-            try:
-                from apps.dashboard.strategy import compute_position_events
-                if kpi_st and df_full is not None and not df_full.empty:
-                    raw_events = compute_position_events(
-                        df_full, kpi_st, c3_kpis, c4_kpis, tf)
-                    pos_events = _remap_events(raw_events)
-            except Exception as exc:
-                logger.warning("Position events failed for %s/%s: %s", sym, tf, exc)
-
             pos_events_by_strategy: dict[str, list[dict]] = {}
             try:
                 from apps.dashboard.strategy import compute_polarity_position_events
@@ -1391,7 +1370,6 @@ def run_refresh_dashboard(
                 sma200_ok=sma200_ok,
                 sma200_vals=sma200_vals,
                 sma20_vals=sma20_vals,
-                position_events=pos_events,
                 position_events_by_strategy=pos_events_by_strategy,
                 c3_states_by_strategy=c3_states,
             )
@@ -1785,7 +1763,7 @@ def main(argv: list[str] | None = None, _on_export_progress=None) -> int:
                         tf_meta = TIMEFRAME_REGISTRY.get(tf)
                         buf = tf_meta.enrich_buffer_bars if tf_meta else 300
                         bpy = tf_meta.bars_per_year if tf_meta else 252
-                        keep = int(bpy * _ENRICH_YEARS) + buf
+                        keep = max(int(bpy * _ENRICH_YEARS) + buf, tf_meta.min_enrich_bars if tf_meta else 0)
                         df_trim = df_cached.iloc[-keep:] if len(df_cached) > keep else df_cached
                         _enrich_tasks.append((sym, tf, df_trim, _enrichment_sector_map.get(sym), indicator_config_path))
                     except Exception:

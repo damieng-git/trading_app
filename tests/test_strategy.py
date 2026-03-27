@@ -63,7 +63,7 @@ class TestComputeAtr:
 
 class TestExitParams:
     def test_all_timeframes_present(self):
-        for tf in ("4H", "1D", "1W"):
+        for tf in ("1D", "1W"):
             assert tf in EXIT_PARAMS
             params = EXIT_PARAMS[tf]
             assert "T" in params and "M" in params and "K" in params

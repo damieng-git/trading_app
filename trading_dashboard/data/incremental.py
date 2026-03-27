@@ -109,16 +109,27 @@ class IncrementalUpdater:
         return combined
 
     def needs_update(self, symbol: str, tf: str, max_age_hours: float = 1.0) -> bool:
-        """Check if symbol/tf data is stale and needs refresh."""
+        """Check if symbol/tf data is stale.
+
+        Compares the last bar date against the most recent trading weekday
+        (Mon–Fri).  ``max_age_hours`` is accepted for API compatibility but
+        ignored — the bar-date comparison is always used.
+        """
         key = f"{symbol}|{tf}"
         entry = self._meta.get(key, {})
-        updated_at = entry.get("updated_at")
-        if not updated_at:
+        last_bar = entry.get("last_bar")
+        if not last_bar:
             return True
         try:
-            ts = pd.Timestamp(updated_at)
-            age_hours = (pd.Timestamp.now(tz="UTC") - ts).total_seconds() / 3600.0
-            return age_hours > max_age_hours
+            last_bar_date = pd.Timestamp(last_bar).date()
+            today = pd.Timestamp.now(tz="UTC").date()
+            # Most recent weekday on or before today
+            # weekday(): 0=Mon … 4=Fri, 5=Sat, 6=Sun
+            dow = today.weekday()
+            days_back = dow - 4 if dow > 4 else 0  # Sat→1, Sun→2, weekdays→0
+            import datetime as _dt
+            last_trading_day = today - _dt.timedelta(days=days_back)
+            return last_bar_date < last_trading_day
         except Exception:
             return True
 

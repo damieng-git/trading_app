@@ -4,6 +4,44 @@ This document covers all UX, strategy, and scan system changes made in the `clau
 
 ---
 
+## Playwright UI Test Suite (2026-03-26)
+
+**Files added:**
+- `tests/playwright/__init__.py`
+- `tests/playwright/conftest.py`
+- `tests/playwright/test_dashboard.py`
+- `tests/playwright/artifacts/` *(gitignored — screenshots, videos, traces saved here on failure)*
+
+**Purpose:** Automated browser-level smoke tests to catch regressions after code changes, without manual clicking.
+
+**Install:**
+```bash
+pip install playwright pytest-playwright
+playwright install chromium
+```
+
+**Run:**
+```bash
+# Against staging (default)
+pytest tests/playwright/ -v
+
+# Against a different URL
+pytest tests/playwright/ -v --base-url=http://localhost:8050
+```
+
+**What is tested (`test_dashboard.py`):**
+
+| Test class | What it checks |
+|---|---|
+| `TestDashboardLoads` | Page returns HTTP 200, title is set, no JS errors on load |
+| `TestTabsVisible` | All 6 nav tabs present; Charts tab active by default |
+| `TestSidebarAndSymbols` | Sidebar visible, `#symbolList` populates with at least 1 symbol |
+| `TestTabNavigation` | Clicking each tab produces no JS console errors |
+
+**Artifacts on failure:** Screenshot (PNG), trace (`.zip` viewable with `playwright show-trace`) and video are saved to `tests/playwright/artifacts/`.
+
+---
+
 ## 1. Screener: "All Strategies" filter
 
 **File:** `apps/dashboard/templates.py`, `apps/dashboard/static/dashboard_screener.js`
@@ -776,69 +814,215 @@ The Stoof score bar issue resolves automatically after a **Full Refresh** (rebui
 
 ---
 
-## 30. PLANNED: Single source of truth — strategy pipeline unification
+## 30. Single source of truth — strategy pipeline unification
 
-**Status:** Not yet implemented. Documented here for tracking.
+**Status:** Implemented 2026-03-17. Full build completed on staging (186 symbols × 5 TFs, 251s).
 
-### Problem
+### What was audited
 
-A full pipeline audit (March 2026) found that strategies do not follow a consistent data path from Python → asset → chart. Specific issues:
+A full pipeline audit found that strategies did not follow a consistent data path from Python → asset → chart:
 
-#### Issue A: "trend" is computed by two engines simultaneously
+- `compute_position_events()` (legacy bullish-only engine) ran in parallel with `compute_polarity_position_events()` for the "trend" strategy. Both wrote to the same asset — two sources of truth for the same strategy.
+- JS had a ~175-line client-side position-reconstruction fallback that hardcoded entry gates, ignoring per-strategy config (e.g. `dip_buy` disables all gates — JS fallback applied them anyway).
+- JS "all" mode had a separate ~103-line re-simulation block that also lacked per-strategy entry gate and `exit_combos` support.
+- Score bar weights were inconsistent: legacy path used `kpi_weights` from config; polarity and stoof strategies used equal weight (1 per KPI).
+- The "all" overlay mixed the legacy `position_events` field with `position_events_by_strategy`, meaning "trend" was double-represented.
 
-Every dashboard build runs **both**:
-- `compute_position_events()` — legacy engine, hardcoded bullish-only logic, hardcoded SMA/volume/overextension entry gates. Output stored in `position_events` (top-level asset field).
-- `compute_polarity_position_events()` — polarity-aware engine, configurable entry gates, configurable exit combos. Output stored in `position_events_by_strategy["trend"]`.
+Full details in `docs/strategy_pipeline_design.md` and `docs/strategy_audit.md`.
 
-JS picks between them depending on context. These two engines can produce different signals for the same symbol/TF.
+### Changes made
 
-#### Issue B: C3/C4 combo row has a JS fallback that only works for polarity strategies
+#### Python — `build_dashboard.py`
 
-When `c3_states_by_strategy` is absent from an asset (stale build):
-- Polarity strategies (trend/dip_buy/swing): fall back to JS `comboBool()` — combo row still renders.
-- Stoof: fallback is explicitly blocked (`if (!isStoof)`) — combo row silently disappears.
+Removed the `compute_position_events()` call (legacy bullish-only engine) from the build pipeline. `pos_events` variable eliminated. `position_events=` argument removed from `export_symbol_data_json()` call.
 
-The fallback is a second implementation of entry signal logic in JS. It cannot be configured per strategy and diverges from the Python engine over time.
+"Trend" is now fully handled by `compute_polarity_position_events()` via `strategy_setups`, the same path used by `dip_buy` and `swing`.
 
-#### Issue C: JS position-reconstruction fallback (lines ~1028–1107 in chart_builder.js)
+#### JSON asset schema
 
-When `position_events_by_strategy` is empty, JS reconstructs trade positions client-side. It hardcodes the legacy engine's entry gates and cannot reflect per-strategy config. This path is mostly dormant but still active and diverges silently.
+`position_events` (legacy flat field) is no longer written to any per-symbol asset. The canonical schema is now:
 
-#### Issue D: Score bar weights inconsistent across strategies
+```
+position_events_by_strategy: { dip_buy: [...], swing: [...], trend: [...], stoof: [...] }
+c3_states_by_strategy:        { dip_buy: {...}, swing: {...}, trend: {...}, stoof: {...} }
+```
 
-| Strategy | Weight rule |
-|---|---|
-| Legacy "trend" (fallback path) | Weighted by `kpi_weights` from config |
-| Polarity strategies (trend/dip_buy/swing) | Unweighted (all KPIs = 1) |
-| Stoof | Unweighted (all KPIs = 1) |
+Verified on AAPL/1D after the first post-change build: `position_events` absent, all 4 strategies present in both dicts, trade counts correct.
 
-#### Issue E: `position_events` legacy field is a second source of truth
+#### JS — `chart_builder.js` (position rendering)
 
-The asset contains both `position_events` (legacy "trend") and `position_events_by_strategy`. The legacy field is used for the "all" overlay and as fallback. Two representations of the same strategy exist in the same asset.
+Replaced the 3-branch legacy render logic with a clean 3-case dispatch:
 
-### Planned fix
+```javascript
+if (_useStratEvents) {
+  // Pre-computed events exist → render them
+  _pushEvents(_peByStrat[_activeStrat], _activeStrat);
+} else if (_useAllOverlay) {
+  // "all" mode → loop through position_events_by_strategy only (no legacy field)
+  for (const sk in _peByStrat) { _pushEvents(_peByStrat[sk], sk); }
+} else {
+  // Asset stale — no pre-computed events. Show toast, never reconstruct client-side.
+  if (typeof window._showStaleToast === "function") window._showStaleToast(_activeStrat);
+}
+```
 
-1. **Delete `compute_position_events()` from the build pipeline.** Fold "trend" fully into `compute_polarity_position_events()`. Stop writing `position_events` to the asset.
+Removed:
+- ~75-line client-side position-reconstruction fallback (single-strategy stale path)
+- ~103-line "all" mode re-simulation block (also stale path)
+- `data.position_events` reference in the "all" overlay branch
 
-2. **Delete the JS `comboBool()` fallback and position-reconstruction fallback.** All C3 states and position events must come from the asset. A missing or stale asset should surface a visible "rebuild required" message rather than silently computing something different.
+#### JS — `chart_builder.js` (score bar weights)
 
-3. **Align score bar weights.** Use unweighted (all KPIs = 1) for all strategies — consistent and transparent.
+```javascript
+// Before — inconsistent
+const w = (isStoof || isPolStrat) ? 1 : (kpiWeights[k] != null ? kpiWeights[k] : 1);
 
-4. **Clean up "all" overlay.** Source exclusively from `position_events_by_strategy`; remove any reference to the legacy `position_events` field.
+// After — uniform
+const w = kpiWeights[k] != null ? kpiWeights[k] : 1;
+```
 
-### Files that will change
+All strategies now use `kpi_weights` from `config.json`. The score bar reflects the same relative weighting whether the user is on Trend, Buy Dip, Swing, or Stoof.
 
-| File | Change |
-|---|---|
-| `apps/dashboard/build_dashboard.py` | Remove legacy `compute_position_events` call; remove `position_events` from export args |
-| `apps/dashboard/data_exporter.py` | Remove `position_events` parameter |
-| `apps/dashboard/strategy.py` | `compute_position_events` can be kept for reference but removed from build path |
-| `apps/dashboard/static/chart_builder.js` | Remove `comboBool` fallback; remove JS position-reconstruction fallback; fix "all" overlay to use `position_events_by_strategy` only; align score weights |
-| `apps/dashboard/screener_builder.py` | Verify legacy `trailing_pnl` is fully overridden by polarity path; remove legacy call if safe |
+#### Stale asset UX — `dashboard.js` + `dashboard.css`
+
+Added `window._showStaleToast(stratKey)`: a bottom-centre toast notification that appears when the active strategy has no pre-computed events in the loaded asset. Auto-dismisses after 7 seconds with fade-out.
+
+Message: *"Asset stale — no trade data for [strategy]. Click UI Refresh to rebuild."*
+
+CSS class `._stale-toast` / `._stale-toast--visible` added to `dashboard.css` using existing design tokens (`--warning`, `--panel`, `--radius`, `--shadow-overlay`).
+
+### Scaling impact
+
+With these changes, adding a new strategy requires:
+- `config.json` only — if the new strategy uses an existing `entry_type` (`polarity_combo` or `threshold`)
+- `strategy.py` + one dispatch line in `build_dashboard.py` — only if a new `entry_type` is introduced
+
+JS requires **zero changes** when adding any strategy. See `docs/strategy_pipeline_design.md` for the full logigram.
 
 ### Deployment note
 
-Requires a **Full Refresh** after changes land — all per-symbol assets must be rebuilt to drop the legacy `position_events` field and ensure `c3_states_by_strategy` + `position_events_by_strategy` are present for every strategy.
+Requires a **Full Refresh** after this change — all per-symbol assets must be rebuilt to drop the legacy `position_events` field. Assets built before this change will show the stale toast until rebuilt.
+
+---
+
+## 31. 1M/2W KPI data depth fix — `min_enrich_bars` + START_DATE extension
+
+**Status:** Implemented 2026-03-17.
+
+### Root cause
+
+Three KPIs were computing as -2 (STATE_NA / didn't compute) on the 1M timeframe for all symbols:
+`WT_LB_BL`, `Risk_Indicator`, `CCI_Chop_BB_v2`.
+
+Audit confirmed 16 KPIs affected on 1M; `CCI_Chop_BB_v2` and `Risk_Indicator` also incomplete on 2W.
+
+The refresh path in `build_dashboard.py` trimmed the enrichment window to:
+```
+keep = int(bars_per_year * _ENRICH_YEARS) + enrich_buffer_bars
+     = 12 * 2 + 15 = 39 bars   (1M)
+     = 26 * 2 + 30 = 82 bars   (2W)
+```
+
+Indicators that need more bars than the trim window simply get all-NaN output, which maps to STATE_NA (-2) in the KPI engine:
+
+| Indicator | Minimum bars needed | 1M kept | 2W kept |
+|---|---|---|---|
+| CCI_Chop_BB_v2 | 90 (cci_length) | 39 ✗ | 82 ✗ |
+| Risk_Indicator | 50 (sma_period) | 39 ✗ | 82 ✓ |
+| Ichimoku | 52 (chikou_span) | 39 ✗ | 82 ✓ |
+| WT_LB_BL | 42 (lookback_bars×2) | 39 ✗ | 82 ✓ |
+
+Additionally `START_DATE = "2018-01-01"` in `config_loader.py` meant only ~98 monthly bars were
+ever downloaded, further constraining the maximum available depth.
+
+### Changes made
+
+#### `apps/dashboard/config_loader.py`
+
+1. `START_DATE` extended from `"2018-01-01"` to `"2015-01-01"` (~133 monthly bars now available).
+
+2. `min_enrich_bars: int = 0` field added to `Timeframe` dataclass — a hard floor for the enrichment
+   window, applied regardless of `_ENRICH_YEARS`.
+
+3. `min_enrich_bars` set in TIMEFRAME_REGISTRY:
+   - `2W`: `min_enrich_bars=100` (CCI needs 90, adds headroom)
+   - `1M`: `min_enrich_bars=120` (CCI needs 90, adds headroom above 98-bar prior maximum)
+
+#### `apps/dashboard/build_dashboard.py`
+
+Refresh path trim updated to respect the floor:
+
+```python
+# Before
+keep = int(bpy * _ENRICH_YEARS) + buf
+
+# After
+keep = max(int(bpy * _ENRICH_YEARS) + buf, tf_meta.min_enrich_bars if tf_meta else 0)
+```
+
+1M result: `max(39, 120) = 120` bars fed to enrichment.
+2W result: `max(82, 100) = 100` bars fed to enrichment.
+
+### Expected outcome
+
+After the next full build (`python -m trading_dashboard dashboard build`):
+- All 16 KPIs that showed STATE_NA on 1M should compute correctly.
+- `CCI_Chop_BB_v2` and `Risk_Indicator` on 2W should also recover.
+- CVGI/1M stoof entry (March 2026) should appear once `WT_LB_BL`, `Risk_Indicator`, and `CCI_Chop_BB_v2` contribute their states to the score pool.
+
+**Note:** MA Ribbon uses SMA(200) — this will still require 200 bars and remains all-NaN on 1M (separate issue, out of scope).
+
+---
+
+## 32. Screener Action badge: config-driven strategy priority
+
+**Files:** `apps/dashboard/configs/config.json`, `apps/dashboard/static/dashboard_screener.js`
+
+**Problem:** `STRAT_PRIO` in `dashboard_screener.js` was a hardcoded 3-entry array `[dip_buy, swing, trend]`. Stoof was absent, so the Action column badge always showed "—" for stoof positions (even with `signal_action: "HOLD"`). Every new strategy required a manual JS edit.
+
+**Fix:**
+
+1. `config.json` — added `badge_prio` (int) and `badge_label` (str) to each strategy in `strategy_setups`:
+
+   | Strategy | `badge_prio` | `badge_label` |
+   |---|---|---|
+   | dip_buy | 1 | D |
+   | swing | 2 | S |
+   | trend | 3 | T |
+   | stoof | 4 | St |
+
+2. `dashboard_screener.js` — `STRAT_PRIO` is now built at init from `STRATEGY_SETUPS.setups`, filtered to entries with `badge_prio`, sorted ascending. `strat_any` filter now iterates `STRAT_PRIO` instead of a hardcoded key list.
+
+**Result:** AMN/1M shows `St·H6` badge in the Action column. Adding a future strategy to the badge = set `badge_prio` + `badge_label` in `config.json`. No JS changes required.
+
+**Trigger:** UI Refresh (rebuild-ui only — no data change).
+
+---
+
+## 33. TradingView data alignment — `auto_adjust=True` + `START_DATE` extension
+
+**Status:** Implemented 2026-03-23.
+
+### Problem
+
+Two systematic divergences from TradingView were identified:
+
+1. **`auto_adjust=False`** — yfinance returned raw unadjusted OHLCV. TradingView uses split/dividend-adjusted prices by default. All EMA/MACD-based indicators diverged for any stock with split or dividend history.
+
+2. **`START_DATE = "2015-01-01"`** — only ~10 years of daily history (~133 monthly bars). TradingView has full exchange history. This miscalibrated the Risk Indicator (`bar_index^0.395` scaling) and EMA warmup for long-period MAs on weekly/monthly timeframes.
+
+### Fix
+
+1. **`trading_dashboard/data/downloader.py`** — changed `auto_adjust=False` → `auto_adjust=True` at all 5 download call sites (`download_daily_ohlcv`, `download_hourly_ohlcv`, `download_daily_batch`, `download_hourly_batch`, `_probe_ticker`). With `auto_adjust=True`, yfinance applies split/dividend adjustments directly to the OHLCV columns; `Adj Close` becomes redundant and is excluded from the `keep` list.
+
+2. **`apps/screener/scan_strategy.py`** — same change at both download call sites in `_download_batch`.
+
+3. **`apps/dashboard/config_loader.py`** — `START_DATE` extended from `"2015-01-01"` to `"1993-01-01"`. Closes the `bar_index` gap for most US equities (post-1993 listings) and improves EMA warmup accuracy for 200-period MAs on monthly/weekly timeframes.
+
+### Side effects
+
+- All existing cached parquet files are stale (unadjusted prices, truncated history). A **full re-download is required**: `python -m trading_dashboard dashboard build`.
+- `Adj Close` column will no longer be present in downloaded DataFrames (was redundant once adjusted). No code reads `df["Adj Close"]` downstream — guarded by the `if c in df.columns` keep-list pattern.
 
 ---
 
@@ -849,19 +1033,167 @@ Requires a **Full Refresh** after changes land — all per-symbol assets must be
 | `apps/dashboard/templates.py` | Screener All filter, sidebar group selector, #indicatorDimTabs, #strategyDef, strat_any All btn §17, scanPassStats §19, nav tab reorder + emoji §21 |
 | `apps/dashboard/static/dashboard.js` | Dim tabs, grouped chip layout, yellow ring, dimming, badge, strategy def bar |
 | `apps/dashboard/static/dashboard.css` | dim-tab styles, dim-grouped column layout, chip.on yellow ring, has-selection dimming, scan-pass-stats §19 |
-| `apps/dashboard/static/dashboard_screener.js` | strat_any filter logic |
+| `apps/dashboard/static/dashboard_screener.js` | strat_any filter logic; STRAT_PRIO config-driven §32 |
 | `apps/dashboard/static/dashboard_scan.js` | _renderScanStats, date_added column §19 |
 | `apps/dashboard/static/chart_builder.js` | Stoof C3/C4 heatmap rows, threshold line fix, Entry C3/C4 labels; stoof score inflation fix §27; server-driven C3/C4 rendering §28; suppress score bar for "all" strategy §29 |
 | `apps/dashboard/configs/lists/scan_list.csv` | Migrated to ticker,date_added format §19 |
 | `apps/dashboard/configs/lists/` | damien.csv added, old CSVs removed |
-| `apps/dashboard/configs/config.json` | Group references updated, stoof description updated |
+| `apps/dashboard/configs/config.json` | Group references updated, stoof description updated; badge_prio + badge_label added §32 |
 | `trading_dashboard/symbols/manager.py` | _EXCLUSIVE_GROUPS: portfolio→damien |
 | `apps/screener/scan_strategy.py` | Full scan rewrite: stoof, BUG-11/13, 4H guard, CLI §7; pre-scan refresh, open-pos filter §12; date_added, all-strategy filter, raw/filtered counts §19; TTL-gated Phase 1, pct regression fix §22; All TFs union write + log baseline fix §23; hybrid download + bar-depth fix §24; standalone 1W/1M bar-depth fix §25 |
 | `apps/screener/scan_enrichment.py` | MACD_BL lean computation, check_quality_gates_raw |
 | `apps/dashboard/screener_builder.py` | scan_date_map parameter, scan_date_added in rows §19 |
-| `apps/dashboard/build_dashboard.py` | Pass scan_date_map to build_screener_rows at both call sites §19; compute_c3_states_by_strategy call §28 |
+| `apps/dashboard/build_dashboard.py` | Pass scan_date_map to build_screener_rows at both call sites §19; compute_c3_states_by_strategy call §28; remove legacy compute_position_events call §30; min_enrich_bars floor in refresh trim §31 |
 | `apps/dashboard/data_exporter.py` | c3_states_by_strategy field §28 |
 | `apps/dashboard/strategy.py` | Stoof exit: MACD_BL red or any 1 KPI red §18; compute_c3_states_by_strategy §28 |
-| `apps/dashboard/static/dashboard.js` | Dropdown selector, Clear button, LS key bump v1_3 §9-10; scan progress close button always visible §26 |
-| `apps/dashboard/static/dashboard.css` (§9-10, §13) | Dropdown styles, chart height, sidebar group selector, removed chip/dim-tab CSS |
+| `apps/dashboard/static/dashboard.js` | Dropdown selector, Clear button, LS key bump v1_3 §9-10; scan progress close button always visible §26; _showStaleToast() §30 |
+| `apps/dashboard/static/dashboard.css` (§9-10, §13) | Dropdown styles, chart height, sidebar group selector, removed chip/dim-tab CSS; ._stale-toast styles §30 |
+| `apps/dashboard/static/chart_builder.js` | Stoof C3/C4 heatmap rows §4; Entry C3/C4 labels §16; stoof score inflation fix §27; server-driven C3/C4 rendering §28; suppress score bar for "all" §29; remove legacy fallback blocks, uniform score weights §30 |
 | `apps/dashboard/templates.py` (§9-10, §13-15) | #indicatorDropdowns, oscillator open, sidebar group selector, Stock List removed from topbar |
+| `apps/dashboard/config_loader.py` | START_DATE extended to 2015-01-01; min_enrich_bars field + 2W/1M values §31; START_DATE extended to 1993-01-01 §33 |
+| `trading_dashboard/data/downloader.py` | auto_adjust=True (all download sites) §33 |
+| `apps/screener/scan_strategy.py` | auto_adjust=True §33; _MAX_WORKERS 1→4 (Phase 1 C4) §34 |
+| `apps/dashboard/strategy.py` | _logger + silent-except fix (A3); _L24M_BARS; _pnl_stats helper; l24m + max_dd fields in all 3 trailing-pnl functions (D2/D3) §34 |
+| `apps/dashboard/screener_builder.py` | conviction_score field (D4); l24m_*/max_dd propagated to strat_statuses and screener row (D2/D3) §34 |
+| `trading_dashboard/cli.py` | Replaced hardcoded relative paths with config_loader.CONFIG_JSON/LISTS_DIR constants (E3) §34 |
+| `apps/dashboard/serve_dashboard.py` | SSE CORS headers use CORS_ORIGIN env var instead of hardcoded * (E7) §34 |
+| `deploy/trading-dashboard-test-scan.{service,timer}` | Systemd oneshot + timer for daily EOD scan at 15:55 (D1) §34 |
+
+---
+
+## § 34 — Phase 1 Audit Fixes (2026-03-23)
+
+Implementation of Phase 1 items from the comprehensive dashboard audit.
+
+**What was already done (no action needed):**
+
+| Item | Status |
+|------|--------|
+| A1 — ATR NaN stop-loss guard | Already in `strategy.py` (`not np.isnan(atr_val) and atr_val > 0`) |
+| A2 — OHLCV schema guard at enrichment entry | Already in `enrichment.py:150-153` |
+| A4 — Stronger enrichment skip hash | Already uses n/20 sampled Close values in `store.py` |
+| B1 — Consolidate exit_params | Already done: `strategy.py` uses `CONFIG_JSON` from `config_loader` |
+| B2 — Remove screener payload from HTML shell | Already done: `const SCREENER = {}` in `templates.py` |
+| C1 — SSE event log bounded deque | Already `deque(maxlen=1000)` in `serve_dashboard.py` |
+| C2 — LRU cache eviction | Already custom `_evict_if_full()` in `_Caches` class |
+| C3 — ProcessPool use cpu_count | Already `min(os.cpu_count() or 4, len(tasks))` in `build_dashboard.py` |
+| E1 — SymbolManager thread lock | Already `self._lock = threading.Lock()` in `manager.py` |
+
+**Implemented:**
+
+### C4 — Scan workers 1 → 4
+`apps/screener/scan_strategy.py`: `_MAX_WORKERS = 1` → `_MAX_WORKERS = 4`. Parallel batch downloads during lean scan; ~2× scan throughput.
+
+### A3 — Silent exception in `_load_exit_params`
+`apps/dashboard/strategy.py`: Added `import logging` / `_logger`; `except Exception: pass` → `except Exception as exc: _logger.warning(...)`.
+
+### D2 + D3 — L24M P&L + max drawdown
+`apps/dashboard/strategy.py`:
+- Added `_L24M_BARS` (doubles `_L12M_BARS` per timeframe).
+- Added `_pnl_stats(closed)` helper: computes pnl/trades/hit_rate/max_dd from a closed-trade list. Max drawdown is peak-to-trough on the cumulative return series.
+- Refactored `compute_trailing_pnl`, `compute_polarity_trailing_pnl`, `compute_stoof_trailing_pnl`: each now runs the engine from the 24M start (instead of 12M), derives l12m stats by filtering `entry_idx >= n - l12m_bars`, and returns 8 keys: `l12m_pnl/trades/hit_rate/max_dd` + `l24m_pnl/trades/hit_rate/max_dd`.
+
+`apps/dashboard/screener_builder.py`:
+- Both `strat_statuses` blocks (polarity_combo + threshold) now include the 4 new l24m/max_dd keys.
+- BUG-PL4 `trailing_pnl` override propagates the new keys from `strat_statuses["trend"]`.
+- Screener row dict now includes `l12m_max_dd`, `l24m_pnl`, `l24m_trades`, `l24m_hit_rate`, `l24m_max_dd`.
+
+### D4 — Conviction score
+`apps/dashboard/screener_builder.py`: After `kpi_states` is populated, computes `conviction_score = sum(1 for v in kpi_states.values() if v == 1)` (count of all currently-bullish KPIs, both trend and breakout). Included in every screener row.
+
+### E3 — cli.py absolute path fix
+`trading_dashboard/cli.py`: Replaced `Path("apps/dashboard/configs/...")` relative path constants with `from apps.dashboard.config_loader import CONFIG_JSON as _DEFAULT_CONFIG, LISTS_DIR as _DEFAULT_LISTS_DIR`. CLI now works correctly regardless of CWD.
+
+### E7 — CORS on SSE endpoints
+`apps/dashboard/serve_dashboard.py`: Four SSE endpoints (scan, refresh, rebuild-ui, stale-check) previously sent `Access-Control-Allow-Origin: *` unconditionally. Now use `os.environ.get("CORS_ORIGIN", "*")` — consistent with the existing non-SSE `_send()` helper. Set `CORS_ORIGIN=https://yourdomain.com` in the systemd unit to restrict.
+
+### D1 — Scheduled EOD scan + Telegram alert
+`deploy/trading-dashboard-test-scan.service` + `.timer`: Systemd oneshot service that runs the lean scan (`--strategy all --cached --no-dashboard`) then fires `alert_notifier.py`. Timer fires Mon–Fri at 15:55 with `Persistent=true`.
+
+**To install the EOD scan timer on the server:**
+```bash
+cp deploy/trading-dashboard-test-scan.{service,timer} /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now trading-dashboard-test-scan.timer
+systemctl list-timers | grep scan   # verify next fire time
+```
+
+Ensure `apps/dashboard/configs/alerts_config.json` has `"telegram": {"enabled": true, "bot_token": "...", "chat_id": "..."}` before enabling.
+
+---
+
+## 36. Remove 4H timeframe (2026-03-23)
+
+**Status:** Implemented 2026-03-23.
+
+### Motivation
+
+4H was the only timeframe requiring hourly yfinance data (1H candles resampled to 4H). This added a full hourly download phase to every build (+50% download time) and ~2–4 GB of enriched parquet storage per full build cycle. The only active use of 4H was as an optional C4 scale-up signal in the Trend strategy — never a gate for C3 entries. After §35 removed the 4H MACD dependency from WT_MTF, no strategy logic required 4H.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `trading_dashboard/data/downloader.py` | Removed `download_hourly_ohlcv`, `download_hourly_batch`, `resample_to_4h`. Updated module docstring. |
+| `apps/dashboard/build_dashboard.py` | Removed hourly download imports, `_download_hourly_ohlcv`/`_resample_to_4h` wrappers, `hourly_batch` download call, `candles_4h` resampling, `skip_hourly` parameter from `enrich_symbols`. Both tf_map_raw dicts now have 4 TFs: 1D/1W/2W/1M. |
+| `trading_dashboard/data/enrichment.py` | Removed 4H-specific NWE window cap (250-bar limit). |
+| `apps/dashboard/config_loader.py` | Removed `"4H"` from `DEFAULT_TIMEFRAMES`, `VALID_TIMEFRAMES`, `TIMEFRAME_REGISTRY`. |
+| `apps/dashboard/configs/config.json` | Removed `"4H"` from `timeframes`, `max_plot_bars_per_tf`, `combo_kpis_by_tf`, `exit_params`, and `strategy_setups.trend.combos_by_tf`. |
+| `apps/dashboard/strategy.py` | Removed `"4H"` from `_L12M_BARS`, `_L24M_BARS`, `_STATUS_SCAN_BARS`. |
+| `apps/screener/scan_strategy.py` | Removed `"4H"` from `_TF_DOWNLOAD_DAYS`, `_TF_INTERVAL`. Removed `_resample_to_4h` function. Removed 4H exclusion guard in `run_scan`. Removed `skip_hourly` parameter from `_enrich_new_symbols`. Updated CLI help. |
+| `apps/dashboard/static/chart_builder.js` | Removed `"4H"` from both `_EP` fallback dicts, `_tfDays`, `padMs`, `_displayBars`. Updated default `padMs` fallback from `900000` to `86400000` (1D). |
+| `apps/dashboard/static/dashboard.js` | Updated keyboard shortcut `tfMap`: was `{1→4H, 2→1D, 3→1W, 4→2W, 5→1M}`, now `{1→1D, 2→1W, 3→2W, 4→1M}`. |
+| `apps/dashboard/static/dashboard_pnl.js` | Removed `"4H"` from `allTFs` fallback. |
+| `apps/dashboard/static/dashboard.css` | Removed `.df-step-4h` and `.df-step-4h .df-step-num` rules. |
+| `apps/dashboard/templates.py` | Removed hourly/4H mention from docstring. |
+| `tests/test_config_loader.py` | Updated timeframe assertions to `("1D", "1W")`. |
+| `tests/test_data_pipeline.py` | Removed `"4H"` from `load_all_enriched` test call. |
+| `tests/test_strategy.py` | Updated exit params assertion to `("1D", "1W")`. |
+| `CLAUDE.md` | Updated timeframes description: 5 → 4 timeframes. |
+
+### Side effects
+
+- All existing `*_4H.parquet` and `*_4H_raw.csv` cache files are now orphaned. **Deleted 2026-03-23** (1,775 files removed).
+- Keyboard shortcuts 1–4 (not 1–5) now switch timeframes.
+- Full rebuild required to regenerate dashboard assets without 4H tabs.
+
+### Sanity check (2026-03-23)
+
+- `ruff check` — 0 new errors introduced. Pre-existing `logger` → `_logger` typo in `strategy.py:1431` fixed as part of this check.
+- `pytest tests/ -q` — **121/121 passed**. One pre-existing test failure (`test_needs_update`) fixed: `IncrementalUpdater.needs_update` had been changed to bar-date comparison in a prior session but the test still asserted `max_age_hours` semantics — updated to merge a today-dated bar before asserting freshness.
+
+---
+
+## 35. WT_MTF cross-timeframe reference: 4H → 1D
+
+**Status:** Implemented 2026-03-23.
+
+**File:** `trading_dashboard/data/enrichment.py`
+
+### Problem
+
+`_MTF_PAIRS` used 4H as the fast MACD reference for all slower timeframes (1D, 1W, 2W, 1M). This created a hard dependency on the hourly download pipeline solely for WT_MTF signal quality. The dependency was disproportionate given that WT_MTF is only used as the **optional C4 scale-up confirmation** in the Stoof strategy (active on 2W and 1M only) — it never gates a C3 entry.
+
+### Fix
+
+`_MTF_PAIRS` updated to use 1D as the fast reference:
+
+```python
+# Before
+_MTF_PAIRS = {"1M": "4H", "2W": "4H", "1W": "4H", "1D": "4H"}
+
+# After
+_MTF_PAIRS = {"1M": "1D", "2W": "1D", "1W": "1D"}
+```
+
+- 1W, 2W, 1M now use 1D Close prices for the cross-timeframe MACD component.
+- 1D is removed from `_MTF_PAIRS` — it uses its own same-timeframe MACD (computed during enrichment), which is the correct fallback.
+- The `apply_mtf_overlay()` docstring updated to reflect the new reference timeframe.
+
+### Stoof strategy impact
+
+Stoof runs on 2W and 1M. WT_MTF on both timeframes now uses 1D MACD as the fast input instead of 4H. C4 scale-up behaviour is unchanged in structure — WT_MTF remains an optional confirmation, never a blocker.
+
+### Single source of truth
+
+`_MTF_PAIRS` in `enrichment.py` is the sole definition of which timeframe is used as the fast MACD reference. No other file defines or overrides this mapping. Config.json stoof description does not reference a specific fast timeframe and required no change.

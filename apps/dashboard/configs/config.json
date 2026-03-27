@@ -1,14 +1,12 @@
 {
   "symbols": [],
   "timeframes": [
-    "4H",
     "1D",
     "1W",
     "2W",
     "1M"
   ],
   "max_plot_bars_per_tf": {
-    "4H": 5000,
     "1D": 600,
     "1W": 140,
     "2W": 70,
@@ -63,19 +61,6 @@
     "cRSI"
   ],
   "combo_kpis_by_tf": {
-    "4H": {
-      "combo_3": [
-        "Nadaraya-Watson Smoother",
-        "DEMA",
-        "Stoch_MTM"
-      ],
-      "combo_4": [
-        "Nadaraya-Watson Smoother",
-        "Madrid Ribbon",
-        "GK Trend Ribbon",
-        "cRSI"
-      ]
-    },
     "1D": {
       "combo_3": [
         "Nadaraya-Watson Smoother",
@@ -130,11 +115,6 @@
     }
   },
   "exit_params": {
-    "4H": {
-      "T": 4,
-      "M": 48,
-      "K": 4.0
-    },
     "1D": {
       "T": 4,
       "M": 40,
@@ -159,19 +139,22 @@
   "strategy_setups": {
     "dip_buy": {
       "label": "Buy Dip",
+      "badge_label": "D",
+      "badge_prio": 1,
       "entry_type": "polarity_combo",
       "description": "1D dip-buy: entry on oversold KPIs, exits via dedicated exit_combos (~2 week hold). entry_tf/exit_tf are both 1D — the engine always runs on entry-TF data and params.",
-      "scan_filters": {
-        "sma20_gt_sma200": false,
-        "volume_spike": false,
-        "sr_break": false
-      },
       "entry_tf": "1D",
       "exit_tf": "1D",
       "entry_gates": {
         "sma20_gt_sma200": false,
         "volume_spike": false,
-        "overextension": false
+        "sr_break": false,
+        "overextension": false,
+        "mansfield_rs_positive": false,
+        "overext_pct": 15.0,
+        "overext_lookback": 5,
+        "vol_spike_mult": 1.5,
+        "vol_spike_lookback": 5
       },
       "color": "#facc15",
       "combos": {
@@ -191,19 +174,22 @@
     },
     "swing": {
       "label": "Swing Trading",
+      "badge_label": "S",
+      "badge_prio": 2,
       "entry_type": "polarity_combo",
       "description": "1W swing trading with momentum confirmation (4-7 week hold)",
-      "scan_filters": {
-        "sma20_gt_sma200": true,
-        "volume_spike": true,
-        "sr_break": true
-      },
       "entry_tf": "1W",
       "exit_tf": "1W",
       "entry_gates": {
-        "sma20_gt_sma200": false,
-        "volume_spike": false,
-        "overextension": false
+        "sma20_gt_sma200": true,
+        "volume_spike": true,
+        "sr_break": true,
+        "overextension": false,
+        "mansfield_rs_positive": false,
+        "overext_pct": 15.0,
+        "overext_lookback": 5,
+        "vol_spike_mult": 1.5,
+        "vol_spike_lookback": 5
       },
       "color": "#60a5fa",
       "combos": {
@@ -219,12 +205,20 @@
     },
     "trend": {
       "label": "Trend",
+      "badge_label": "T",
+      "badge_prio": 3,
       "entry_type": "polarity_combo",
       "description": "Multi-TF trend-following strategy using v6 combos per timeframe",
-      "scan_filters": {
+      "entry_gates": {
         "sma20_gt_sma200": true,
         "volume_spike": true,
-        "sr_break": true
+        "sr_break": true,
+        "overextension": false,
+        "mansfield_rs_positive": false,
+        "overext_pct": 15.0,
+        "overext_lookback": 5,
+        "vol_spike_mult": 1.5,
+        "vol_spike_lookback": 5
       },
       "color": "#c084fc",
       "combos": {
@@ -238,16 +232,6 @@
         }
       },
       "combos_by_tf": {
-        "4H": {
-          "c3": {
-            "kpis": ["Nadaraya-Watson Smoother", "DEMA", "Stoch_MTM"],
-            "pols": [1, 1, 1]
-          },
-          "c4": {
-            "kpis": ["Nadaraya-Watson Smoother", "Madrid Ribbon", "GK Trend Ribbon", "cRSI"],
-            "pols": [1, 1, 1, 1]
-          }
-        },
         "1D": {
           "c3": {
             "kpis": ["Nadaraya-Watson Smoother", "Madrid Ribbon", "Volume + MA20"],
@@ -292,6 +276,8 @@
     },
     "stoof": {
       "label": "Stoof",
+      "badge_label": "St",
+      "badge_prio": 4,
       "entry_type": "threshold",
       "required_kpi": "MACD_BL",
       "c4_kpi": "WT_MTF",
@@ -303,7 +289,17 @@
       "atr_tf": "1W",
       "color": "#fb923c",
       "description": "Band Light: C3 entry = MACD_BL green + 5/9 score KPIs green (onset). C4 scale-up (1.5x) = C3 + WT_MTF green. Score pool: 9 KPIs incl. LuxAlgo v1+v2 (duplicate). Active on 2W and 1M. Exit: MACD_BL turns red OR any 1 score KPI turns red (score < 5). Stop: 3×ATR14(1W).",
-      "scan_filters": {}
+      "entry_gates": {
+        "sma20_gt_sma200": false,
+        "volume_spike": false,
+        "sr_break": false,
+        "overextension": false,
+        "mansfield_rs_positive": false,
+        "overext_pct": 15.0,
+        "overext_lookback": 5,
+        "vol_spike_mult": 1.5,
+        "vol_spike_lookback": 5
+      }
     }
   }
 }
