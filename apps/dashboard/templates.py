@@ -824,7 +824,7 @@ def write_lazy_dashboard_shell_html(
         <span class="filter-label">Strategy:</span>
         <div class="btn" data-filter="strat_any" title="Any strategy with an active ENTRY or HOLD signal">All</div>
         <div class="btn" data-filter="strat_dip" title="Dip Buy entry signal active (D badge)">Dip Buy</div>
-        <div class="btn" data-filter="strat_arch_a" title="Architecture A pullback entry or hold (A badge)">Arch A</div>
+        <div class="btn" data-filter="strat_arch_a" title="Pullback -A entry or hold (A badge)">Pullback -A</div>
         <div class="btn" data-filter="strat_trend" title="Trend Position entry or hold (T badge)">Trend</div>
         <div class="btn" data-filter="strat_stoof" title="Stoof entry or hold active on 2W or 1M">Stoof</div>
       </div>

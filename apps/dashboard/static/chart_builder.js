@@ -816,7 +816,7 @@
     const scoreSlice = isPolStrat ? polStratSlice
       : (isStoof ? stoofSlice : trend);
     const scoreLabel = isPolStrat ? (_activeDef.label || _activeStrat) + " Score"
-      : (isStoof ? "StoofScore" : isArchA ? "ArchAScore" : "TrendScore");
+      : (isStoof ? "StoofScore" : isArchA ? "Pullback-AScore" : "TrendScore");
 
     // Build polarity map for polarity strategies: KPI name → expected polarity
     // Bug-C fix: prefer TF-specific combos (combos_by_tf) over flat combos, mirroring entry logic.
@@ -1435,7 +1435,7 @@
       { text: "Oscillators", xref: "paper", yref: "paper", x: 0.5, y: r3Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: scoreLabel, xref: "paper", yref: "paper", x: 0.5, y: r4Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
-      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isArchA ? "Arch A" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
+      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isArchA ? "Pullback -A" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
     ];
     if (comboLabels.length) {
       subplotTitles.push({ text: "Combos", xref: "paper", yref: "paper", x: 0.5, y: rCTop, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" });

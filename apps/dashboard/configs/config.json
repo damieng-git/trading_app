@@ -199,7 +199,7 @@
       }
     },
     "arch_a": {
-      "label": "Architecture A",
+      "label": "Pullback -A",
       "badge_label": "A",
       "badge_prio": 2,
       "entry_type": "arch_a",
