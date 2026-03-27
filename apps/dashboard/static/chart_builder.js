@@ -712,6 +712,8 @@
     const _activeStrat = (typeof window.currentStrategy === "string") ? window.currentStrategy : "trend";
     const stoofKpiNames = strategyKpis["stoof"] || [];
     const stoofSlice = kpiSlice(stoofKpiNames);
+    const archAKpiNames = strategyKpis["arch_a"] || [];
+    const archASlice = kpiSlice(archAKpiNames);
 
     let combo3kpis = data.combo_3_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "Volume + MA20"];
     let combo4kpis = data.combo_4_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "GK Trend Ribbon", "cRSI"];
@@ -771,7 +773,8 @@
       ? (strategyKpis[_activeStrat] || []) : null;
     const activeStratKpiNames = _polStratKpiNames
       ? _polStratKpiNames
-      : (_activeStrat === "stoof" ? stoofKpiNames : null);
+      : (_activeStrat === "stoof" ? stoofKpiNames
+        : (_activeStrat === "arch_a" ? archAKpiNames : null));
     const _brkFilteredRaw = activeStratKpiNames
       ? kpisBreakout.filter(bk => {
           const base = bk.startsWith("BO_") ? bk.slice(3) : bk;
@@ -780,7 +783,8 @@
       : kpisBreakout.slice();
     const _heatmapOrder = _polStratKpiNames
       ? _polStratKpiNames
-      : (_activeStrat === "stoof" ? stoofKpiNames : kpisTrend);
+      : (_activeStrat === "stoof" ? stoofKpiNames
+        : (_activeStrat === "arch_a" ? archAKpiNames : kpisTrend));
     const _heatmapIdx = {};
     _heatmapOrder.forEach((k, i) => { _heatmapIdx[k] = i; });
     _brkFilteredRaw.sort((a, b) => {
@@ -814,7 +818,7 @@
     const isPolStrat = !!_polStratKpiNames;
     const polStratSlice = isPolStrat ? kpiSlice(_polStratKpiNames) : null;
     const scoreSlice = isPolStrat ? polStratSlice
-      : (isStoof ? stoofSlice : trend);
+      : (isStoof ? stoofSlice : (isArchA ? archASlice : trend));
     const scoreLabel = isPolStrat ? (_activeDef.label || _activeStrat) + " Score"
       : (isStoof ? "StoofScore" : isArchA ? "Pullback-AScore" : "TrendScore");
 
@@ -864,7 +868,7 @@
       }
 
       const tsMax = Math.max(...tsValues.map(Math.abs), 1);
-      tsPad = (isStoof || isPolStrat) ? Math.max(scoreSlice.kk.length + 1, 5) : Math.max(tsMax * 1.1, 1);
+      tsPad = (isStoof || isPolStrat || isArchA) ? Math.max(scoreSlice.kk.length + 1, 5) : Math.max(tsMax * 1.1, 1);
 
       // C3/C4 active arrays: use server-computed states (single source of truth).
       // strategy.py is the only place where entry logic lives — the chart just renders it.
@@ -884,7 +888,7 @@
 
     // KPI Trend Heatmap (row 6) — uses scoreSlice when strategy is active
     const heatmapSlice = isPolStrat ? polStratSlice
-      : (isStoof ? stoofSlice : trend);
+      : (isStoof ? stoofSlice : (isArchA ? archASlice : trend));
     const trLabels = [];
     if (heatmapSlice.kk.length) {
       const trZ = heatmapSlice.zz.slice();
