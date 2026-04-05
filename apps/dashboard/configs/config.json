@@ -210,6 +210,7 @@
       ],
       "atr_multiplier": 2.5,
       "color": "#34d399",
+      "ribbon_label": "Regime: G1 (SMA50W\u003e200W) \u00b7 G2 (RSI14\u003c50) \u00b7 \u00acG5 (CE)",
       "entry_gates": {
         "sma20_gt_sma200": false,
         "volume_spike": false,

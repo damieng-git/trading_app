@@ -1524,6 +1524,141 @@ def compute_stoof_position_status(
 
 
 # ---------------------------------------------------------------------------
+# Architecture A (Pullback-A) — screener-facing wrappers
+# ---------------------------------------------------------------------------
+
+def compute_arch_a_position_status(
+    df: pd.DataFrame,
+    tf: str,
+    *,
+    weekly_df: "pd.DataFrame | None" = None,
+    K: float = 2.5,
+) -> dict:
+    """Derive current screener-facing position status for the Pullback-A strategy.
+
+    Wraps compute_arch_a_position_events with a TF-aware scan window so the
+    screener correctly reports signal_action, entry_price, atr_stop, and
+    bars_held — matching what the chart renders.
+
+    Args:
+        df:        Daily or weekly OHLCV + indicator DataFrame for the symbol.
+        tf:        Timeframe string ("1D" or "1W"). Returns flat for all others.
+        weekly_df: Weekly DataFrame required for Gate 1 when tf == "1D".
+                   Pass None when tf == "1W" (df is already weekly).
+        K:         ATR multiplier for the backstop (default 2.5).
+
+    Returns dict with keys: signal_action, entry_bar_idx, entry_price, atr_stop,
+    bars_held, combo_bars, exit_stage, bearish_kpis, c4_scaled,
+    last_exit_bars_ago, last_exit_reason.
+    """
+    flat_result = {
+        "signal_action": "FLAT", "entry_bar_idx": None, "entry_price": None,
+        "atr_stop": None, "bars_held": None, "combo_bars": None,
+        "exit_stage": None, "bearish_kpis": 0, "c4_scaled": False,
+        "last_exit_bars_ago": None, "last_exit_reason": None,
+    }
+    params = EXIT_PARAMS.get(tf)
+    if not params or df is None or df.empty or len(df) < 30:
+        return flat_result
+    if not {"High", "Low", "Close", "Open"}.issubset(df.columns):
+        return flat_result
+
+    n = len(df)
+    scan_start = max(0, n - _STATUS_SCAN_BARS.get(tf, 1500))
+    events = compute_arch_a_position_events(
+        df, tf, weekly_df=weekly_df, K=K, scan_start=scan_start,
+    )
+
+    if not events or events[-1]["exit_reason"] != "Open":
+        result = dict(flat_result)
+        if events:
+            last = events[-1]
+            result["last_exit_bars_ago"] = (n - 1) - last["exit_idx"]
+            result["last_exit_reason"] = last["exit_reason"]
+        return result
+
+    T = params["T"]
+    last = events[-1]
+    entry_idx = last["entry_idx"]
+    bars_held = (n - 1) - entry_idx
+    stop_trail = last.get("stop_trail", [])
+    cl = df["Close"].to_numpy(float)
+    stop = stop_trail[-1] if stop_trail else float(cl[entry_idx]) * 0.95
+    action = "ENTRY 1x" if bars_held == 0 else "HOLD"
+
+    return {
+        "signal_action": action,
+        "entry_bar_idx": entry_idx,
+        "entry_price": last["entry_price"],
+        "atr_stop": round(stop, 2) if np.isfinite(stop) else None,
+        "bars_held": bars_held,
+        "combo_bars": bars_held,
+        "exit_stage": "lenient" if bars_held <= T else "strict",
+        "bearish_kpis": 0,
+        "c4_scaled": False,
+        "last_exit_bars_ago": None,
+        "last_exit_reason": None,
+    }
+
+
+def compute_arch_a_trailing_pnl(
+    df: pd.DataFrame,
+    tf: str,
+    *,
+    weekly_df: "pd.DataFrame | None" = None,
+    K: float = 2.5,
+) -> dict:
+    """Trailing 12-month and 24-month P&L for the Pullback-A strategy.
+
+    Runs compute_arch_a_position_events once from the 24-month start;
+    l12m stats are filtered by entry_idx >= n - l12m_bars.
+
+    Args:
+        df:        Daily or weekly OHLCV + indicator DataFrame.
+        tf:        Timeframe string ("1D" or "1W").
+        weekly_df: Weekly DataFrame for Gate 1 when tf == "1D".
+        K:         ATR multiplier (default 2.5).
+
+    Returns dict with l12m_pnl/trades/hit_rate/max_dd and l24m equivalents.
+    All values are None / 0 when the strategy is inactive on this TF or data
+    is insufficient.
+    """
+    _empty = {
+        "l12m_pnl": None, "l12m_trades": 0, "l12m_hit_rate": None, "l12m_max_dd": None,
+        "l24m_pnl": None, "l24m_trades": 0, "l24m_hit_rate": None, "l24m_max_dd": None,
+    }
+    if not EXIT_PARAMS.get(tf) or df is None or df.empty or len(df) < 30:
+        return _empty
+
+    n = len(df)
+    l24m = _L24M_BARS.get(tf, 504)
+    l12m = _L12M_BARS.get(tf, 252)
+    start = max(0, n - l24m)
+    events = compute_arch_a_position_events(
+        df, tf, weekly_df=weekly_df, K=K, scan_start=start,
+    )
+
+    closed_24 = sorted(
+        [e for e in events if e["exit_reason"] != "Open" and e["ret_pct"] is not None],
+        key=lambda e: e["entry_idx"],
+    )
+    closed_12 = [e for e in closed_24 if e["entry_idx"] >= n - l12m]
+
+    s12 = _pnl_stats(closed_12)
+    s24 = _pnl_stats(closed_24)
+    return {
+        "l12m_pnl": s12["pnl"],
+        "l12m_trades": s12["trades"],
+        "l12m_hit_rate": s12["hit_rate"],
+        "l12m_max_dd": s12["max_dd"],
+        "l24m_pnl": s24["pnl"],
+        "l24m_trades": s24["trades"],
+        "l24m_hit_rate": s24["hit_rate"],
+        "l24m_max_dd": s24["max_dd"],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Per-bar C3/C4 state arrays — single source of truth for chart rendering
 # ---------------------------------------------------------------------------
 

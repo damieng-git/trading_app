@@ -1344,8 +1344,7 @@ def run_refresh_dashboard(
                         required_kpi=_stoof_req_kpi,
                         c4_kpi=_stoof_c4_kpi,
                     )
-                    if raw_stoof:
-                        pos_events_by_strategy["stoof"] = _remap_events(raw_stoof)
+                    pos_events_by_strategy["stoof"] = _remap_events(raw_stoof)
             except Exception as exc:
                 logger.debug("Stoof events failed for %s/%s: %s", sym, tf, exc)
 
@@ -1361,8 +1360,7 @@ def run_refresh_dashboard(
                     raw_arch_a = compute_arch_a_position_events(
                         df_full, tf, K=_arch_a_K, weekly_df=_arch_a_weekly
                     )
-                    if raw_arch_a:
-                        pos_events_by_strategy["arch_a"] = _remap_events(raw_arch_a)
+                    pos_events_by_strategy["arch_a"] = _remap_events(raw_arch_a)
             except Exception as exc:
                 logger.debug("Arch A events failed for %s/%s: %s", sym, tf, exc)
 

@@ -21,9 +21,9 @@
 ║                    config.json                                   ║
 ║  strategy_setups:                                                ║
 ║    dip_buy  → entry_type: polarity_combo, combos, entry_gates    ║
-║    swing    → entry_type: polarity_combo, combos_by_tf           ║
 ║    trend    → entry_type: polarity_combo, combos_by_tf           ║
 ║    stoof    → entry_type: threshold, score_kpis, exit_threshold  ║
+║    arch_a   → entry_type: arch_a, atr_multiplier                 ║
 ║    new_xyz  → entry_type: ???  (add engine once, reuse forever)  ║
 ╚══════════════════╦═══════════════════════════════════════════════╝
                    │  single config read at startup
@@ -53,13 +53,14 @@
 ║  sma20_vals, sma200_vals          ← price overlays              ║
 ║                                                                  ║
 ║  position_events_by_strategy: {                                  ║
-║    dip_buy: [...],  swing: [...],                                ║
-║    trend:   [...],  stoof: [...],  new_xyz: [...]                ║
+║    dip_buy: [...],  trend:  [...],                               ║
+║    stoof:   [...],  arch_a: [...],  new_xyz: [...]               ║
 ║  }                                                               ║
 ║                                                                  ║
 ║  c3_states_by_strategy: {                                        ║
 ║    dip_buy: { c3:[bool,...], c4:[bool,...] },                    ║
-║    swing:   { c3:[...],      c4:[...]      },  ...               ║
+║    trend:   { c3:[...],      c4:[...]      },                    ║
+║    arch_a:  { c3:[...],      c4:null       },  ...               ║
 ║  }                                                               ║
 ║                                                                  ║
 ║  ✗  NO  position_events          (legacy field — to be removed)  ║
@@ -70,7 +71,7 @@
 ╔══════════════════════════════════════════════════════════════════╗
 ║          chart_builder.js  (pure renderer — zero logic)          ║
 ║                                                                  ║
-║  activeStrategy ← UI selector (trend/dip_buy/swing/stoof/all)   ║
+║  activeStrategy ← UI selector (trend/dip_buy/stoof/arch_a/all)  ║
 ║                                                                  ║
 ║  events = asset.position_events_by_strategy[activeStrategy]      ║
 ║  c3     = asset.c3_states_by_strategy[activeStrategy]            ║
@@ -142,6 +143,14 @@ In the target design, adding a strategy is **config-only** unless it introduces 
 - Exit logic: score drops below exit threshold OR ATR stop OR any 1 score KPI turns red
 - Per-strategy config via `sdef`: `score_kpis`, `entry_threshold`, `exit_threshold`, `scale_kpi`
 
+### `compute_arch_a_position_events(df, tf, *, weekly_df=None, K=2.5, scan_start=None)`
+- Used by: `arch_a`
+- Entry logic: G1 (SMA50W>SMA200W weekly context) ∧ G2 (RSI14<50 dip) ∧ G4-onset (MACD hist crosses above zero). All three must be true simultaneously on the entry bar.
+- Exit logic: G5 (Chandelier Exit: `close < HH22 − 3×ATR22`) OR ATR backstop (`close < entry − K×ATR14`, default K=2.5), whichever fires first.
+- G1 uses weekly SMA forward-filled to daily if `weekly_df` provided; falls back to daily SMA50/SMA200.
+- C3 regime (for chart heatmap): G1 ∧ G2 ∧ ¬G5 — wider window showing when pullback conditions exist, independent of G4 onset.
+- No scale-up (C4); `scaled=False` always.
+
 ### `compute_c3_states_by_strategy(df, kpi_states, strategy_setups, tf)`
 - Shared utility, not an engine
 - Produces per-bar boolean arrays for C3/C4 used by the combo heatmap row in the chart
@@ -209,7 +218,7 @@ stored in `screener_summary.json`, the Action column badge fell through to the v
 | Strategy | `badge_prio` | `badge_label` |
 |---|---|---|
 | dip_buy | 1 | D |
-| swing | 2 | S |
+| arch_a | 2 | A |
 | trend | 3 | T |
 | stoof | 4 | St |
 
@@ -248,6 +257,22 @@ The screener's position engine defaulted unset gate keys to `True` (opt-out mode
 | stoof | false | false | false | false |
 
 **Invariant going forward:** scan and screener will produce identical entry signals on the last bar for any strategy, because they read the same gate config and execute equivalent gate logic.
+
+---
+
+### P7 — Architecture A (Pullback-A) added as `entry_type: arch_a` ✓
+**Date:** 2026-03-27
+**Files:** `strategy.py`, `build_dashboard.py`, `config.json`, `chart_builder.js`, `registry.py`, `templates.py`, `dashboard_screener.js`
+
+**What was added:**
+- `compute_arch_a_position_events()` — standalone engine for the 5-gate pullback-in-uptrend strategy (G1=SMA50W>SMA200W, G2=RSI14<50, G4=MACD hist crossover, G5=Chandelier Exit). No C4 scale-up.
+- Dispatch block in `build_dashboard.py`; `arch_a` branch in `compute_c3_states_by_strategy()`.
+- `arch_a` strategy setup in `config.json` (replaces removed `swing`); active on 1D and 1W.
+- 3 `IndicatorDef` entries in `registry.py` with `strategies=["arch_a"]` — proxies for G1/G2/G4 using existing computed KPI columns (`SuperTrend`, `cRSI`, `CM_Ult_MacD_MFT`). Wired into `data.strategy_kpis["arch_a"]` via `get_kpi_trend_order("arch_a")`.
+- `chart_builder.js`: `archAKpiNames`/`archASlice` wired into rows 4/5/6 identically to the stoof pattern.
+
+**Why a new engine (not polarity_combo or threshold):**
+Arch_a has bespoke gate logic — a weekly SMA cross (requiring a cross-TF dataframe), MACD histogram onset detection, and a Chandelier Exit computed inline. None of the existing engines accommodate multi-timeframe context + explicit onset + a non-KPI exit indicator. A dedicated engine is the correct approach.
 
 ---
 

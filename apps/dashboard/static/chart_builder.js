@@ -773,8 +773,7 @@
       ? (strategyKpis[_activeStrat] || []) : null;
     const activeStratKpiNames = _polStratKpiNames
       ? _polStratKpiNames
-      : (_activeStrat === "stoof" ? stoofKpiNames
-        : (_activeStrat === "arch_a" ? archAKpiNames : null));
+      : (_activeStrat === "stoof" ? stoofKpiNames : null);
     const _brkFilteredRaw = activeStratKpiNames
       ? kpisBreakout.filter(bk => {
           const base = bk.startsWith("BO_") ? bk.slice(3) : bk;
@@ -783,8 +782,7 @@
       : kpisBreakout.slice();
     const _heatmapOrder = _polStratKpiNames
       ? _polStratKpiNames
-      : (_activeStrat === "stoof" ? stoofKpiNames
-        : (_activeStrat === "arch_a" ? archAKpiNames : kpisTrend));
+      : (_activeStrat === "stoof" ? stoofKpiNames : kpisTrend);
     const _heatmapIdx = {};
     _heatmapOrder.forEach((k, i) => { _heatmapIdx[k] = i; });
     _brkFilteredRaw.sort((a, b) => {
@@ -818,9 +816,9 @@
     const isPolStrat = !!_polStratKpiNames;
     const polStratSlice = isPolStrat ? kpiSlice(_polStratKpiNames) : null;
     const scoreSlice = isPolStrat ? polStratSlice
-      : (isStoof ? stoofSlice : (isArchA ? archASlice : trend));
+      : (isStoof ? stoofSlice : trend);
     const scoreLabel = isPolStrat ? (_activeDef.label || _activeStrat) + " Score"
-      : (isStoof ? "StoofScore" : isArchA ? "Pullback-AScore" : "TrendScore");
+      : (isStoof ? "StoofScore" : "TrendScore");
 
     // Build polarity map for polarity strategies: KPI name → expected polarity
     // Bug-C fix: prefer TF-specific combos (combos_by_tf) over flat combos, mirroring entry logic.
@@ -868,7 +866,7 @@
       }
 
       const tsMax = Math.max(...tsValues.map(Math.abs), 1);
-      tsPad = (isStoof || isPolStrat || isArchA) ? Math.max(scoreSlice.kk.length + 1, 5) : Math.max(tsMax * 1.1, 1);
+      tsPad = (isStoof || isPolStrat) ? Math.max(scoreSlice.kk.length + 1, 5) : Math.max(tsMax * 1.1, 1);
 
       // C3/C4 active arrays: use server-computed states (single source of truth).
       // strategy.py is the only place where entry logic lives — the chart just renders it.
@@ -888,7 +886,7 @@
 
     // KPI Trend Heatmap (row 6) — uses scoreSlice when strategy is active
     const heatmapSlice = isPolStrat ? polStratSlice
-      : (isStoof ? stoofSlice : (isArchA ? archASlice : trend));
+      : (isStoof ? stoofSlice : trend);
     const trLabels = [];
     if (heatmapSlice.kk.length) {
       const trZ = heatmapSlice.zz.slice();
@@ -920,6 +918,10 @@
         const _tot = _sd.total != null ? _sd.total : 9;
         c3Label = "Entry C3: " + shortLabel(_rk) + " + \u2265" + _thr + "/" + _tot + " score";
         c4Label = c4Active ? "Entry C4: C3 + " + shortLabel(_c4k) : null;
+      } else if (_activeDef && _activeDef.ribbon_label) {
+        // Strategy defines its own ribbon label in config — no JS changes needed for new strategies.
+        c3Label = _activeDef.ribbon_label;
+        c4Label = null;
       } else if (combo3kpis.length) {
         c3Label = "Entry C3: " + combo3kpis.map(k => shortLabel(k)).join(" \u00b7 ");
         c4Label = (c4Active && combo4kpis.length) ? "Entry C4: " + combo4kpis.map(k => shortLabel(k)).join(" \u00b7 ") : null;
@@ -992,7 +994,7 @@
       // --- Build trade list from pre-computed events or fallback ---
       const _peByStrat = data.position_events_by_strategy || {};
       const _isAllStrats = _activeStrat === "all";
-      const _useStratEvents = (isPolStrat || isStoof || isArchA) && _peByStrat[_activeStrat] && _peByStrat[_activeStrat].length;
+      const _useStratEvents = !_isAllStrats && Array.isArray(_peByStrat[_activeStrat]);
       const _useAllOverlay = _isAllStrats && Object.keys(_peByStrat).length > 0;
 
       function _pushEvents(evList, stratKey) {
@@ -1030,13 +1032,13 @@
       }
 
       // --- Position shading ---
-      const _loseColor = "rgba(244,63,94,0.20)";
+      const _loseColor = "rgba(244,63,94,0.28)";
 
       for (const t of allTrades) {
         const ei = t.entryIdx, xi = t.exitIdx;
         const _tc = t._stratColor || null;
-        const _tWinC3 = _tc ? _hexToRgba(_tc, 0.13) : "rgba(250,204,21,0.13)";
-        const _tWinC4 = _tc ? _hexToRgba(_tc, 0.20) : "rgba(74,222,128,0.14)";
+        const _tWinC3 = _tc ? _hexToRgba(_tc, 0.22) : "rgba(250,204,21,0.22)";
+        const _tWinC4 = _tc ? _hexToRgba(_tc, 0.32) : "rgba(74,222,128,0.28)";
         if (t.scaled && t.scaleIdx != null && t.scaleIdx > ei) {
           shapes.push({
             type: "rect",
@@ -1439,7 +1441,7 @@
       { text: "Oscillators", xref: "paper", yref: "paper", x: 0.5, y: r3Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: scoreLabel, xref: "paper", yref: "paper", x: 0.5, y: r4Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
-      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isArchA ? "Pullback -A" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
+      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
     ];
     if (comboLabels.length) {
       subplotTitles.push({ text: "Combos", xref: "paper", yref: "paper", x: 0.5, y: rCTop, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" });
@@ -1486,14 +1488,12 @@
     const _cStrat2a = (typeof window !== "undefined" && window.currentStrategy) ? window.currentStrategy : "trend";
     const _stSetups2a = (typeof STRATEGY_SETUPS !== "undefined") ? (STRATEGY_SETUPS.setups || {}) : {};
     const _sDef2a = _stSetups2a[_cStrat2a];
-    const _isPolStrat2 = _sDef2a && _sDef2a.entry_type === "polarity_combo";
-    const _isStoof2 = _cStrat2a === "stoof";
-    const _isArchA2 = _cStrat2a === "arch_a";
-    // prefer strategy-specific events; for Stoof/ArchA use their own events; never fall back to Trend events
-    const _stratEvents2 = (_isPolStrat2 || _isStoof2 || _isArchA2) ? (_peByStrat2[_cStrat2a] || null) : null;
-    // BUG-ST1 fix: suppress Trend event fallback when Stoof/ArchA is selected
-    const _useEvents2 = (_stratEvents2 && _stratEvents2.length) ? _stratEvents2
-      : (!_isStoof2 && !_isArchA2 && payload.position_events && payload.position_events.length ? payload.position_events : null);
+    // data-driven: any named strategy uses its own events from position_events_by_strategy;
+    // only "trend" falls back to legacy position_events; "all" is handled by _useAllOverlay above.
+    const _cStrat2IsAll = _cStrat2a === "all";
+    const _stratEvents2 = !_cStrat2IsAll ? (_peByStrat2[_cStrat2a] ?? null) : null;
+    const _useEvents2 = Array.isArray(_stratEvents2) ? _stratEvents2
+      : (_cStrat2a === "trend" && payload.position_events && payload.position_events.length ? payload.position_events : null);
 
     if (_useEvents2) {
       for (const ev of _useEvents2) {

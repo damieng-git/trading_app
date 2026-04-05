@@ -1197,3 +1197,326 @@ Stoof runs on 2W and 1M. WT_MTF on both timeframes now uses 1D MACD as the fast 
 ### Single source of truth
 
 `_MTF_PAIRS` in `enrichment.py` is the sole definition of which timeframe is used as the fast MACD reference. No other file defines or overrides this mapping. Config.json stoof description does not reference a specific fast timeframe and required no change.
+
+---
+
+## 37. Pullback-A (Architecture A) strategy added (2026-03-27)
+
+**Files:**
+- `apps/dashboard/strategy.py` — new `compute_arch_a_position_events()` engine + `arch_a` branch in `compute_c3_states_by_strategy()`
+- `apps/dashboard/build_dashboard.py` — arch_a dispatch block
+- `apps/dashboard/configs/config.json` — `arch_a` strategy setup (replaces removed `swing`)
+- `apps/dashboard/static/chart_builder.js` — arch_a KPI wiring for chart rows 4/5/6
+- `apps/dashboard/templates.py` — "Pullback -A" screener filter button (replaces "Swing")
+- `apps/dashboard/static/dashboard_screener.js` — `strat_arch_a` filter (replaces `strat_swing`)
+- `trading_dashboard/indicators/registry.py` — 3 arch_a-specific `IndicatorDef` entries
+
+### Strategy definition
+
+**Architecture A / Pullback-A** is a pullback-in-uptrend long-only strategy with 5 gates:
+
+| Gate | Condition | Trigger |
+|---|---|---|
+| G1 | Weekly SMA50 > Weekly SMA200 | Context: weekly uptrend required |
+| G2 | RSI14 < 50 | Dip: price in pullback territory |
+| G3 | OFF | — |
+| G4 | MACD histogram crosses above zero | Reversal: momentum inflecting up |
+| G5 | Chandelier Exit (HH22 − 3×ATR22) | Exit trigger: CE fires |
+
+**Entry:** G1 ∧ G2 ∧ G4-onset (MACD hist crosses zero from below) — all must be true simultaneously on the entry bar.
+
+**Exit (whichever comes first):**
+1. G5: `close < HH22 − 3×ATR22` (Chandelier Exit fires)
+2. ATR backstop: `close < entry_price − K × ATR14` (default K=2.5)
+
+**Active timeframes:** 1D, 1W.
+
+### Config entry (`config.json`)
+
+```json
+"arch_a": {
+  "label": "Pullback -A",
+  "entry_type": "arch_a",
+  "active_tfs": ["1D", "1W"],
+  "atr_multiplier": 2.5,
+  "badge_label": "A",
+  "badge_prio": 2,
+  "color": "#34d399"
+}
+```
+
+### Python engine — `compute_arch_a_position_events`
+
+`apps/dashboard/strategy.py` — standalone function, does not use `compute_polarity_position_events`.
+
+Key implementation details:
+- **G1** weekly forward-fill: if `weekly_df` is provided, SMA50/SMA200 are computed on it then `reindex + ffill` aligned to the daily index. If absent, daily SMA50/SMA200 used as fallback.
+- **G4 onset detection**: MACD hist crosses above zero = `hist[i-1] <= 0 and hist[i] > 0`.
+- **G5 (Chandelier Exit)** computed inline: `HH22` = rolling 22-bar high, CE level = `HH22 − 3 × ATR22`. A bar is "CE active" if `close < CE level`.
+- **ATR backstop** computed with the same `compute_atr()` shared utility (ATR14).
+- Output format is identical to stoof events: `signal_idx, entry_idx, entry_price, exit_idx, exit_price, exit_reason, scaled=False, scale_idx=None, stop_trail, hold, ret_pct`.
+
+### C3 regime display (`compute_c3_states_by_strategy`)
+
+For the chart combo row, the arch_a C3 regime is defined as **G1 ∧ G2 ∧ ¬G5** (uptrend context, dip in place, CE not fired). G4 onset is not required for the regime — it only gates the trade entry. This gives a wider visual window showing when pullback conditions are present, independent of whether MACD has crossed.
+
+### Chart tab KPI rows (rows 4/5/6)
+
+Three KPI proxies registered with `strategies=["arch_a"]` in `registry.py`:
+
+| Registry key | kpi_name | Gate represented |
+|---|---|---|
+| `ARCHA_G1` | `SuperTrend` | G1 trend context proxy |
+| `ARCHA_G2` | `cRSI` | G2 RSI dip proxy |
+| `ARCHA_G4` | `CM_Ult_MacD_MFT` | G4 MACD reversal proxy |
+
+These reuse **already-computed** KPI state columns — no new indicator computation. `get_kpi_trend_order("arch_a")` returns these 3 kpi_names, which flow into `data.strategy_kpis["arch_a"]` in every exported asset.
+
+In `chart_builder.js`, `archAKpiNames` / `archASlice` are built identically to the stoof pattern and wired into:
+- **Row 5 (breakout dots):** `activeStratKpiNames` — filters breakout dots to arch_a KPIs only
+- **Row 6 (heatmap):** `_heatmapOrder` and `heatmapSlice` — shows only 3 arch_a rows instead of all trend rows
+- **Row 4 (score bar):** `scoreSlice` — bar counts how many of the 3 gate proxies are bullish
+- **y-axis padding:** `tsPad` uses `scoreSlice.kk.length + 1` (same as stoof/polarity) for stable axis
+
+### Swing strategy removed
+
+`swing` was removed from `config.json`, `templates.py`, and `dashboard_screener.js`. The `swing.csv` symbol list is kept on disk (gitignored).
+
+### Research basis
+
+Architecture A was selected from a Phase 4 walk-forward KPI optimization pilot (20 tickers, 72 combos). The best surviving combo (Sortino 0.249, PF 4.67, 16.4 trades/fold) used:
+- G1: MAR_loose (relaxed moving-average ribbon) or SMA50W>SMA200W
+- G4: MACD histogram crossover
+- G5: Chandelier Exit
+
+Full Phase 4 run (228 tickers × 72 combos) checkpoint: `research/kpi_optimization/pullback/data/results/phase4_full.csv` (launched 2026-03-27, PID 152590, ~34h).
+
+---
+
+## 38. Pullback-A screener integration (2026-03-31)
+
+**Files:**
+- `apps/dashboard/strategy.py` — `compute_arch_a_position_status()` and `compute_arch_a_trailing_pnl()` added
+- `apps/dashboard/screener_builder.py` — `arch_a` dispatch branch in `build_screener_rows()`
+
+### New functions in `strategy.py`
+
+**`compute_arch_a_position_status(df, tf, *, weekly_df, K)`**
+
+Screener-facing wrapper around `compute_arch_a_position_events`. Runs the engine with a TF-aware scan window and returns the same dict shape as `compute_polarity_position_status`:
+`signal_action`, `entry_bar_idx`, `entry_price`, `atr_stop`, `bars_held`, `combo_bars`, `exit_stage`, `bearish_kpis`, `c4_scaled`, `last_exit_bars_ago`, `last_exit_reason`.
+
+- Returns `signal_action = "FLAT"` for unsupported TFs (2W, 1M) or insufficient data.
+- `exit_stage` is `"lenient"` when `bars_held <= T`, `"strict"` after.
+- `atr_stop` is the last value from the `stop_trail` array on the open trade.
+
+**`compute_arch_a_trailing_pnl(df, tf, *, weekly_df, K)`**
+
+Computes trailing 12-month and 24-month P&L stats (pnl, trades, hit_rate, max_dd) using `_pnl_stats()`. Runs the engine once from the 24M start; 12M stats are filtered by `entry_idx >= n - l12m_bars`.
+
+### Screener dispatch (`screener_builder.py`)
+
+Added `elif sdef.get("entry_type") == "arch_a":` branch in the strategy dispatch loop. Behaviour:
+
+- Respects `active_tfs` from config — skips if TF not in `["1D", "1W"]`.
+- Passes `weekly_df = tf_map.get("1W")` when `tf == "1D"` (Gate 1 requires weekly context).
+- Writes all 12 status + P&L keys to `strat_statuses[skey]`, same schema as polarity/stoof strategies.
+
+---
+
+## 39. Pullback-A chart tab cleanup + overlay fixes (2026-03-31)
+
+**Files:**
+- `apps/dashboard/static/chart_builder.js`
+- `apps/dashboard/static/dashboard.js`
+- `apps/dashboard/configs/config.json`
+- `apps/dashboard/build_dashboard.py`
+
+### 39a. Chart rows 4/5/6: arch_a uses trend KPI set
+
+Removed the `arch_a`-specific `archAKpiNames` / `archASlice` / `isArchA` variables from rows 4/5/6. The Trend KPI set is now used for all non-stoof, non-polarity strategies (including arch_a). Rationale: the 3 arch_a registry KPIs (`SuperTrend`, `cRSI`, `CM_Ult_MacD_MFT`) are already in the trend set; a separate 3-row heatmap was redundant and visually sparse.
+
+Affected logic removed from `chart_builder.js`:
+- `archAKpiNames` / `archASlice` variable declarations
+- `isArchA ? archASlice : trend` branches in `scoreSlice`, `heatmapSlice`, `_heatmapOrder`
+- `isArchA` in the `tsPad` condition
+- `isArchA ? "Pullback -A"` in the row 6 subplot title
+
+### 39b. `ribbon_label` support for non-combo strategies
+
+Added a `ribbon_label` field to the `arch_a` config entry:
+
+```json
+"ribbon_label": "Regime: G1 (SMA50W>200W) · G2 (RSI14<50) · ¬G5 (CE)"
+```
+
+In `chart_builder.js`, when a strategy has `_activeDef.ribbon_label`, it is used directly as the C3 entry bar label — no C3/C4 KPI prefix logic runs. This makes the entry bar caption self-describing for gate-based strategies without needing a combo definition.
+
+In `dashboard.js`, the `_updateStrategyDef` function has a matching `entry_type === "arch_a"` branch that renders `ribbon_label` directly into `#strategyDef` / `#strategyDefBar`.
+
+### 39c. Overlay opacity bumped
+
+Trade shading colours made more visible:
+
+| Colour | Before | After |
+|---|---|---|
+| Loss fill | `rgba(244,63,94,0.20)` | `rgba(244,63,94,0.28)` |
+| Win C3 fill | custom hex at 0.13 opacity | 0.22 opacity |
+| Win C4 fill | custom hex at 0.20 opacity | 0.32 opacity |
+
+---
+
+## 40. Strategy overlay: false stale toast + empty-events fix (2026-03-31)
+
+**Files:**
+- `apps/dashboard/static/chart_builder.js`
+- `apps/dashboard/build_dashboard.py`
+
+### Problem
+
+The stale-asset toast was firing incorrectly in two cases:
+
+1. **Polarity-combo strategies (trend, dip_buy) with 0 trades on a TF.** `build_dashboard.py` always stores `pos_events_by_strategy[skey] = []` for polarity combos, even when no entries were found. In JS, the guard was `_peByStrat[strat] && _peByStrat[strat].length` — an empty array has `.length === 0` (falsy), so `_useStratEvents` was false → fell to the stale toast branch.
+
+2. **stoof / arch_a with 0 trades.** Both stored their events key only when `raw_xxx` was non-empty (`if raw_stoof:` / `if raw_arch_a:`). When the engine found 0 trades on a given TF, the key was never written → `_peByStrat[strat]` was `undefined` → stale toast.
+
+The toast message ("Asset stale — no trade data. Click UI Refresh.") was misleading: the data was fresh, the strategy just had no entries for that symbol/TF combination.
+
+### Fix
+
+**`chart_builder.js`** (two locations):
+
+```js
+// Before
+const _useStratEvents = (isPolStrat || isStoof || isArchA)
+  && _peByStrat[_activeStrat] && _peByStrat[_activeStrat].length;
+
+// After
+const _useStratEvents = (isPolStrat || isStoof || isArchA)
+  && Array.isArray(_peByStrat[_activeStrat]);
+```
+
+Same change applied in the standalone trade-simulation function (P&L panel, line ~1497).
+
+`Array.isArray(undefined)` = false → genuinely missing key still triggers stale toast.
+`Array.isArray([])` = true → computed-but-empty result is treated as valid (no trades, no toast).
+
+**`build_dashboard.py`**: Removed `if raw_stoof:` and `if raw_arch_a:` guards. Both now always write their events array (possibly `[]`) when the strategy is active for the current TF. The stale toast now only fires when the key is truly absent from the asset (old build predating the strategy's introduction).
+
+---
+
+## 41. Strategy tab: auto-zoom to show trade shapes (2026-03-31)
+
+**File:** `apps/dashboard/static/dashboard.js`
+
+### Problem
+
+The 1D chart default display window is **180 bars (~9 months)** — configurable in `chart_builder.js` via `_displayBars["1D"]`. For AAPL on 2026-03-31, the window starts 2025-07-14. All 4 arch_a trades closed by 2025-06-11 — entirely off the left edge. The overlays were drawn correctly but invisible without manually zooming out.
+
+### Fix
+
+In `_applySubTabVisibility()`, when switching **to** the strategy tab, the code now:
+
+1. Collects all shapes with `_strategy: true` from `_upperShapesStrategy`.
+2. Computes the union x-range of those shapes (parsing ISO timestamps from `s.x0` / `s.x1`).
+3. If any trade shape falls outside the current `xaxis.range`, extends the range to include all trades, with 1-week padding on each side.
+
+```js
+if (isStrategy) {
+  const _tradeShapes = _upperShapesStrategy.filter(s => s._strategy);
+  if (_tradeShapes.length) {
+    const _xs = _tradeShapes.flatMap(s => [new Date(s.x0).getTime(), new Date(s.x1).getTime()])
+      .filter(v => !isNaN(v));
+    if (_xs.length) {
+      const _curRange = gdUp.layout?.xaxis?.range;
+      const _curMin = _curRange ? new Date(_curRange[0]).getTime() : Infinity;
+      const _curMax = _curRange ? new Date(_curRange[1]).getTime() : -Infinity;
+      const _tMin = Math.min(..._xs), _tMax = Math.max(..._xs);
+      if (_tMin < _curMin || _tMax > _curMax) {
+        const _pad = 7 * 24 * 3600000;
+        Plotly.relayout(gdUp, {
+          "xaxis.range": [
+            new Date(Math.min(_tMin - _pad, _curMin)).toISOString(),
+            new Date(Math.max(_tMax + _pad, _curMax)).toISOString(),
+          ],
+          "xaxis.autorange": false,
+        });
+      }
+    }
+  }
+}
+```
+
+The zoom only expands — it never shrinks the view if trades are already in range. Switching back to the Chart tab restores the original 180-bar window (each `renderChart` call resets `xaxis.range` from `_displayBars`).
+
+**Deployment:** UI Refresh only (no data change).
+
+---
+
+## §42 — Data-driven strategy dispatch: remove per-strategy hardcoding in JS (2026-03-31)
+
+**Problem:** Three JS dispatch points gated overlay/sparkline rendering on hardcoded strategy names (`isStoof`, `isArchA`, `_isStoof2`, `_isArchA2`). Adding a new strategy required editing these lists or it would silently fall back to Trend events or skip the overlay.
+
+**Fixes — `apps/dashboard/static/chart_builder.js`:**
+
+1. **`_useStratEvents` gate (line ~997):**
+   ```js
+   // Before
+   const _useStratEvents = (isPolStrat || isStoof || isArchA) && Array.isArray(_peByStrat[_activeStrat]);
+   // After
+   const _useStratEvents = !_isAllStrats && Array.isArray(_peByStrat[_activeStrat]);
+   ```
+   Any named strategy (not "all") automatically uses its own pre-computed events if they exist.
+
+2. **Screener sparkline event routing (lines ~1491–1498):**
+   ```js
+   // Before — required _isPolStrat2 || _isStoof2 || _isArchA2 list
+   const _isPolStrat2 = ...entry_type === "polarity_combo";
+   const _isStoof2 = _cStrat2a === "stoof";
+   const _isArchA2 = _cStrat2a === "arch_a";
+   const _stratEvents2 = (_isPolStrat2 || _isStoof2 || _isArchA2) ? (_peByStrat2[_cStrat2a] || null) : null;
+   const _useEvents2 = Array.isArray(_stratEvents2) ? _stratEvents2
+     : (!_isStoof2 && !_isArchA2 && payload.position_events ... ? payload.position_events : null);
+
+   // After — fully data-driven
+   const _cStrat2IsAll = _cStrat2a === "all";
+   const _stratEvents2 = !_cStrat2IsAll ? (_peByStrat2[_cStrat2a] ?? null) : null;
+   const _useEvents2 = Array.isArray(_stratEvents2) ? _stratEvents2
+     : (_cStrat2a === "trend" && payload.position_events?.length ? payload.position_events : null);
+   ```
+   Rules: "all" → handled by `_useAllOverlay`; "trend" → falls back to legacy `position_events`; any other strategy → uses its own events or shows nothing (no silent cross-contamination).
+
+**Fix — `apps/dashboard/static/dashboard.js`:**
+
+3. **Ribbon label rendering (line ~2212):**
+   ```js
+   // Before — arch_a-specific branch
+   } else if (def.entry_type === "arch_a") {
+     const html = def.ribbon_label ? def.ribbon_label : "";
+
+   // After — any strategy with ribbon_label
+   } else if (def.ribbon_label) {
+     const html = def.ribbon_label;
+   ```
+   Any strategy that sets `ribbon_label` in `config.json` gets the simplified label display without JS changes.
+
+**Second dispatch audit — remaining hardcoded points (unavoidable — each encodes unique logic):**
+
+| Location | Hardcoded | Why manual is required |
+|---|---|---|
+| `build_dashboard.py` stoof/arch_a blocks | `"stoof"`, `"arch_a"` | Different Python functions (`compute_position_events` vs `compute_arch_a_*`) |
+| `strategy.py` elif chain | `"polarity_combo"`, `"threshold"`, `"arch_a"` | Different position-engine functions per entry_type |
+| `screener_builder.py` elif chain | `"polarity_combo"`, `"threshold"`, `"arch_a"` | Different screener row builders per entry_type |
+| `chart_builder.js` stoof label block (~line 913) | `"stoof"` | Custom threshold/KPI label rendering unique to Stoof |
+| `dashboard.js` threshold block (~line 2204) | `"threshold"` | Custom C3/C4 label rendering for threshold strategies |
+
+All of these encapsulate genuinely different business logic, not routing glue — they cannot be collapsed without adding a plugin/registry abstraction.
+
+**New strategy checklist (minimum required changes):**
+1. `config.json` — add strategy setup with `entry_type`, optionally `ribbon_label`
+2. `strategy.py` — add `elif entry_type == "new_key":` with compute function
+3. `build_dashboard.py` — store events: `pos_events_by_strategy["new_key"] = _remap_events(raw)`
+4. `screener_builder.py` — add `elif entry_type == "new_key":` screener row builder
+5. JS — only needed if the new strategy requires custom label/rendering not covered by `ribbon_label`; overlays and sparklines are automatic.
+
+**Deployment:** UI Refresh only.

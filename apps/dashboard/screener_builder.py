@@ -9,6 +9,8 @@ from typing import Dict
 import pandas as pd
 
 from apps.dashboard.strategy import (
+    compute_arch_a_position_status,
+    compute_arch_a_trailing_pnl,
     compute_polarity_position_status,
     compute_polarity_trailing_pnl,
     compute_position_status,
@@ -219,6 +221,36 @@ def build_screener_rows(
                             c4_kpi=_c4_kpi,
                         )
                         # All fields forwarded so every view has the same source of truth.
+                        strat_statuses[skey] = {
+                            "signal_action": ps["signal_action"],
+                            "entry_price": ps["entry_price"],
+                            "atr_stop": ps["atr_stop"],
+                            "bars_held": ps["bars_held"],
+                            "combo_bars": ps.get("combo_bars"),
+                            "exit_stage": ps.get("exit_stage"),
+                            "bearish_kpis": ps.get("bearish_kpis", 0),
+                            "c4_scaled": ps["c4_scaled"],
+                            "last_exit_bars_ago": ps.get("last_exit_bars_ago"),
+                            "last_exit_reason": ps.get("last_exit_reason"),
+                            "l12m_pnl": tp["l12m_pnl"],
+                            "l12m_trades": tp["l12m_trades"],
+                            "l12m_hit_rate": tp["l12m_hit_rate"],
+                            "l12m_max_dd": tp.get("l12m_max_dd"),
+                            "l24m_pnl": tp.get("l24m_pnl"),
+                            "l24m_trades": tp.get("l24m_trades"),
+                            "l24m_hit_rate": tp.get("l24m_hit_rate"),
+                            "l24m_max_dd": tp.get("l24m_max_dd"),
+                        }
+                    elif sdef.get("entry_type") == "arch_a":
+                        # Pullback-A: active on 1D and 1W only.
+                        _active_tfs = sdef.get("active_tfs")
+                        if _active_tfs and tf not in _active_tfs:
+                            continue
+                        _K = float(sdef.get("atr_multiplier", 2.5))
+                        # Gate 1 requires weekly context when running on 1D.
+                        _weekly = tf_map.get("1W") if tf != "1W" else None
+                        ps = compute_arch_a_position_status(df, tf, weekly_df=_weekly, K=_K)
+                        tp = compute_arch_a_trailing_pnl(df, tf, weekly_df=_weekly, K=_K)
                         strat_statuses[skey] = {
                             "signal_action": ps["signal_action"],
                             "entry_price": ps["entry_price"],

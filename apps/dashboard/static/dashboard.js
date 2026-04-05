@@ -1944,6 +1944,35 @@
           Plotly.relayout(gdUp, { shapes: isStrategy ? _upperShapesStrategy : _upperShapesCharts });
         } catch (e) {}
 
+        // Strategy tab: auto-extend x-range to show all trade shapes (they may be
+        // older than the default 180-bar display window).
+        if (isStrategy) {
+          try {
+            const _tradeShapes = _upperShapesStrategy.filter(s => s._strategy);
+            if (_tradeShapes.length) {
+              const _xs = _tradeShapes.flatMap(s => [new Date(s.x0).getTime(), new Date(s.x1).getTime()])
+                .filter(v => !isNaN(v));
+              if (_xs.length) {
+                const _curRange = gdUp.layout && gdUp.layout.xaxis && gdUp.layout.xaxis.range;
+                const _curMin = _curRange ? new Date(_curRange[0]).getTime() : Infinity;
+                const _curMax = _curRange ? new Date(_curRange[1]).getTime() : -Infinity;
+                const _tMin = Math.min(..._xs);
+                const _tMax = Math.max(..._xs);
+                if (_tMin < _curMin || _tMax > _curMax) {
+                  const _pad = 7 * 24 * 3600000; // 1 week padding
+                  Plotly.relayout(gdUp, {
+                    "xaxis.range": [
+                      new Date(Math.min(_tMin - _pad, _curMin)).toISOString(),
+                      new Date(Math.max(_tMax + _pad, _curMax)).toISOString(),
+                    ],
+                    "xaxis.autorange": false,
+                  });
+                }
+              }
+            }
+          } catch (e) {}
+        }
+
         const _strategyShow = new Set(["Price", "Combo Signal", "SR Breaks"]);
         const _srHoverHide = new Set(["Support", "Resistance", "Break Res", "Break Sup", "Sup Holds", "Res Holds"]);
         const idxs = [];
@@ -2180,6 +2209,12 @@
           if (rk) c3Parts.push(rk + " " + _polArrow(1));
           c3Parts.push("\u2265" + thr + "/" + tot + " score");
           if (c4k) { c4Parts.push("C3"); c4Parts.push(c4k + " " + _polArrow(1)); }
+        } else if (def.ribbon_label) {
+          // Render ribbon_label directly — no C3/C4 prefix (any strategy with ribbon_label)
+          const html = def.ribbon_label;
+          if (el) el.innerHTML = html;
+          if (elBar) elBar.innerHTML = html;
+          return;
         } else {
           const byTf = def.combos_by_tf || {};
           const tfKey = (typeof currentTF === "string") ? currentTF.toUpperCase() : "";
