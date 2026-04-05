@@ -1195,14 +1195,14 @@ def compute_arch_a_position_events(
 ) -> list[dict]:
     """Architecture A — pullback-in-uptrend long-only engine.
 
-    Five gates (computed directly from indicator columns):
-      Gate 1 (context)  : SMA50W > SMA200W — weekly trend bullish.
-      Gate 2 (dip)      : RSI14 < 50 — price has pulled back.
-      Gate 3 (exhaustion): always True (OFF — not screened here).
+    Five gates — S11 (top survivor from KPI optimisation research):
+      Gate 1 (context)  : SMA20W > SMA50W (strict) — weekly trend bullish.
+      Gate 2 (dip)      : MMARB bull-count declining from 10-bar max — ribbon peeling.
+      Gate 3 (exhaustion): LuxAlgo normalised oscillator < 20 — oversold extreme.
       Gate 4 (reversal) : MACD hist crosses above zero — momentum shift.
       Gate 5 (exit)     : close < Chandelier Exit long level — trend broken.
 
-    Entry: G1 AND G2 AND G4(onset) AND NOT G5.
+    Entry: G1 AND G2 AND G3 AND G4(onset) AND NOT G5.
     Exit: G5 fires OR ATR stop (K×ATR14) OR M-bar trailing checkpoint.
 
     weekly_df: weekly OHLCV+indicator DataFrame aligned to the same symbol.
@@ -1216,8 +1216,6 @@ def compute_arch_a_position_events(
     if not {"High", "Low", "Close", "Open"}.issubset(df.columns):
         return []
 
-    from trading_dashboard.indicators._base import rsi_wilder as _rsi
-
     M = params["M"]
     n = len(df)
 
@@ -1227,21 +1225,34 @@ def compute_arch_a_position_events(
     lo = df["Low"].to_numpy(float)
     atr_s = compute_atr(df, ATR_PERIOD).to_numpy(float)
 
-    # ── Gate 1: SMA50W > SMA200W ─────────────────────────────────────────────
+    # ── Gate 1: SMA20W > SMA50W (strict variant) ─────────────────────────────
     _wdf = weekly_df if (weekly_df is not None and not weekly_df.empty) else df
     w_close = _wdf["Close"]
+    sma20w = w_close.rolling(20, min_periods=1).mean()
     sma50w = w_close.rolling(50, min_periods=1).mean()
-    sma200w = w_close.rolling(200, min_periods=1).mean()
-    g1_weekly = (sma50w > sma200w)
+    g1_weekly = (sma20w > sma50w)
     if weekly_df is not None and not weekly_df.empty:
         g1_aligned = g1_weekly.reindex(g1_weekly.index.union(df.index)).ffill().reindex(df.index)
     else:
         g1_aligned = g1_weekly
     g1 = g1_aligned.fillna(False).to_numpy(bool)
 
-    # ── Gate 2: RSI14 < 50 (dip / pullback territory) ───────────────────────
-    rsi14 = _rsi(df["Close"], length=14)
-    g2 = (rsi14 < 50).fillna(False).to_numpy(bool)
+    # ── Gate 2: MMARB loose — bull-count declining from 10-bar rolling max ───
+    _mmarb_state_cols = [c for c in df.columns if c.startswith("MMARB_state_")]
+    if _mmarb_state_cols:
+        _bull_count = (df[_mmarb_state_cols] == 1).sum(axis=1).astype(float)
+        _bull_max10 = _bull_count.rolling(10, min_periods=1).max()
+        g2 = (_bull_count < _bull_max10).fillna(False).to_numpy(bool)
+    else:
+        # fallback: RSI14 < 50 if MMARB columns absent
+        from trading_dashboard.indicators._base import rsi_wilder as _rsi_fb
+        g2 = (_rsi_fb(df["Close"], length=14) < 50).fillna(False).to_numpy(bool)
+
+    # ── Gate 3: LuxAlgo normalised < 20 (oversold extreme) ───────────────────
+    if "LuxAlgo_Norm_v1" in df.columns:
+        g3 = (df["LuxAlgo_Norm_v1"] < 20.0).fillna(False).to_numpy(bool)
+    else:
+        g3 = np.ones(n, dtype=bool)  # fallback: OFF
 
     # ── Gate 4: MACD hist crosses above zero ─────────────────────────────────
     if "MACD_hist" in df.columns:
@@ -1280,7 +1291,7 @@ def compute_arch_a_position_events(
     i = max(start, 1)
 
     while i < n:
-        entry_cond = g1[i] and g2[i] and g4_cross[i] and not g5[i]
+        entry_cond = g1[i] and g2[i] and g3[i] and g4_cross[i] and not g5[i]
         if not entry_cond:
             i += 1
             continue

@@ -142,7 +142,7 @@
       "badge_label": "D",
       "badge_prio": 1,
       "entry_type": "polarity_combo",
-      "description": "1D dip-buy: entry on oversold KPIs, exits via dedicated exit_combos (~2 week hold). entry_tf/exit_tf are both 1D \u2014 the engine always runs on entry-TF data and params.",
+      "description": "1D dip-buy: entry on oversold KPIs, exits via dedicated exit_combos (~2 week hold). entry_tf/exit_tf are both 1D — the engine always runs on entry-TF data and params.",
       "entry_tf": "1D",
       "exit_tf": "1D",
       "entry_gates": {
@@ -203,14 +203,14 @@
       "badge_label": "A",
       "badge_prio": 2,
       "entry_type": "arch_a",
-      "description": "Pullback in uptrend (1D/1W): SMA50W>SMA200W context + RSI14<50 dip + MACD hist crossover reversal. Exit: Chandelier Exit (22,3\u00d7) or ATR backstop 2.5\u00d7ATR14.",
+      "description": "Pullback in uptrend (1D/1W): S11 — SMA20W>SMA50W context + MMARB declining dip + LuxAlgo<20 exhaustion + MACD hist crossover reversal. Exit: Chandelier Exit (22,3×) or ATR backstop 2.5×ATR14.",
       "active_tfs": [
         "1D",
         "1W"
       ],
       "atr_multiplier": 2.5,
       "color": "#34d399",
-      "ribbon_label": "Regime: G1 (SMA50W\u003e200W) \u00b7 G2 (RSI14\u003c50) \u00b7 \u00acG5 (CE)",
+      "ribbon_label": "Regime: G1 (SMA20W>50W) · G2 (MMARB↓) · G3 (LUX<20) · ¬G5 (CE)",
       "entry_gates": {
         "sma20_gt_sma200": false,
         "volume_spike": false,
@@ -401,7 +401,7 @@
       "atr_multiplier": 3.0,
       "atr_tf": "1W",
       "color": "#fb923c",
-      "description": "Band Light: C3 entry = MACD_BL green + 5/9 score KPIs green (onset). C4 scale-up (1.5x) = C3 + WT_MTF green. Score pool: 9 KPIs incl. LuxAlgo v1+v2 (duplicate). Active on 2W and 1M. Exit: MACD_BL turns red OR any 1 score KPI turns red (score < 5). Stop: 3\u00d7ATR14(1W).",
+      "description": "Band Light: C3 entry = MACD_BL green + 5/9 score KPIs green (onset). C4 scale-up (1.5x) = C3 + WT_MTF green. Score pool: 9 KPIs incl. LuxAlgo v1+v2 (duplicate). Active on 2W and 1M. Exit: MACD_BL turns red OR any 1 score KPI turns red (score < 5). Stop: 3×ATR14(1W).",
       "entry_gates": {
         "sma20_gt_sma200": false,
         "volume_spike": false,
