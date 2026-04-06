@@ -1,8 +1,8 @@
 # Infrastructure & Repository Restructuring Plan
 
-**Status:** Planned — not yet executed  
+**Status:** In progress  
 **Decided:** 2026-04-05  
-**Resume at:** Phase 0, Step 0.1  
+**Resume at:** Phase 2, Step 2.7 (push trading_lab to GitHub — requires manual repo creation)  
 **Total steps:** 38 steps across 7 phases
 
 ---
@@ -204,9 +204,9 @@ git stash push -m "pre-infra-restructure wip" \
 ```
 **Checkpoint:** `git status` in trading_app shows clean (or only the gitignored CSVs).
 
-**Decision:** [ ] Option A — commit  [ ] Option B — stash  
-**Status:** [ ] Not started  
-**Notes:** —
+**Decision:** [x] Option A — commit  
+**Status:** [x] Done — 2026-04-06  
+**Notes:** Committed dashboard.css, dashboard.js, templates.py, pine_to_python_mapping.md, INFRA_PLAN.md to main and pushed. stefan.csv and swing.csv left (gitignored local lists).
 
 ---
 
@@ -237,8 +237,8 @@ git push origin claude/update
 
 > ⚠️ Re-verify the actual modified files with `git status` before running `git add` — the list above may be stale.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** Actual files differed from plan (stale list). Committed: CLAUDE.md, scan_list.csv, data_exporter.py, chart_builder.js, dashboard.js, registry.py, docs (architecture_audit, pine_to_python_mapping, strategy_audit, strategy_changes, strategy_pipeline_design, chart_render_spec). Deleted: "2-bar sequence test.rtf". Pushed to origin/claude/update. Then merged claude/update → trading_app/main. Two conflicts: dashboard.js (kept staging version), watchlist.csv (kept staging version, overriding main's deletion). Both servers unaffected.
 
 ---
 
@@ -255,8 +255,8 @@ git diff origin/main..HEAD --stat
 **Checkpoint:** All commits reviewed. No debugging artifacts, no half-finished features that shouldn't be in staging. Confirm the deploy/ directory with scan service files is intentional and should move forward.  
 **Stop if:** Any commit looks wrong — squash or drop before proceeding.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** After merging claude/update into main, origin/main caught up — zero commits ahead. All 17 commits reviewed via git log; all are intentional feature work (Pullback-A, strategy updates, audits). deploy/ scan service files confirmed intentional.
 
 ---
 
@@ -280,8 +280,8 @@ git log --oneline origin/staging | head -5
 ```
 Staging branch exists on remote. Top commit matches expected (the WIP snapshot from 0.5).
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** Pushed claude/update:staging. Remote branch origin/staging created. Top commit 7d6a56e matches expected.
 
 ---
 
@@ -304,8 +304,8 @@ git log --oneline -3
 # should match what was pushed in 1.1
 ```
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** trading_app_test now on staging branch, tracking origin/staging. Confirmed via git branch -vv. Some docs files show as modified in working tree (local diffs) — not a problem, server reads from disk unchanged.
 
 ---
 
@@ -320,8 +320,8 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8051
 ```
 **Checkpoint:** Service still active, HTTP 200. Server does not need restart (files on disk are identical).
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** Service active (running since 08:59:54). HTTP 302 (normal redirect). No restart needed.
 
 ---
 
@@ -345,8 +345,8 @@ find /root/damiverse_apps/trading_lab/kpi_optimization/pullback/data/results -na
 
 > ⚠️ If Step 0.2 found a cross-filesystem situation, use `rsync -a --progress` here instead of `mv`.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** mv was atomic (same filesystem confirmed in 0.2). trading_lab/ now exists at /root/damiverse_apps/trading_lab/ with all subdirs. research/ gone from trading_app. 23 CSVs confirmed in results/ (baseline was 23). Discovered 3 nested .git dirs (20260311, 20260315, 20260316) — removed them so subdirs are absorbed as plain directories into the root repo.
 
 ---
 
@@ -361,8 +361,8 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8050
 ```
 **Checkpoint:** Service active, HTTP 200. (Research was gitignored and never imported by the app.)
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** Prod active (running since 2026-03-24), HTTP 302. Unaffected.
 
 ---
 
@@ -378,8 +378,8 @@ git status   # research/ should not appear at all
 grep -n "research" .gitignore   # should return nothing
 ```
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** Removed 4 research/* lines (and the section comment) from .gitignore. git status shows no research/ entries. Committed and pushed to main.
 
 ---
 
@@ -398,8 +398,8 @@ ls .git/   # must exist
 git status   # shows untracked files (data/ should appear)
 ```
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** git init successful. Renamed default branch master → main. Added safe.directory to global git config (repo was owned by different user from the mv). 
 
 ---
 
@@ -423,8 +423,8 @@ git check-ignore -v kpi_optimization/pullback/data/results/phase5_selections.csv
 # must show it is ignored
 ```
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** Created root .gitignore covering: data/, kpi_optimization/*/data/, kpi_optimization/pullback/data/, __pycache__, .venv. Verified phase5_selections.csv and AAPL_1D.parquet are both ignored. 2479 parquets and 127 CSVs confirmed excluded.
 
 ---
 
@@ -441,8 +441,8 @@ git commit -m "Initial commit — trading_lab (research harness, Architecture A 
 ```
 **Checkpoint:** `git log` shows 1 commit. `git show --stat HEAD` lists only scripts, src, docs — no data files.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** 710 files, 189562 insertions. Scripts, configs, docs, src only — no parquets or large CSVs in commit.
 
 ---
 
@@ -462,8 +462,8 @@ git log --oneline origin/main   # remote has the commit
 ```
 Verify on GitHub: repo exists, main branch has 1 commit, no data files visible.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [ ] Blocked — gh CLI not installed  
+**Notes:** gh not available on server. User must create repo manually on GitHub and push: `cd /root/damiverse_apps/trading_lab && git remote add origin git@github.com:damieng-git/trading_lab.git && git push -u origin main`. Local repo and commit are ready.
 
 ---
 
@@ -479,8 +479,8 @@ python3 -c "import trading_dashboard; print(trading_dashboard.__file__)"
 ```
 **Checkpoint:** Both commands succeed. The second shows a path inside trading_app (editable install is still valid because the trading_app directory hasn't moved).
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** Both import checks passed. trading_dashboard.__file__ correctly points to trading_app/trading_dashboard/__init__.py.
 
 ---
 

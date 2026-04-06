@@ -26,6 +26,9 @@ data/cache/
 apps/dashboard/configs/sector_map.json
 apps/dashboard/configs/ticker_cache.json
 
+# Research lab (local only — will be added to git later)
+trading_lab/
+
 # Local production config overrides (not synced to git)
 apps/dashboard/configs/lists/entry_stocks.csv
 apps/dashboard/configs/lists/watchlist.csv
