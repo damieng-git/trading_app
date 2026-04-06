@@ -37,6 +37,7 @@ This file documents how each PineScript indicator was translated to Python.
 | BMPS.MI | BMPS.MI | BMPS.MI |
 | BNK.PA | BNK.PA | BNK.PA |
 | BNP.PA | BNP.PA | BNP.PA |
+| BNR.HM | BNR.HM | BNR.HM |
 | BPE.MI | BPE.MI | BPE.MI |
 | BRZE | BRZE | BRZE |
 | BTC-USD | BTC-USD | BTC-USD |
@@ -47,6 +48,7 @@ This file documents how each PineScript indicator was translated to Python.
 | CMCSA | CMCSA | CMCSA |
 | CNC | CNC | CNC |
 | CNI | CNI | CNI |
+| CNMD | CNMD | CNMD |
 | COCO.L | COCO.L | COCO.L |
 | COTN.SW | COTN.SW | COTN.SW |
 | CRM | CRM | CRM |
@@ -84,6 +86,7 @@ This file documents how each PineScript indicator was translated to Python.
 | HAIN | HAIN | HAIN |
 | HLT.PA | HLT.PA | HLT.PA |
 | HUM | HUM | HUM |
+| HWDN.L | HWDN.L | HWDN.L |
 | IBB | IBB | IBB |
 | IGG.L | IGG.L | IGG.L |
 | IGV | IGV | IGV |
@@ -147,6 +150,7 @@ This file documents how each PineScript indicator was translated to Python.
 | SMH | SMH | SMH |
 | SMIN | SMIN | SMIN |
 | SNBR | SNBR | SNBR |
+| SSRM | SSRM | SSRM |
 | STLAP.PA | STLAP.PA | STLAP.PA |
 | STZ | STZ | STZ |
 | SUGA.L | SUGA.L | SUGA.L |

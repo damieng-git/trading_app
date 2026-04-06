@@ -958,6 +958,78 @@
       margin: 0 auto;
     }
     .info-panel { color: var(--fg); }
+
+/* Info subtabs */
+    .info-sub-tabs {
+      display: flex; gap: 2px; margin-bottom: 20px;
+      border-bottom: 1px solid var(--border); padding-bottom: 8px;
+    }
+    .info-sub-tab {
+      font-size: 12px; font-weight: 600; padding: 4px 14px;
+      border-radius: 6px; cursor: pointer; color: var(--muted);
+      border: 1px solid transparent; transition: all 0.15s;
+    }
+    .info-sub-tab:hover { color: var(--fg); background: var(--active-bg); }
+    .info-sub-tab.active {
+      color: var(--fg); background: var(--card-bg);
+      border-color: var(--border-strong);
+    }
+
+/* Test Results components */
+    .tr-cards {
+      display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .tr-card {
+      flex: 1; min-width: 200px; padding: 14px 16px;
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--panel);
+    }
+    .tr-card-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .tr-card-grade { font-size: 16px; font-weight: 800; margin-bottom: 8px; }
+    .tr-card-stat  { font-size: 12px; color: var(--fg); margin: 2px 0; }
+    .tr-card-rec   { font-size: 11px; font-weight: 600; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+    .tr-exec-body p { font-size: 13px; line-height: 1.7; margin: 6px 0; }
+
+    .tr-pipeline   { display: flex; flex-direction: column; gap: 0; }
+    .tr-phase-row  {
+      display: flex; gap: 14px; padding: 10px 14px;
+      border-left: 3px solid var(--border); margin-left: 12px;
+      position: relative;
+    }
+    .tr-phase-row:first-child { border-top-left-radius: 4px; }
+    .tr-phase-row:last-child  { border-bottom-left-radius: 4px; }
+    .tr-phase-row::before {
+      content: ""; position: absolute; left: -7px; top: 16px;
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--border); border: 2px solid var(--bg);
+    }
+    .tr-phase-id   { font-size: 11px; font-weight: 800; min-width: 68px; padding-top: 2px; white-space: nowrap; }
+    .tr-phase-body { flex: 1; }
+    .tr-phase-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+    .tr-phase-status { font-size: 11px; font-weight: 500; margin-left: 6px; }
+    .tr-phase-desc { font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+    .tr-results-tbl { font-size: 11px; }
+    .tr-results-tbl th { white-space: nowrap; }
+
+    .tr-badge {
+      font-size: 10px; font-weight: 700; padding: 1px 6px;
+      border-radius: 4px; white-space: nowrap;
+      background: var(--panel); border: 1px solid var(--border);
+    }
+    .tr-badge-improved { color: var(--success); border-color: var(--success); }
+    .tr-badge-current  { color: var(--muted); }
+    .tr-badge-phase4   { color: var(--warning); border-color: var(--warning); }
+
+    .tr-rec-block {
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 16px; margin-bottom: 10px; background: var(--panel);
+    }
+    .tr-rec-header { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
+    .tr-rec-strat  { font-size: 14px; font-weight: 700; }
+    .tr-rec-grade  { font-size: 12px; font-weight: 700; }
+    .tr-rec-action { font-size: 11px; font-weight: 600; margin-left: auto; }
+    .tr-rec-body   { font-size: 12px; line-height: 1.6; color: var(--muted); margin: 0; }
     .info-h2 {
       font-size: 22px; font-weight: 800; margin: 0 0 4px;
       letter-spacing: -0.3px;
