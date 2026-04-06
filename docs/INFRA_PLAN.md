@@ -2,7 +2,7 @@
 
 **Status:** In progress  
 **Decided:** 2026-04-05  
-**Resume at:** Phase 3, Step 3.1  
+**Resume at:** Phase 4, Step 4.1  
 **Total steps:** 38 steps across 7 phases
 
 ---
@@ -493,8 +493,8 @@ python3 -m venv .venv
 ```
 **Checkpoint:** `.venv/` directory exists. `ls .venv/bin/python3` exists.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** python3 -m venv .venv succeeded. .venv/bin/python3 confirmed present.
 
 ---
 
@@ -514,8 +514,8 @@ cd /root/damiverse_apps/trading_app_test
 ```
 No ImportError. Smoke test passes before touching the service file.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** pip install -e ".[dev]" clean. Smoke test passed: trading_dashboard, plotly, pandas all import OK.
 
 ---
 
@@ -535,8 +535,8 @@ ExecStart=/root/damiverse_apps/trading_app_test/.venv/bin/python -m apps.dashboa
 ```
 **Checkpoint:** Diff the file visually. Verify `TRADING_APP_ROOT` is still `/root/damiverse_apps/trading_app_test`.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** ExecStart updated to trading_app_test/.venv/bin/python. TRADING_APP_ROOT=/root/damiverse_apps/trading_app_test confirmed unchanged.
 
 ---
 
@@ -560,8 +560,8 @@ No import errors, no crash. HTTP 200 from staging:
 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8051
 ```
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** New PID 555586. Clean startup, no import errors. HTTP 302 (normal). Staging now fully isolated on its own venv.
 
 ---
 
@@ -576,8 +576,8 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8050
 ```
 **Checkpoint:** Prod active, HTTP 200.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-06  
+**Notes:** Prod active (PID 827, unchanged). HTTP 302. Still binding 0.0.0.0:8050 as expected (Phase 4 will fix this).
 
 ---
 
