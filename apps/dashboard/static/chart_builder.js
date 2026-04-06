@@ -712,8 +712,6 @@
     const _activeStrat = (typeof window.currentStrategy === "string") ? window.currentStrategy : "trend";
     const stoofKpiNames = strategyKpis["stoof"] || [];
     const stoofSlice = kpiSlice(stoofKpiNames);
-    const archAKpiNames = strategyKpis["arch_a"] || [];
-    const archASlice = kpiSlice(archAKpiNames);
 
     let combo3kpis = data.combo_3_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "Volume + MA20"];
     let combo4kpis = data.combo_4_kpis || ["Nadaraya-Watson Smoother", "Madrid Ribbon", "GK Trend Ribbon", "cRSI"];
@@ -734,7 +732,16 @@
       if (c4d && c4d.kpis) { combo4kpis = c4d.kpis; combo4pols = c4d.pols || null; }
       else { combo4kpis = []; }
       _stratColor = _activeDef.color || null;
+    } else if (_activeDef && _activeDef.color) {
+      _stratColor = _activeDef.color;
     }
+
+    // Gate strategy KPI list: any non-polarity, non-stoof strategy that has its own
+    // strategy_kpis entry in the asset (e.g. arch_a). Used for heatmap, breakout, score bar.
+    const _gateKpiNames = (_activeDef && _activeDef.entry_type !== "polarity_combo" && _activeStrat !== "stoof"
+      && strategyKpis[_activeStrat] && strategyKpis[_activeStrat].length)
+      ? strategyKpis[_activeStrat] : null;
+    const _gateSlice = _gateKpiNames ? kpiSlice(_gateKpiNames) : null;
 
     let c3Active = null, c4Active = null;
     const allKpiZ = {};
@@ -773,7 +780,7 @@
       ? (strategyKpis[_activeStrat] || []) : null;
     const activeStratKpiNames = _polStratKpiNames
       ? _polStratKpiNames
-      : (_activeStrat === "stoof" ? stoofKpiNames : null);
+      : (_activeStrat === "stoof" ? stoofKpiNames : (_gateKpiNames || null));
     const _brkFilteredRaw = activeStratKpiNames
       ? kpisBreakout.filter(bk => {
           const base = bk.startsWith("BO_") ? bk.slice(3) : bk;
@@ -782,7 +789,7 @@
       : kpisBreakout.slice();
     const _heatmapOrder = _polStratKpiNames
       ? _polStratKpiNames
-      : (_activeStrat === "stoof" ? stoofKpiNames : kpisTrend);
+      : (_activeStrat === "stoof" ? stoofKpiNames : (_gateKpiNames || kpisTrend));
     const _heatmapIdx = {};
     _heatmapOrder.forEach((k, i) => { _heatmapIdx[k] = i; });
     _brkFilteredRaw.sort((a, b) => {
@@ -804,21 +811,30 @@
           if (rowZ[ci] === 1) { bullX.push(x[ci]); bullText.push(label + ": " + (rowC[ci] || "")); }
           else if (rowZ[ci] === -1) { bearX.push(x[ci]); bearText.push(label + ": " + (rowC[ci] || "")); }
         }
-        if (bullX.length) traces.push(mkTrace({ type: "scatter", x: bullX, y: constant(bullX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#22c55e" }, text: constant(bullX.length, label), hoverinfo: "text+x" }, 5, "KPI Breakout", true));
-        if (bearX.length) traces.push(mkTrace({ type: "scatter", x: bearX, y: constant(bearX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#ef4444" }, text: constant(bearX.length, label), hoverinfo: "text+x" }, 5, "KPI Breakout", true));
+        if (bullX.length) traces.push(mkTrace({ type: "scatter", x: bullX, y: constant(bullX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#22c55e" }, text: constant(bullX.length, label), hoverinfo: "text+x" }, 6, "KPI Breakout", true));
+        if (bearX.length) traces.push(mkTrace({ type: "scatter", x: bearX, y: constant(bearX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#ef4444" }, text: constant(bearX.length, label), hoverinfo: "text+x" }, 6, "KPI Breakout", true));
       });
     }
 
     // TrendScore / StoofScore (row 4)
     let tsPad = 1;
     const isStoof = _activeStrat === "stoof";
-    const isArchA = _activeStrat === "arch_a";
     const isPolStrat = !!_polStratKpiNames;
     const polStratSlice = isPolStrat ? kpiSlice(_polStratKpiNames) : null;
+
+    // Warn when a named strategy has no dedicated KPI list and falls back to
+    // generic trend KPIs — catches stale assets or missing registry.py registrations.
+    if (_activeStrat !== "all" && _activeStrat !== "trend" && !isPolStrat && !isStoof && !_gateKpiNames) {
+      console.warn(
+        `[chart] Strategy '${_activeStrat}' has no strategy_kpis in the asset — ` +
+        `heatmap and score bar are showing generic trend KPIs. ` +
+        `Register IndicatorDefs with strategies=['${_activeStrat}'] in registry.py and rebuild.`
+      );
+    }
     const scoreSlice = isPolStrat ? polStratSlice
-      : (isStoof ? stoofSlice : trend);
+      : (isStoof ? stoofSlice : (_gateSlice || trend));
     const scoreLabel = isPolStrat ? (_activeDef.label || _activeStrat) + " Score"
-      : (isStoof ? "StoofScore" : "TrendScore");
+      : (isStoof ? "StoofScore" : (_gateKpiNames ? (_activeDef && _activeDef.label ? _activeDef.label + " Score" : _activeStrat + " Score") : "TrendScore"));
 
     // Build polarity map for polarity strategies: KPI name → expected polarity
     // Bug-C fix: prefer TF-specific combos (combos_by_tf) over flat combos, mirroring entry logic.
@@ -886,7 +902,7 @@
 
     // KPI Trend Heatmap (row 6) — uses scoreSlice when strategy is active
     const heatmapSlice = isPolStrat ? polStratSlice
-      : (isStoof ? stoofSlice : trend);
+      : (isStoof ? stoofSlice : (_gateSlice || trend));
     const trLabels = [];
     if (heatmapSlice.kk.length) {
       const trZ = heatmapSlice.zz.slice();
@@ -902,7 +918,7 @@
         showscale: false, xgap: 0, ygap: 3,
         customdata: trCustom, text: trC,
         hovertemplate: "<b>%{customdata}</b><br>%{x}<br>%{text}<extra></extra>",
-      }, 6, "KPI Trend", true));
+      }, 5, "KPI Trend", true));
     }
 
     // Combo row (row 7) — C3/C4 isolated above TrendScore with small gap
@@ -1337,8 +1353,8 @@
     const gap = 0.015;
     const comboGap = 0.008; // tighter gap between combo row and TrendScore
 
-    const r6Bot = 0, r6Top = r6Bot + trShare;
-    const r5Bot = r6Top + gap, r5Top = r5Bot + brShare;
+    const r6Bot = 0, r6Top = r6Bot + brShare;
+    const r5Bot = r6Top + gap, r5Top = r5Bot + trShare;
     const r4Bot = r5Top + gap, r4Top = r4Bot + tsShare;
     const rCBot = r4Top + (comboLabels.length ? comboGap : gap), rCTop = rCBot + comboShare;
     const r3Bot = rCTop + (comboLabels.length ? gap : 0), r3Top = r3Bot + oscShare;
@@ -1412,18 +1428,18 @@
         zeroline: true, zerolinecolor: _zeroLine,
         range: [-tsPad, tsPad], autorange: false, fixedrange: true,
       }),
-      yaxis5: (brLabels.length ? {
+      yaxis5: (trLabels.length ? {
         domain: [r5Bot, r5Top], tickmode: "array",
-        tickvals: brLabels, ticktext: brLabels, tickfont: { size: 8 },
-        ticklabelstandoff: 8, automargin: true,
-        categoryorder: "array", categoryarray: brLabels.slice().reverse(),
-        showgrid: true, gridcolor: _gridAlpha,
-      } : makeYAxis([r5Bot, r5Top])),
-      yaxis6: (trLabels.length ? {
-        domain: [r6Bot, r6Top], tickmode: "array",
         tickvals: trLabels, ticktext: trLabels, tickfont: { size: 8 },
         ticklabelstandoff: 8, automargin: true,
         categoryorder: "array", categoryarray: trLabels.slice().reverse(),
+        showgrid: true, gridcolor: _gridAlpha,
+      } : makeYAxis([r5Bot, r5Top])),
+      yaxis6: (brLabels.length ? {
+        domain: [r6Bot, r6Top], tickmode: "array",
+        tickvals: brLabels, ticktext: brLabels, tickfont: { size: 8 },
+        ticklabelstandoff: 8, automargin: true,
+        categoryorder: "array", categoryarray: brLabels.slice().reverse(),
         showgrid: true, gridcolor: _gridAlpha,
       } : makeYAxis([r6Bot, r6Top])),
       yaxis7: (comboLabels.length ? {
@@ -1440,8 +1456,8 @@
       { text: "Price (" + tf + ")", xref: "paper", yref: "paper", x: 0.5, y: r1Top, showarrow: false, font: { size: 14 }, xanchor: "center", yanchor: "bottom" },
       { text: "Oscillators", xref: "paper", yref: "paper", x: 0.5, y: r3Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: scoreLabel, xref: "paper", yref: "paper", x: 0.5, y: r4Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
-      { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
-      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
+      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
+      { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
     ];
     if (comboLabels.length) {
       subplotTitles.push({ text: "Combos", xref: "paper", yref: "paper", x: 0.5, y: rCTop, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" });

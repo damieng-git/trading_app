@@ -57,6 +57,12 @@ class IndicatorDef:
     config_key: Optional[str] = None     # defaults to key
     config_defaults: Dict[str, Any] = field(default_factory=dict)
     strategies: List[str] = field(default_factory=lambda: ["v6"])
+    # ↑ CRITICAL: this field is the sole mechanism that populates
+    # strategy_kpis[key] in the JSON asset (via get_kpi_trend_order(strategy)).
+    # Without at least one IndicatorDef with strategies=["<key>"], the
+    # dashboard heatmap, breakout panel, and score bar for that strategy
+    # will silently fall back to generic trend KPIs at render time.
+    # Every new strategy MUST have its indicators registered here.
 
     def __post_init__(self) -> None:
         if self.config_key is None:

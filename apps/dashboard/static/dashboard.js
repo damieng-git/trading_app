@@ -1398,7 +1398,8 @@
       const lowerData = [];
 
       // Row 1 → upper, row 2 → pnl, row 3 → osc, row 4 → ts, row 7 → lower (y3), rows 5-6 → lower
-      const lowerAxisMap = {5: 1, 6: 2};
+      // Row 5 = Trend heatmap → y2 (middle), Row 6 = Breakout signals → y (bottom)
+      const lowerAxisMap = {5: 2, 6: 1};
       for (const tr of data) {
         const xa = tr.xaxis || "x";
         const axNum = parseInt((xa.replace("x", "") || "1"), 10);
@@ -1546,8 +1547,8 @@
         lowerLayout[k] = v;
       }
       lowerLayout.shapes = [];
-      lowerLayout.xaxis  = cleanAxis(layout.xaxis5, Object.assign({domain: [0, 1], anchor: "y"}, xRangeOvr));
-      lowerLayout.xaxis2 = cleanAxis(layout.xaxis6, Object.assign({domain: [0, 1], anchor: "y2", matches: "x"}, xRangeOvr));
+      lowerLayout.xaxis  = cleanAxis(layout.xaxis6, Object.assign({domain: [0, 1], anchor: "y"}, xRangeOvr));
+      lowerLayout.xaxis2 = cleanAxis(layout.xaxis5, Object.assign({domain: [0, 1], anchor: "y2", matches: "x"}, xRangeOvr));
       const _meta = layout.meta || {};
       const _nBr    = _meta._nBr    || 0;
       const _nTr    = _meta._nTr    || 0;
@@ -1566,8 +1567,8 @@
       const _cBot  = _trTop + _comboGap;
       const _cTop  = 1.0;
 
-      lowerLayout.yaxis  = cleanAxis(layout.yaxis5, {domain: [_brBot, _brTop], anchor: "x"});
-      lowerLayout.yaxis2 = cleanAxis(layout.yaxis6, {domain: [_trBot, _trTop], anchor: "x2"});
+      lowerLayout.yaxis  = cleanAxis(layout.yaxis6, {domain: [_brBot, _brTop], anchor: "x"});
+      lowerLayout.yaxis2 = cleanAxis(layout.yaxis5, {domain: [_trBot, _trTop], anchor: "x2"});
       if (_nCombo > 0) {
         lowerLayout.xaxis3 = cleanAxis(layout.xaxis7, Object.assign({domain: [0, 1], anchor: "y3", matches: "x"}, xRangeOvr));
         lowerLayout.yaxis3 = cleanAxis(layout.yaxis7, {domain: [_cBot, _cTop], anchor: "x3"});
@@ -1590,7 +1591,7 @@
           .map(a => {
             const xr = a.xref || "";
             const yr = a.yref || "";
-            const axMap = {"x6":"x2","x5":"x","x7":"x3","y6":"y2","y5":"y","y7":"y3"};
+            const axMap = {"x5":"x2","x6":"x","x7":"x3","y5":"y2","y6":"y","y7":"y3"};
             return {
               ...a,
               xref: axMap[xr] || xr,

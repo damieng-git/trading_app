@@ -3,6 +3,8 @@
 This document records every code change made during the strategy audit and fix effort.
 See `docs/strategy_audit.md` for the original bug catalogue and design rationale.
 
+> **Note (2026-03-27):** The Swing strategy was subsequently removed and replaced by Arch-A (Pullback-A). BUG-S1 below was fixed but then made moot by the removal. All Swing references in this document are historical.
+
 ---
 
 ## Files Modified
@@ -37,10 +39,11 @@ Trend now uses the correct KPI set per timeframe (e.g. 1D uses NW+Madrid+Volume,
 
 ### BUG-S1 — Swing strategy missing `entry_tf`/`exit_tf`
 **File:** `apps/dashboard/configs/config.json`
+**Status: Superseded** — Swing was removed on 2026-03-27 and replaced by Arch-A. This fix is no longer relevant.
 
 **Before:** Swing had no `entry_tf`/`exit_tf` fields.
 
-**After:** Added `"entry_tf": "1W"` and `"exit_tf": "1W"` to the swing setup so the engine selects the correct exit parameters (T=2, M=20) instead of defaulting to an undefined timeframe.
+**After (now moot):** Added `"entry_tf": "1W"` and `"exit_tf": "1W"` to the swing setup so the engine selects the correct exit parameters (T=2, M=20) instead of defaulting to an undefined timeframe.
 
 ---
 
@@ -217,7 +220,7 @@ When server events exist, they are used directly — no re-simulation.
 | Bug | Category | Severity | Status |
 |---|---|---|---|
 | BUG-T1 | Trend combos_by_tf ignored | High | Fixed |
-| BUG-S1 | Swing missing entry/exit TF | Medium | Fixed |
+| BUG-S1 | Swing missing entry/exit TF | Medium | Fixed → N/A (Swing removed) |
 | BUG-D1 | Buy Dip cross-TF exit params | High | Fixed |
 | BUG-D2 | Polarity status used exit_tf | High | Fixed |
 | BUG-D4 | Unwanted entry gates on Dip/Swing | Medium | Fixed |

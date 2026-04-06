@@ -5,10 +5,12 @@ This file documents how each PineScript indicator was translated to Python.
 ## Symbols and data source
 
 - Data source: `yfinance`
-- Timeframes:
-  - `4H`: built from `60m` candles resampled to 4-hour OHLCV
+- Timeframes (4 active):
   - `1D`: `1d` candles from Yahoo
   - `1W`: `1d` candles resampled to weekly (`W-FRI`)
+  - `2W`: `1d` candles resampled to bi-weekly
+  - `1M`: `1d` candles resampled to monthly
+  - ~~`4H`~~: removed
 - OHLCV aggregation rules: open=first, high=max, low=min, close=last, volume=sum
 
 | Display symbol | yfinance ticker used | Attempts |
@@ -53,7 +55,6 @@ This file documents how each PineScript indicator was translated to Python.
 | COTN.SW | COTN.SW | COTN.SW |
 | CRM | CRM | CRM |
 | CS.PA | CS.PA | CS.PA |
-| CSAN | CSAN | CSAN |
 | CSPX.AS | CSPX.AS | CSPX.AS |
 | CSQ | CSQ | CSQ |
 | CVGI | CVGI | CVGI |
@@ -77,19 +78,15 @@ This file documents how each PineScript indicator was translated to Python.
 | EXV5.DE | EXV5.DE | EXV5.DE |
 | EXV7.DE | EXV7.DE | EXV7.DE |
 | FDJ.PA | FDJ.PA | FDJ.PA |
-| FDM.L | FDM.L | FDM.L |
 | FINX | FINX | FINX |
 | FISV | FISV | FISV |
 | FORR | FORR | FORR |
-| FOXA | FOXA | FOXA |
 | FTSEMIB.MI | FTSEMIB.MI | FTSEMIB.MI |
 | GDX | GDX | GDX |
 | GFT.F | GFT.F | GFT.F |
 | GOOG | GOOG | GOOG |
 | GPRE | GPRE | GPRE |
 | HAIN | HAIN | HAIN |
-| HCM | HCM | HCM |
-| HELP | HELP | HELP |
 | HLT.PA | HLT.PA | HLT.PA |
 | HUM | HUM | HUM |
 | IBB | IBB | IBB |
@@ -117,11 +114,9 @@ This file documents how each PineScript indicator was translated to Python.
 | KGRN | KGRN | KGRN |
 | KLAR | KLAR | KLAR |
 | KNIN.SW | KNIN.SW | KNIN.SW |
-| KROS | KROS | KROS |
 | LEO | LEO | LEO |
 | LGEN.L | LGEN.L | LGEN.L |
 | LI | LI | LI |
-| LSPD | LSPD | LSPD |
 | LULU | LULU | LULU |
 | LYP6.DE | LYP6.DE | LYP6.DE |
 | MBUU | MBUU | MBUU |
@@ -143,18 +138,14 @@ This file documents how each PineScript indicator was translated to Python.
 | ORA.PA | ORA.PA | ORA.PA |
 | PACB | PACB | PACB |
 | PLUG | PLUG | PLUG |
-| PRCT | PRCT | PRCT |
 | PRTA | PRTA | PRTA |
 | PSF | PSF | PSF |
-| PSNY | PSNY | PSNY |
-| PUBM | PUBM | PUBM |
 | PUM.DE | PUM.DE | PUM.DE |
 | QDV5.DE | QDV5.DE | QDV5.DE |
 | QFIN | QFIN | QFIN |
 | QNST | QNST | QNST |
 | QSV.F | QSV.F | QSV.F |
 | RCO.PA | RCO.PA | RCO.PA |
-| REPL | REPL | REPL |
 | RFI | RFI | RFI |
 | RHI | RHI | RHI |
 | RI.PA | RI.PA | RI.PA |
@@ -162,7 +153,6 @@ This file documents how each PineScript indicator was translated to Python.
 | RMAX | RMAX | RMAX |
 | ROG | ROG | ROG |
 | RSG | RSG | RSG |
-| RXST | RXST | RXST |
 | SAR | SAR | SAR |
 | SB=F | SB=F | SB=F |
 | SC06.DE | SC06.DE | SC06.DE |
@@ -173,6 +163,7 @@ This file documents how each PineScript indicator was translated to Python.
 | STZ | STZ | STZ |
 | SUGA.L | SUGA.L | SUGA.L |
 | SWBI | SWBI | SWBI |
+| SXC | SXC | SXC |
 | TGT | TGT | TGT |
 | THRM | THRM | THRM |
 | TNDM | TNDM | TNDM |
@@ -181,7 +172,6 @@ This file documents how each PineScript indicator was translated to Python.
 | TSLA | TSLA | TSLA |
 | UNH | UNH | UNH |
 | VEGI | VEGI | VEGI |
-| VIV.PA | VIV.PA | VIV.PA |
 | VRT | VRT | VRT |
 | W1TB.MU | W1TB.MU | W1TB.MU |
 | W1TBD.XD | W1TBD.XD | W1TBD.XD |

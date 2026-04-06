@@ -97,8 +97,9 @@ In the target design, adding a strategy is **config-only** unless it introduces 
 ```
 1. config.json   → add a new block under strategy_setups with the desired combos,
                    entry_gates, exit_combos, timeframe, weights
-2. rebuild assets → python -m trading_dashboard dashboard build
-3. JS             → zero changes required
+2. registry.py   → register IndicatorDefs with strategies=["<key>"] (see §3a below)
+3. rebuild assets → python -m trading_dashboard dashboard build
+4. JS             → zero changes required
 ```
 
 ### Case B — new `entry_type`
@@ -107,17 +108,28 @@ In the target design, adding a strategy is **config-only** unless it introduces 
 1. strategy.py          → add compute_<type>_position_events(df, kpi_states, sdef)
 2. build_dashboard.py   → add 1 dispatch line in the strategy loop
 3. config.json          → add strategy_setup block with entry_type: "<type>"
-4. rebuild assets
-5. JS                   → zero changes required
+4. registry.py          → register IndicatorDefs with strategies=["<key>"] (see §3a below)
+5. rebuild assets
+6. JS                   → zero changes required
 ```
+
+### §3a — registry.py registration (mandatory for all strategies)
+
+`strategy_kpis[key]` in the JSON asset is built exclusively by `get_kpi_trend_order(strategy)` in `registry.py`, which returns all `IndicatorDef` entries whose `strategies` list contains `key`. **If no indicators are registered for a strategy, `strategy_kpis[key]` will be an empty list**, and `chart_builder.js` will silently fall back to generic trend KPIs for the heatmap, breakout panel, and score bar.
+
+For gate strategies (`entry_type` is neither `polarity_combo` nor `threshold`), the JS resolves KPI lists from `strategy_kpis[key]` in the asset — there is no fallback to `combos_by_tf`. Registration is therefore the only way to get the correct KPIs on screen.
+
+**What to register:** register **all KPIs relevant to the strategy** — regime gates, entry trigger, and any exit indicator used by the engine. The heatmap and breakout panel are intended to give a full picture of strategy state, not just the entry combo. The Regime Ribbon (combo row) is the dedicated place for entry-only conditions and is driven separately by `c3_states_by_strategy`, not by `strategy_kpis`.
+
+**Validation:** `data_exporter.py` logs a `WARNING` at build time for every active strategy with an empty `strategy_kpis` entry. Check the build log after any new strategy addition.
 
 ### What never changes when adding a strategy
 
-- `chart_builder.js` — reads `position_events_by_strategy[activeStrategy]` generically
 - `data_exporter.py` — already writes all strategies from the dict
 - `screener_builder.py` — already iterates `strategy_setups` generically
 - `dashboard.js` — strategy pills are built from `strategy_setups` keys at runtime
 - `dashboard_screener.js` — `STRAT_PRIO` built at init from `STRATEGY_SETUPS.setups` filtered by `badge_prio`; `strat_any` filter iterates `STRAT_PRIO` generically
+- `chart_builder.js` — reads `position_events_by_strategy[activeStrategy]` generically for trade rendering; KPI panels resolve from `strategy_kpis[key]` generically for all strategy types
 
 ### Badge display config (required fields per strategy)
 
@@ -132,7 +144,7 @@ In the target design, adding a strategy is **config-only** unless it introduces 
 ## 4. Engine Responsibilities
 
 ### `compute_polarity_position_events(df, kpi_states, sdef, tf)`
-- Used by: `dip_buy`, `swing`, `trend`
+- Used by: `dip_buy`, `trend`
 - Entry logic: C3 onset (all KPIs match expected polarity) + configurable entry gates
 - Exit logic: ATR stop, full C3 invalidation within T bars, 2/N KPIs turning after T bars, M-bar checkpoint trailing stop
 - Per-strategy config via `sdef`: `combos`, `combos_by_tf`, `entry_gates`, `exit_combos`, `exit_params`
@@ -160,17 +172,20 @@ In the target design, adding a strategy is **config-only** unless it introduces 
 
 ## 5. Current State vs Target
 
-| Component | Target | Current State | Gap |
+All gaps below have been closed as of 2026-04-06 (P1–P8). This table is preserved for reference.
+
+| Component | Target | Status | Closed by |
 |---|---|---|---|
-| Python engines | 1 per entry_type | `compute_position_events` (legacy) still runs alongside polarity engine for trend | Legacy engine must be removed |
-| JSON asset | `position_events_by_strategy` only | Both `position_events` (legacy) and `position_events_by_strategy` written | Remove legacy field write |
-| JS position rendering | Reads pre-computed events only | Fallback simulation at `chart_builder.js:1029–1103` can reconstruct client-side | Remove fallback blocks |
-| JS "all" mode | Reads `position_events_by_strategy` for each strategy | Re-simulates trades at `chart_builder.js:1109–1212`, missing per-strategy gates | Replace with pre-computed read |
-| Per-strategy entry gates | Config-driven, respected everywhere | Python respects them; JS fallback hardcodes gates always-on | Remove JS fallback |
-| Stale asset UX | Banner: "rebuild required" | Silent wrong data (legacy Trend events shown) | Add stale-asset banner |
-| `c3_states_by_strategy` | Used by combo heatmap row | Computed and exported but never read in JS | Wire up in JS or remove |
-| Score bar weights | Same rule for all strategies | Legacy uses `kpi_weights`; polarity strategies use equal weight | Standardise |
-| Screener `STRAT_PRIO` | Config-driven from `badge_prio` | Hardcoded 3-entry JS array (dip_buy/swing/trend); stoof missing | ✓ Closed 2026-03-17 |
+| Python engines | 1 per entry_type | ✅ Done | P1 — legacy `compute_position_events` removed from build pipeline |
+| JSON asset | `position_events_by_strategy` only | ✅ Done | P1 — `position_events` legacy field no longer written |
+| JS position rendering | Reads pre-computed events only | ✅ Done | P2 — JS fallback simulation removed |
+| JS "all" mode | Reads `position_events_by_strategy` for each strategy | ✅ Done | P2 — "all" mode re-simulation replaced with pre-computed read |
+| Per-strategy entry gates | Config-driven, respected everywhere | ✅ Done | P6 — `scan_filters` removed; `entry_gates` is single source of truth |
+| Stale asset UX | Banner: "rebuild required" | ✅ Done | P2 — stale-asset toast shown when events missing |
+| `c3_states_by_strategy` | Used by combo heatmap row | ✅ Done | P3 — wired in JS; ribbon reads from asset |
+| Score bar weights | Same rule for all strategies | ✅ Done | P4 — all strategies use `kpi_weights[k] ?? 1` |
+| Screener `STRAT_PRIO` | Config-driven from `badge_prio` | ✅ Done | P5 — built from `strategy_setups` at init |
+| Gate strategy KPI path | `strategy_kpis[key]` for all non-polarity/threshold strategies | ✅ Done | P8 — `_gateKpiNames`/`_gateSlice` added; dead archA code removed |
 
 ---
 
@@ -252,9 +267,9 @@ The screener's position engine defaulted unset gate keys to `True` (opt-out mode
 | Strategy | `sma20_gt_sma200` | `volume_spike` | `sr_break` | `overextension` |
 |---|---|---|---|---|
 | dip_buy | false | false | false | false |
-| swing | true | true | true | false |
 | trend | true | true | true | false |
 | stoof | false | false | false | false |
+| arch_a | false | false | false | false |
 
 **Invariant going forward:** scan and screener will produce identical entry signals on the last bar for any strategy, because they read the same gate config and execute equivalent gate logic.
 
@@ -268,16 +283,36 @@ The screener's position engine defaulted unset gate keys to `True` (opt-out mode
 - `compute_arch_a_position_events()` — standalone engine for the 5-gate pullback-in-uptrend strategy (G1=SMA50W>SMA200W, G2=RSI14<50, G4=MACD hist crossover, G5=Chandelier Exit). No C4 scale-up.
 - Dispatch block in `build_dashboard.py`; `arch_a` branch in `compute_c3_states_by_strategy()`.
 - `arch_a` strategy setup in `config.json` (replaces removed `swing`); active on 1D and 1W.
-- 3 `IndicatorDef` entries in `registry.py` with `strategies=["arch_a"]` — proxies for G1/G2/G4 using existing computed KPI columns (`SuperTrend`, `cRSI`, `CM_Ult_MacD_MFT`). Wired into `data.strategy_kpis["arch_a"]` via `get_kpi_trend_order("arch_a")`.
-- `chart_builder.js`: `archAKpiNames`/`archASlice` wired into rows 4/5/6 identically to the stoof pattern.
+- 3 `IndicatorDef` entries in `registry.py` with `strategies=["arch_a"]` — proxies for G1/G2/G4 using existing computed KPI columns (`SuperTrend`, `cRSI`, `CM_Ult_MacD_MFT`). Populates `data.strategy_kpis["arch_a"]` via `get_kpi_trend_order("arch_a")`.
+- `chart_builder.js`: `archAKpiNames`/`archASlice` were computed but **never wired** (dead code). The heatmap and score bar fell back to generic trend KPIs. Fixed in P8 below.
 
 **Why a new engine (not polarity_combo or threshold):**
 Arch_a has bespoke gate logic — a weekly SMA cross (requiring a cross-TF dataframe), MACD histogram onset detection, and a Chandelier Exit computed inline. None of the existing engines accommodate multi-timeframe context + explicit onset + a non-KPI exit indicator. A dedicated engine is the correct approach.
 
 ---
 
+### P8 — Gate strategy KPI path generalised + build-time validator added ✓
+**Date:** 2026-04-06
+**Files:** `chart_builder.js`, `data_exporter.py`, `registry.py`, `CLAUDE.md`, `docs/chart_render_spec.md`, `docs/strategy_pipeline_design.md`
+
+**Problem:** `chart_builder.js` only had dedicated KPI-source branches for `polarity_combo` and `stoof`. Any other `entry_type` (e.g. `arch_a`) fell through to the generic trend KPI list. `archAKpiNames`/`archASlice` were computed in P7 but never wired — dead code. There was no build-time or runtime signal that the fallback had triggered.
+
+**Fix:**
+- `chart_builder.js`: removed dead `archAKpiNames`/`archASlice`. Added `_gateKpiNames`/`_gateSlice` — reads `strategy_kpis[key]` from the asset for any strategy that is neither `polarity_combo` nor `stoof`. Wired into `activeStratKpiNames` (breakout filter), `_heatmapOrder` (trend heatmap), and `scoreSlice`/`scoreLabel` (score bar). Added `console.warn` when fallback triggers.
+- `data_exporter.py`: added a build-time `logger.warning` for every active strategy in `config.json` whose `strategy_kpis[key]` is empty after asset assembly.
+- `registry.py`: added inline comment to the `strategies` field explaining its role as the sole KPI-list driver.
+- `CLAUDE.md`: updated `registry.py` description; added "Adding a new strategy — required steps" section.
+- `docs/chart_render_spec.md`: updated score bar KPI source table and render checklist.
+
+**Invariant going forward:** any strategy with `strategy_kpis[key]` non-empty in the asset will automatically use its own KPI list in the heatmap, breakout panel, and score bar — no JS changes required when adding a new gate strategy.
+
+**Design intent clarified:** the heatmap and breakout panels show all KPIs relevant to the strategy (regime gates + entry trigger + exit indicators). The Regime Ribbon is the dedicated place for entry-only conditions. When registering a gate strategy's indicators in `registry.py`, register the full set — not just the entry trigger.
+
+---
+
 ## 7. Related Documents
 
+- `docs/chart_render_spec.md` — **chart tab render contract**: what each sub-tab renders, KPI dropdown filter rules, regime ribbon label format, and the per-strategy asset checklist
 - `docs/strategy_audit.md` — per-strategy bug list (T1–CC2), audited 2026-03-06
 - `docs/architecture_audit.md` — 30 architecture recommendations, audited 2026-03-11
 - `CLAUDE.md` — strategy engine overview, entry/exit logic summary, config schema
