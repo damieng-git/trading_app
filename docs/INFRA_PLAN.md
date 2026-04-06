@@ -2,7 +2,7 @@
 
 **Status:** In progress  
 **Decided:** 2026-04-05  
-**Resume at:** Phase 2, Step 2.7 (push trading_lab to GitHub — requires manual repo creation)  
+**Resume at:** Phase 3, Step 3.1  
 **Total steps:** 38 steps across 7 phases
 
 ---
@@ -33,22 +33,18 @@
 │   ├── tests/
 │   ├── docs/
 │   ├── infra/                           ← NEW: nginx + systemd + deploy scripts
+│   ├── trading_lab/                     ← research (gitignored, own .git, add to repo later)
 │   └── data/                            gitignored
 │
-├── trading_app_test/                    ← clone of Repo 1, staging branch
-│   ├── .git/
-│   ├── .venv/                           ← NEW: own venv, isolated from prod
-│   └── ...
-│
-└── trading_lab/                         ← Repo 2 (github: damieng-git/trading_lab)
+└── trading_app_test/                    ← clone of Repo 1, staging branch
     ├── .git/
-    ├── kpi_optimization/
-    └── _archive/
+    ├── .venv/                           ← NEW: own venv, isolated from prod
+    └── ...
 ```
 
 **Branches:** `trading_app` → `main` (prod) + `staging`  
 **Servers:** trading_app → port 8050, trading_app_test → port 8051  
-**Coupling:** trading_lab pip-installs trading_dashboard from trading_app path
+**Coupling:** trading_lab pip-installs trading_dashboard from trading_app (editable install)
 
 ---
 
@@ -462,8 +458,8 @@ git log --oneline origin/main   # remote has the commit
 ```
 Verify on GitHub: repo exists, main branch has 1 commit, no data files visible.
 
-**Status:** [ ] Blocked — gh CLI not installed  
-**Notes:** gh not available on server. User must create repo manually on GitHub and push: `cd /root/damiverse_apps/trading_lab && git remote add origin git@github.com:damieng-git/trading_lab.git && git push -u origin main`. Local repo and commit are ready.
+**Status:** [x] Skipped — architecture changed  
+**Notes:** Decision made to move trading_lab inside trading_app/ instead of a peer directory, and skip creating a separate GitHub remote for now. trading_lab is gitignored in trading_app and will be added to trading_app git later. No remote needed at this time.
 
 ---
 
