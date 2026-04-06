@@ -20,7 +20,15 @@
       && SCREENER.by_symbol[sym] && SCREENER.by_symbol[sym][tf])
       ? SCREENER.by_symbol[sym][tf] : null;
   }
-  function _allTfs() { return typeof TIMEFRAMES !== "undefined" ? TIMEFRAMES : ["4H","1D","1W","2W","1M"]; }
+  function _allTfs() { return typeof TIMEFRAMES !== "undefined" ? TIMEFRAMES : ["1D","1W","2W","1M"]; }
+  function _isToday(dateStr) {
+    if (!dateStr) return false;
+    var today = new Date();
+    var ymd = today.getFullYear() + "-" +
+      String(today.getMonth() + 1).padStart(2, "0") + "-" +
+      String(today.getDate()).padStart(2, "0");
+    return String(dateStr).slice(0, 10) === ymd;
+  }
   function _strategies() {
     if (typeof STRATEGY_SETUPS === "undefined") return [];
     var setups = STRATEGY_SETUPS.setups || {};
@@ -119,6 +127,53 @@
     return { hit_rate: avgHit, avg_pnl: avgPnl, n: hits.length };
   }
 
+  // ── Live Scan Stats Bar (shown during/after SSE stream) ──────────────────
+  function _renderLiveScanStats(d) {
+    var bar = document.getElementById("scanStatsBar");
+    if (!bar) return;
+
+    var chips = [];
+
+    function chip(label, value, cls) {
+      return '<span class="scan-stat-chip' + (cls ? " " + cls : "") + '">' +
+        '<span class="scan-stat-label">' + label + '</span>' +
+        '<span class="scan-stat-value">' + value + '</span>' +
+        '</span>';
+    }
+
+    var scanned = d.universe_total || 0;
+    var dlOk    = d.downloaded_ok  || 0;
+    var dlFail  = d.downloaded_fail || 0;
+    var raw     = d.raw_signals    || 0;
+    var conf    = d.total          || 0;
+    var filt    = d.filtered_open  || 0;
+    var elapsed = d.elapsed_s != null ? d.elapsed_s : null;
+
+    if (scanned) chips.push(chip("Scanned", scanned));
+    if (dlOk || dlFail) {
+      var dlVal = dlOk + (dlFail > 0 ? ' <span class="scan-stat-warn">(' + dlFail + " failed)</span>" : "");
+      chips.push(chip("Downloaded", dlVal, dlFail > 0 ? "chip-warn" : ""));
+    }
+    if (raw)  chips.push(chip("Raw candidates", raw));
+    if (conf != null) chips.push(chip("Confirmed", conf, conf > 0 ? "chip-good" : ""));
+    if (filt) chips.push(chip("Filtered (open pos)", filt, "chip-muted"));
+
+    var byTf = d.by_tf || {};
+    var tfKeys = Object.keys(byTf).filter(function(k) { return byTf[k] > 0; });
+    if (tfKeys.length > 1) {
+      var tfStr = tfKeys.map(function(k) { return k + ": " + byTf[k]; }).join(" · ");
+      chips.push(chip("By TF", tfStr));
+    }
+
+    if (elapsed != null) chips.push(chip("Time", elapsed + "s", "chip-muted"));
+
+    bar.innerHTML = chips.join("");
+    bar.style.display = chips.length ? "flex" : "none";
+  }
+
+  // expose so dashboard.js SSE complete handler can call it
+  window._renderScanStats = _renderLiveScanStats;
+
   // ── TF Pill wiring ────────────────────────────────────────────────────────
   function _initTfPills() {
     document.querySelectorAll(".scan-tf-pill").forEach(function(btn) {
@@ -182,7 +237,9 @@
     if (!wrap) return;
 
     var tf = (_scanTf === "all") ? "1D" : _scanTf;
-    var rows = _screenerRows(tf).filter(function(r) { return r.combo_3_new || r.combo_4_new; });
+    var rows = _screenerRows(tf).filter(function(r) {
+      return r.combo_3_new || r.combo_4_new || _isToday(r.scan_last_confirmed);
+    });
 
     if (countEl) countEl.textContent = rows.length;
     if (metaEl) {
@@ -220,10 +277,10 @@
     table.className = "scan-table";
     var thead = document.createElement("thead");
     var hdr = [
-      ["symbol","Stock","14%"],["combo","Combo","5%"],["strategies","Strategies","10%"],
-      ["action","Action","7%"],["sector","Sector","9%"],["price","Price","6%"],["risk","Risk%","6%"],
-      ["size","Size@1%","7%"],["fresh","Freshness","8%"],["align","TF Align","7%"],
-      ["ts","TrendScore","9%"],
+      ["symbol","Stock","13%"],["combo","Combo","5%"],["strategies","Strategies","9%"],
+      ["action","Action","6%"],["sector","Sector","8%"],["price","Price","6%"],["risk","Risk%","6%"],
+      ["size","Size@1%","6%"],["fresh","Freshness","7%"],["align","TF Align","6%"],
+      ["ts","TrendScore","8%"],["date_added","Added","8%"],
     ];
     var colgroup = document.createElement("colgroup");
     hdr.forEach(function(h) { var c = document.createElement("col"); c.style.width = h[2]; colgroup.appendChild(c); });
@@ -238,10 +295,11 @@
     table.appendChild(thead);
 
     var tbody = document.createElement("tbody");
-    // Sort: C4 first, then by trend_score desc
+    // Sort: C4 first, then C3, then scan-only, then by trend_score desc
     rows.sort(function(a, b) {
-      if (a.combo_4_new && !b.combo_4_new) return -1;
-      if (!a.combo_4_new && b.combo_4_new) return 1;
+      var rankA = a.combo_4_new ? 0 : a.combo_3_new ? 1 : 2;
+      var rankB = b.combo_4_new ? 0 : b.combo_3_new ? 1 : 2;
+      if (rankA !== rankB) return rankA - rankB;
       return (b.trend_score || 0) - (a.trend_score || 0);
     });
 
@@ -276,8 +334,18 @@
 
         } else if (h[0] === "combo") {
           var badge = document.createElement("span");
-          badge.className = r.combo_4_new ? "scan-combo-badge scan-combo-c4" : "scan-combo-badge scan-combo-c3";
-          badge.textContent = r.combo_4_new ? "C4" : "C3";
+          if (r.combo_4_new) {
+            badge.className = "scan-combo-badge scan-combo-c4";
+            badge.textContent = "C4";
+          } else if (r.combo_3_new) {
+            badge.className = "scan-combo-badge scan-combo-c3";
+            badge.textContent = "C3";
+          } else {
+            // scan-confirmed today but screener hasn't caught up yet
+            badge.className = "scan-combo-badge scan-combo-scan";
+            badge.textContent = "SCAN";
+            badge.title = "Confirmed by today\u2019s scan — screener will update on next rebuild";
+          }
           td.appendChild(badge);
 
         } else if (h[0] === "strategies") {
@@ -355,6 +423,10 @@
           }
           aSpan.textContent = act;
           td.appendChild(aSpan);
+
+        } else if (h[0] === "date_added") {
+          td.style.cssText = "font-size:10px;color:var(--muted);text-align:center;";
+          td.textContent = r.scan_date_added || "—";
         }
         tr.appendChild(td);
       });
@@ -589,7 +661,7 @@
       var c4kpis = (combos.c4 && combos.c4.kpis) ? combos.c4.kpis : [];
       var c3pols = (combos.c3 && combos.c3.pols) ? combos.c3.pols : [];
       var c4pols = (combos.c4 && combos.c4.pols) ? combos.c4.pols : [];
-      var gates = def.entry_gates || def.scan_filters || {};
+      var gates = def.entry_gates || {};
       var color = def.color || "#888";
 
       var card = document.createElement("div");
@@ -623,6 +695,98 @@
 
       wrap.appendChild(card);
     });
+  }
+
+  // ── Scan Pass/Fail Stats Bar ──────────────────────────────────────────────
+  function _renderScanPassStats(logData) {
+    var el = document.getElementById("scanPassStats");
+    if (!el) return;
+    if (!logData || !logData.length) { el.innerHTML = ""; return; }
+    var latest = logData[logData.length - 1];
+    var raw = latest.raw_passed;
+    var filtered = latest.filtered_open;
+    var total = latest.total;
+    var ts = latest.ts ? latest.ts.replace("T", " ").replace("Z", " UTC") : "";
+    if (typeof raw !== "number") { el.innerHTML = ""; return; }
+    var added = latest.added ? latest.added.length : 0;
+    var removed = latest.removed ? latest.removed.length : 0;
+    el.innerHTML =
+      '<span class="scan-stat-pill scan-stat-pass">&#10003; ' + raw + ' passed gate</span>' +
+      '<span class="scan-stat-pill scan-stat-filtered">&#128683; ' + filtered + ' filtered (open pos)</span>' +
+      '<span class="scan-stat-pill scan-stat-total">&#8853; ' + total + ' in list</span>' +
+      (added ? '<span class="scan-stat-pill scan-stat-added">+' + added + ' added</span>' : '') +
+      (removed ? '<span class="scan-stat-pill scan-stat-removed">&#8722;' + removed + ' removed</span>' : '') +
+      (ts ? '<span class="scan-stat-ts">' + ts + '</span>' : '');
+  }
+
+  // ── Download Health (persistent, from scan_download_debug.json) ───────────
+  function _renderDownloadHealth(data) {
+    var el = document.getElementById("scanDownloadHealth");
+    if (!el) return;
+    if (!data || !data.universe_total) { el.innerHTML = ""; return; }
+
+    var total   = data.universe_total;
+    var ok      = data.downloaded_ok;
+    var fail    = data.downloaded_fail;
+    var failed  = data.failed_tickers || [];
+    var tf      = data.tf || "";
+    var ts      = data.ts ? data.ts.replace("T", " ").replace("Z", " UTC") : "";
+    var pct     = total > 0 ? Math.round(ok / total * 100) : 0;
+    var barColor = fail === 0 ? "var(--candle-up)" : fail < 100 ? "var(--warning)" : "var(--danger)";
+
+    var html =
+      '<div class="scan-dl-health">' +
+        '<div class="scan-dl-summary">' +
+          '<span class="scan-dl-label">Universe</span>' +
+          '<span class="scan-dl-value">' + total.toLocaleString() + '</span>' +
+          '<span class="scan-dl-sep">·</span>' +
+          '<span class="scan-dl-label">Downloaded</span>' +
+          '<span class="scan-dl-value" style="color:var(--candle-up)">' + ok.toLocaleString() + '</span>' +
+          (fail > 0
+            ? '<span class="scan-dl-sep">·</span>' +
+              '<span class="scan-dl-label">Failed</span>' +
+              '<span class="scan-dl-value" style="color:var(--warning)">' + fail + '</span>'
+            : '') +
+          '<span class="scan-dl-sep">·</span>' +
+          '<span class="scan-dl-bar-wrap" title="' + pct + '% downloaded">' +
+            '<span class="scan-dl-bar-fill" style="width:' + pct + '%;background:' + barColor + '"></span>' +
+          '</span>' +
+          '<span class="scan-dl-pct">' + pct + '%</span>' +
+          (tf ? '<span class="scan-dl-tf scan-stat-pill">' + tf + '</span>' : '') +
+          (ts ? '<span class="scan-stat-ts">' + ts + '</span>' : '') +
+        '</div>';
+
+    if (failed.length) {
+      var toggleId = "scanDlFailToggle";
+      var listId   = "scanDlFailList";
+      html +=
+        '<div class="scan-dl-fail-row">' +
+          '<button class="scan-dl-fail-toggle" id="' + toggleId + '" onclick="' +
+            'var l=document.getElementById(\'' + listId + '\');' +
+            'var b=document.getElementById(\'' + toggleId + '\');' +
+            'var open=l.style.display!==\'none\';' +
+            'l.style.display=open?\'none\':\'flex\';' +
+            'b.textContent=(open?\'&#9658;\':\'&#9660;\') + \' ' + failed.length + ' failed tickers\';' +
+          '">' +
+          '&#9658; ' + failed.length + ' failed tickers' +
+          '</button>' +
+        '</div>' +
+        '<div id="' + listId + '" class="scan-dl-fail-list" style="display:none">' +
+          failed.map(function(t) {
+            return '<span class="scan-dl-fail-ticker">' + t + '</span>';
+          }).join("") +
+        '</div>';
+    }
+
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  function _fetchDownloadDebug(cb) {
+    fetch(_BASE + "/api/scan-download-debug", { cache: "no-store" })
+      .then(function(r) { return r.ok ? r.json() : {}; })
+      .then(cb)
+      .catch(function() { cb({}); });
   }
 
   // ── Section 5: Scan History (item 9) ─────────────────────────────────────
@@ -719,9 +883,13 @@
     _renderPreSignals();
     _renderStrategyCards();
 
-    // Reload scan log each time page opens (in case a new scan just ran)
+    // Reload scan log + download debug each time page opens
     _scanLogLoaded = false;
-    _loadScanLog(_renderScanHistory);
+    _loadScanLog(function(entries) {
+      _renderScanPassStats(entries);
+      _renderScanHistory(entries);
+    });
+    _fetchDownloadDebug(_renderDownloadHealth);
   }
 
   // Wire TF pills and export on first load

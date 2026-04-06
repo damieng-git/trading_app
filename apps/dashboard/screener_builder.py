@@ -9,14 +9,30 @@ from typing import Dict
 import pandas as pd
 
 from apps.dashboard.strategy import (
+    compute_arch_a_position_status,
+    compute_arch_a_trailing_pnl,
     compute_polarity_position_status,
     compute_polarity_trailing_pnl,
     compute_position_status,
+    compute_stoof_position_status,
     compute_stoof_trailing_pnl,
     compute_trailing_pnl,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _scan_field(scan_date_map: dict | None, sym: str, field: str) -> str:
+    """Extract a field from scan_date_map, which may be {sym: dict} or {sym: str} (legacy)."""
+    if not scan_date_map:
+        return ""
+    entry = scan_date_map.get(sym)
+    if entry is None:
+        return ""
+    if isinstance(entry, dict):
+        return entry.get(field, "")
+    # Legacy format: flat string — only date_added existed
+    return entry if field == "date_added" else ""
 
 
 def build_screener_rows(
@@ -33,6 +49,7 @@ def build_screener_rows(
     data_health: dict,
     stoch_mtm_thresholds: dict | None = None,
     strategy_setups: dict | None = None,
+    scan_date_map: dict | None = None,
 ) -> tuple[dict[str, list[dict]], dict[str, dict[str, dict]], dict]:
     """
     Build screener rows and state cache from enriched data.
@@ -146,16 +163,26 @@ def build_screener_rows(
                             continue
                         ps = compute_polarity_position_status(df, st, sdef, tf)
                         tp = compute_polarity_trailing_pnl(df, st, sdef, tf)
+                        # All fields forwarded so every view has the same source of truth.
                         strat_statuses[skey] = {
                             "signal_action": ps["signal_action"],
                             "entry_price": ps["entry_price"],
                             "atr_stop": ps["atr_stop"],
                             "bars_held": ps["bars_held"],
                             "combo_bars": ps.get("combo_bars"),
+                            "exit_stage": ps.get("exit_stage"),
+                            "bearish_kpis": ps.get("bearish_kpis", 0),
                             "c4_scaled": ps["c4_scaled"],
+                            "last_exit_bars_ago": ps.get("last_exit_bars_ago"),
+                            "last_exit_reason": ps.get("last_exit_reason"),
                             "l12m_pnl": tp["l12m_pnl"],
                             "l12m_trades": tp["l12m_trades"],
                             "l12m_hit_rate": tp["l12m_hit_rate"],
+                            "l12m_max_dd": tp.get("l12m_max_dd"),
+                            "l24m_pnl": tp.get("l24m_pnl"),
+                            "l24m_trades": tp.get("l24m_trades"),
+                            "l24m_hit_rate": tp.get("l24m_hit_rate"),
+                            "l24m_max_dd": tp.get("l24m_max_dd"),
                         }
                     elif sdef.get("entry_type") == "threshold":
                         # Stoof: only active on configured timeframes (default 2W, 1M)
@@ -165,32 +192,84 @@ def build_screener_rows(
                         from trading_dashboard.indicators.registry import get_kpi_trend_order as _gkto
                         from apps.dashboard.strategy import compute_atr as _catr
                         _sk = _gkto(skey)
-                        _thresh = int(sdef.get("threshold", 7))
+                        _thresh = int(sdef.get("threshold", 5))
                         _exit_thresh = int(sdef.get("exit_threshold", _thresh - 2))
                         _K = float(sdef.get("atr_multiplier", 3.0))
                         _atr_tf = sdef.get("atr_tf", "1W")
+                        _req_kpi = sdef.get("required_kpi", "MACD_BL")
+                        _c4_kpi = sdef.get("c4_kpi", "WT_MTF")
                         # Load cross-TF ATR (e.g. 1W ATR for 2W/1M entries)
                         _atr_override = None
                         if _atr_tf and _atr_tf != tf:
                             _atr_df = tf_map.get(_atr_tf)
                             if _atr_df is not None and not _atr_df.empty:
                                 _atr_override = _catr(_atr_df)
+                        ps = compute_stoof_position_status(
+                            df, st, _sk, _thresh, tf,
+                            exit_threshold=_exit_thresh,
+                            atr_override=_atr_override,
+                            K_override=_K,
+                            required_kpi=_req_kpi,
+                            c4_kpi=_c4_kpi,
+                        )
                         tp = compute_stoof_trailing_pnl(
                             df, st, _sk, _thresh, tf,
                             exit_threshold=_exit_thresh,
                             atr_override=_atr_override,
                             K_override=_K,
+                            required_kpi=_req_kpi,
+                            c4_kpi=_c4_kpi,
                         )
+                        # All fields forwarded so every view has the same source of truth.
                         strat_statuses[skey] = {
-                            "signal_action": "FLAT",
-                            "entry_price": None,
-                            "atr_stop": None,
-                            "bars_held": None,
-                            "combo_bars": None,
-                            "c4_scaled": False,
+                            "signal_action": ps["signal_action"],
+                            "entry_price": ps["entry_price"],
+                            "atr_stop": ps["atr_stop"],
+                            "bars_held": ps["bars_held"],
+                            "combo_bars": ps.get("combo_bars"),
+                            "exit_stage": ps.get("exit_stage"),
+                            "bearish_kpis": ps.get("bearish_kpis", 0),
+                            "c4_scaled": ps["c4_scaled"],
+                            "last_exit_bars_ago": ps.get("last_exit_bars_ago"),
+                            "last_exit_reason": ps.get("last_exit_reason"),
                             "l12m_pnl": tp["l12m_pnl"],
                             "l12m_trades": tp["l12m_trades"],
                             "l12m_hit_rate": tp["l12m_hit_rate"],
+                            "l12m_max_dd": tp.get("l12m_max_dd"),
+                            "l24m_pnl": tp.get("l24m_pnl"),
+                            "l24m_trades": tp.get("l24m_trades"),
+                            "l24m_hit_rate": tp.get("l24m_hit_rate"),
+                            "l24m_max_dd": tp.get("l24m_max_dd"),
+                        }
+                    elif sdef.get("entry_type") == "arch_a":
+                        # Pullback-A: active on 1D and 1W only.
+                        _active_tfs = sdef.get("active_tfs")
+                        if _active_tfs and tf not in _active_tfs:
+                            continue
+                        _K = float(sdef.get("atr_multiplier", 2.5))
+                        # Gate 1 requires weekly context when running on 1D.
+                        _weekly = tf_map.get("1W") if tf != "1W" else None
+                        ps = compute_arch_a_position_status(df, tf, weekly_df=_weekly, K=_K)
+                        tp = compute_arch_a_trailing_pnl(df, tf, weekly_df=_weekly, K=_K)
+                        strat_statuses[skey] = {
+                            "signal_action": ps["signal_action"],
+                            "entry_price": ps["entry_price"],
+                            "atr_stop": ps["atr_stop"],
+                            "bars_held": ps["bars_held"],
+                            "combo_bars": ps.get("combo_bars"),
+                            "exit_stage": ps.get("exit_stage"),
+                            "bearish_kpis": ps.get("bearish_kpis", 0),
+                            "c4_scaled": ps["c4_scaled"],
+                            "last_exit_bars_ago": ps.get("last_exit_bars_ago"),
+                            "last_exit_reason": ps.get("last_exit_reason"),
+                            "l12m_pnl": tp["l12m_pnl"],
+                            "l12m_trades": tp["l12m_trades"],
+                            "l12m_hit_rate": tp["l12m_hit_rate"],
+                            "l12m_max_dd": tp.get("l12m_max_dd"),
+                            "l24m_pnl": tp.get("l24m_pnl"),
+                            "l24m_trades": tp.get("l24m_trades"),
+                            "l24m_hit_rate": tp.get("l24m_hit_rate"),
+                            "l24m_max_dd": tp.get("l24m_max_dd"),
                         }
                 except Exception as e:
                     logger.warning("Strategy %s failed for %s/%s: %s", skey, sym, tf, e)
@@ -204,6 +283,11 @@ def build_screener_rows(
                     "l12m_pnl": _ts["l12m_pnl"],
                     "l12m_trades": _ts["l12m_trades"],
                     "l12m_hit_rate": _ts["l12m_hit_rate"],
+                    "l12m_max_dd": _ts.get("l12m_max_dd"),
+                    "l24m_pnl": _ts.get("l24m_pnl"),
+                    "l24m_trades": _ts.get("l24m_trades"),
+                    "l24m_hit_rate": _ts.get("l24m_hit_rate"),
+                    "l24m_max_dd": _ts.get("l24m_max_dd"),
                 }
 
             n = int(max(1, min(int(cfg_alerts_lookback_bars), len(df))))
@@ -247,6 +331,9 @@ def build_screener_rows(
             for k in KPI_BREAKOUT_ORDER:
                 s = st.get(k)
                 kpi_states[k] = int(s.iloc[-1]) if (s is not None and len(s) and pd.notna(s.iloc[-1])) else -2
+
+            # Conviction score: count of all KPIs that are currently bullish (state == 1)
+            conviction_score = sum(1 for v in kpi_states.values() if v == 1)
 
             # 13-bar conviction trend: per bar, ratio of bull vs bear trend KPIs
             _conv10_bars = min(13, len(df))
@@ -353,10 +440,18 @@ def build_screener_rows(
                 "l12m_pnl": trailing_pnl["l12m_pnl"],
                 "l12m_trades": trailing_pnl["l12m_trades"],
                 "l12m_hit_rate": trailing_pnl["l12m_hit_rate"],
+                "l12m_max_dd": trailing_pnl.get("l12m_max_dd"),
+                "l24m_pnl": trailing_pnl.get("l24m_pnl"),
+                "l24m_trades": trailing_pnl.get("l24m_trades"),
+                "l24m_hit_rate": trailing_pnl.get("l24m_hit_rate"),
+                "l24m_max_dd": trailing_pnl.get("l24m_max_dd"),
+                "conviction_score": conviction_score,
                 "recommendation": _fund.get("recommendation", ""),
                 "market_cap": _fund.get("market_cap"),
                 "trailing_pe": _fund.get("trailing_pe"),
                 "pe_vs_sector": None,
+                "scan_date_added": _scan_field(scan_date_map, sym, "date_added"),
+                "scan_last_confirmed": _scan_field(scan_date_map, sym, "last_scan_date"),
             }
             by_symbol[sym][tf] = rec
             if tf in rows_by_tf:

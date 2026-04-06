@@ -249,7 +249,7 @@ function _showPnlDrillDown(sym) {
   header.appendChild(closeBtn);
   drillWrap.appendChild(header);
 
-  const allTFs = TIMEFRAMES || ["4H", "1D", "1W", "2W", "1M"];
+  const allTFs = TIMEFRAMES || ["1D", "1W", "2W", "1M"];
   const grid = document.createElement("div");
   grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;padding:10px;";
 

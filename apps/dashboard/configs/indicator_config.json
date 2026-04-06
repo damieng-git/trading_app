@@ -36,5 +36,5 @@
   "LuxAlgo_Norm_v2": { "params": { "length": 14, "presmooth": 10, "postsmooth": 10, "upper_bound": 80.0, "lower_bound": 20.0 } },
   "CCI_Chop_BB_v2": { "params": { "cci_length": 90, "chop_length": 24, "bb_length": 10, "bb_mult": 2.0, "smooth": 10, "upper_threshold": 65.0, "lower_threshold": 25.0 } },
   "PAI": { "params": { "stoch_length": 20, "smooth": 3, "dispersion_length": 20 } },
-  "WT_MTF": { "params": { "wt_channel_len": 27, "wt_average_len": 21, "macd_fast": 15, "macd_slow": 26, "macd_signal_len": 12, "rsi_len": 16, "ob_level1": 60.0, "os_level1": -60.0, "min_bars_in_extreme": 2, "confirm_window": 1, "min_spread": 1.5, "cooldown_bars": 8 } }
+  "WT_MTF": { "params": { "wt_channel_len": 27, "wt_average_len": 21, "macd_fast": 15, "macd_slow": 26, "macd_signal_len": 12, "rsi_len": 16, "ob_level1": 60.0, "os_level1": -50.0, "min_bars_in_extreme": 2, "confirm_window": 1, "min_spread": 1.5, "cooldown_bars": 8 } }
 }

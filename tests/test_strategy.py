@@ -9,6 +9,9 @@ import pytest
 from apps.dashboard.strategy import (
     ATR_PERIOD,
     EXIT_PARAMS,
+    compute_arch_a_position_events,
+    compute_arch_a_position_status,
+    compute_arch_a_trailing_pnl,
     compute_atr,
     compute_position_events,
     compute_position_status,
@@ -63,7 +66,7 @@ class TestComputeAtr:
 
 class TestExitParams:
     def test_all_timeframes_present(self):
-        for tf in ("4H", "1D", "1W"):
+        for tf in ("1D", "1W"):
             assert tf in EXIT_PARAMS
             params = EXIT_PARAMS[tf]
             assert "T" in params and "M" in params and "K" in params
@@ -253,3 +256,170 @@ class TestTrailingPnlDelegatesToEvents:
     def test_empty_on_bad_inputs(self):
         result = compute_trailing_pnl(None, {}, [], [], "1D")
         assert result["l12m_trades"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Architecture A (Pullback-A) tests
+# ---------------------------------------------------------------------------
+
+def _make_arch_a_ohlcv(n: int = 600, seed: int = 42) -> pd.DataFrame:
+    """OHLCV DataFrame designed to satisfy Pullback-A gates at a known bar.
+
+    Structure:
+    - Bars 0-299: strong uptrend (SMA50W > SMA200W will eventually hold).
+    - Bars 300+: price dips (RSI14 < 50 achievable) then recovers.
+    - MACD hist crosses above zero at bar ~400 (gentle dip then lift).
+    - Chandelier Exit stays False at entry bar.
+    """
+    np.random.seed(seed)
+    dates = pd.bdate_range("2015-01-01", periods=n, freq="B")
+    # Uptrend with a clear dip zone — proportional to n
+    base = np.interp(np.arange(n), [0, n * 0.5, n * 0.63, n], [50, 120, 95, 130])
+    noise = np.random.randn(n) * 0.5
+    close = base + noise
+    high = close + np.abs(np.random.randn(n)) * 1.5
+    low = close - np.abs(np.random.randn(n)) * 1.5
+    open_ = close + np.random.randn(n) * 0.3
+    vol = np.random.randint(100_000, 500_000, n)
+    return pd.DataFrame(
+        {"Open": open_, "High": high, "Low": low, "Close": close, "Volume": vol},
+        index=dates,
+    )
+
+
+class TestComputeArchAPositionEvents:
+    """Tests for the Pullback-A five-gate position engine."""
+
+    def test_empty_on_none_df(self):
+        assert compute_arch_a_position_events(None, "1D") == []
+
+    def test_empty_on_empty_df(self):
+        assert compute_arch_a_position_events(pd.DataFrame(), "1D") == []
+
+    def test_empty_on_unknown_tf(self):
+        df = _make_arch_a_ohlcv()
+        assert compute_arch_a_position_events(df, "4H") == []
+
+    def test_empty_on_short_df(self):
+        df = _make_arch_a_ohlcv(n=20)
+        assert compute_arch_a_position_events(df, "1D") == []
+
+    def test_returns_list_of_dicts_with_required_keys(self):
+        df = _make_arch_a_ohlcv()
+        events = compute_arch_a_position_events(df, "1W")
+        if events:
+            required = {"entry_idx", "entry_price", "exit_idx", "exit_reason",
+                        "ret_pct", "stop_trail", "scaled"}
+            assert required.issubset(events[0].keys())
+
+    def test_entry_price_is_next_bar_open(self):
+        """Entry fills at the open of the bar after the signal bar."""
+        df = _make_arch_a_ohlcv()
+        events = compute_arch_a_position_events(df, "1W")
+        for e in events:
+            sig = e["signal_idx"]
+            fill = e["entry_idx"]
+            assert fill == sig + 1, f"expected fill at sig+1, got sig={sig} fill={fill}"
+
+    def test_scaled_is_always_false(self):
+        """Pullback-A has no scale-up — scaled must always be False."""
+        df = _make_arch_a_ohlcv()
+        events = compute_arch_a_position_events(df, "1W")
+        for e in events:
+            assert e["scaled"] is False
+
+    def test_open_position_has_no_ret_pct(self):
+        """The last open position must not have a ret_pct (not yet closed)."""
+        df = _make_arch_a_ohlcv()
+        events = compute_arch_a_position_events(df, "1W")
+        open_events = [e for e in events if e["exit_reason"] == "Open"]
+        for e in open_events:
+            assert e["ret_pct"] is None
+
+    def test_stop_trail_length_matches_hold(self):
+        """stop_trail must have one entry per bar held."""
+        df = _make_arch_a_ohlcv()
+        events = compute_arch_a_position_events(df, "1W")
+        for e in events:
+            hold = e["exit_idx"] - e["entry_idx"]
+            assert len(e["stop_trail"]) == hold + 1, (
+                f"stop_trail length {len(e['stop_trail'])} != hold+1 {hold+1}"
+            )
+
+    def test_weekly_df_used_for_gate1_on_1d(self):
+        """Passing weekly_df should not crash and may produce different results than None."""
+        df = _make_arch_a_ohlcv(n=600)
+        # Use the same df as both daily and weekly (values differ, but structure is valid).
+        events_with = compute_arch_a_position_events(df, "1D", weekly_df=df)
+        events_without = compute_arch_a_position_events(df, "1D", weekly_df=None)
+        # Both must be lists; content may differ — just verify no crash.
+        assert isinstance(events_with, list)
+        assert isinstance(events_without, list)
+
+    def test_scan_start_limits_lookback(self):
+        """scan_start must exclude entries before the cutoff bar."""
+        df = _make_arch_a_ohlcv()
+        all_events = compute_arch_a_position_events(df, "1W")
+        late_start = len(df) - 100
+        late_events = compute_arch_a_position_events(df, "1W", scan_start=late_start)
+        for e in late_events:
+            assert e["entry_idx"] >= late_start
+
+
+class TestComputeArchAPositionStatus:
+    """Tests for the screener-facing status wrapper."""
+
+    def test_flat_on_bad_inputs(self):
+        ps = compute_arch_a_position_status(None, "1D")
+        assert ps["signal_action"] == "FLAT"
+
+    def test_flat_on_inactive_tf(self):
+        df = _make_arch_a_ohlcv()
+        ps = compute_arch_a_position_status(df, "4H")
+        assert ps["signal_action"] == "FLAT"
+
+    def test_returns_required_keys(self):
+        df = _make_arch_a_ohlcv()
+        ps = compute_arch_a_position_status(df, "1W")
+        for key in ("signal_action", "entry_price", "atr_stop", "bars_held",
+                    "c4_scaled", "last_exit_bars_ago", "last_exit_reason"):
+            assert key in ps
+
+    def test_c4_scaled_always_false(self):
+        df = _make_arch_a_ohlcv()
+        ps = compute_arch_a_position_status(df, "1W")
+        assert ps["c4_scaled"] is False
+
+    def test_entry_price_positive_when_in_position(self):
+        """If a position is open, entry_price must be a positive number."""
+        df = _make_arch_a_ohlcv()
+        ps = compute_arch_a_position_status(df, "1W")
+        if ps["signal_action"] in ("ENTRY 1x", "HOLD"):
+            assert ps["entry_price"] is not None and ps["entry_price"] > 0
+
+
+class TestComputeArchATrailingPnl:
+    """Tests for the 12m/24m P&L wrapper."""
+
+    def test_returns_required_keys(self):
+        df = _make_arch_a_ohlcv()
+        result = compute_arch_a_trailing_pnl(df, "1W")
+        for key in ("l12m_pnl", "l12m_trades", "l12m_hit_rate", "l12m_max_dd",
+                    "l24m_pnl", "l24m_trades", "l24m_hit_rate", "l24m_max_dd"):
+            assert key in result
+
+    def test_empty_on_bad_inputs(self):
+        result = compute_arch_a_trailing_pnl(None, "1D")
+        assert result["l12m_trades"] == 0
+        assert result["l24m_trades"] == 0
+
+    def test_empty_on_inactive_tf(self):
+        df = _make_arch_a_ohlcv()
+        result = compute_arch_a_trailing_pnl(df, "4H")
+        assert result["l12m_trades"] == 0
+
+    def test_l12m_subset_of_l24m(self):
+        """l12m trade count must be <= l24m trade count."""
+        df = _make_arch_a_ohlcv()
+        result = compute_arch_a_trailing_pnl(df, "1W")
+        assert result["l12m_trades"] <= result["l24m_trades"]

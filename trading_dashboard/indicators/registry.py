@@ -57,6 +57,12 @@ class IndicatorDef:
     config_key: Optional[str] = None     # defaults to key
     config_defaults: Dict[str, Any] = field(default_factory=dict)
     strategies: List[str] = field(default_factory=lambda: ["v6"])
+    # ↑ CRITICAL: this field is the sole mechanism that populates
+    # strategy_kpis[key] in the JSON asset (via get_kpi_trend_order(strategy)).
+    # Without at least one IndicatorDef with strategies=["<key>"], the
+    # dashboard heatmap, breakout panel, and score bar for that strategy
+    # will silently fall back to generic trend KPIs at render time.
+    # Every new strategy MUST have its indicators registered here.
 
     def __post_init__(self) -> None:
         if self.config_key is None:
@@ -411,6 +417,31 @@ register(IndicatorDef(
     strategies=["stoof"],
     config_defaults={"cci_length": 90, "chop_length": 24, "bb_length": 10, "bb_mult": 2.0, "smooth": 10, "upper_threshold": 65.0, "lower_threshold": 25.0},
     columns=["CCI_Chop_BB_v2_smooth"],
+))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Architecture A (Pullback-A) indicators — strategy "arch_a"
+# G1 proxy (weekly SMA context), G2 proxy (RSI dip), G4 proxy (MACD reversal)
+# These reuse existing computed KPI columns — no new indicator computation needed.
+# ══════════════════════════════════════════════════════════════════════════════
+
+register(IndicatorDef(
+    key="ARCHA_G1", title="SMA Context [A]",
+    dimension="trend", overlay=True,
+    kpi_name="SuperTrend", kpi_type="trend",
+    strategies=["arch_a"],
+))
+register(IndicatorDef(
+    key="ARCHA_G2", title="RSI Dip [A]",
+    dimension="momentum", overlay=False,
+    kpi_name="cRSI", kpi_type="trend",
+    strategies=["arch_a"],
+))
+register(IndicatorDef(
+    key="ARCHA_G4", title="MACD Rev. [A]",
+    dimension="momentum", overlay=False,
+    kpi_name="CM_Ult_MacD_MFT", kpi_type="trend",
+    strategies=["arch_a"],
 ))
 register(IndicatorDef(
     key="PAI", title="Price Action Index [BL]",

@@ -71,6 +71,7 @@ def export_symbol_data(
     sma20_vals: list[float | None] | None = None,
     position_events: list[dict] | None = None,
     position_events_by_strategy: dict[str, list[dict]] | None = None,
+    c3_states_by_strategy: dict[str, dict] | None = None,
 ) -> dict:
     """
     Convert an enriched DataFrame into a JSON-serialisable dict.
@@ -115,7 +116,11 @@ def export_symbol_data(
     except Exception:
         logger.warning("Could not compute KPI timeline matrix for %s/%s", symbol, timeframe)
 
-    # Build strategy→KPI mapping for front-end filtering
+    # Build strategy→KPI mapping for front-end filtering.
+    # strategy_kpis[key] is the ONLY source that drives the heatmap, breakout
+    # panel, and score bar for threshold/gate strategies in chart_builder.js.
+    # An empty list means those panels will silently fall back to generic trend
+    # KPIs — always fix by registering IndicatorDefs in registry.py first.
     strategy_kpis: dict[str, list[str]] = {}
     try:
         from trading_dashboard.indicators.registry import get_kpi_trend_order, get_strategies
@@ -123,6 +128,22 @@ def export_symbol_data(
             strategy_kpis[strat] = get_kpi_trend_order(strat)
     except Exception as exc:
         logger.warning("Failed to load strategy KPI registry: %s", exc)
+
+    # Validate: warn loudly for any active strategy with no KPI list so the
+    # gap is caught at build time rather than silently at render time.
+    try:
+        from apps.dashboard.config_loader import load_config
+        _cfg = load_config()
+        for _skey, _sdef in (_cfg.strategy_setups or {}).items():
+            if not strategy_kpis.get(_skey):
+                logger.warning(
+                    "strategy_kpis['%s'] is empty — heatmap and score bar will "
+                    "fall back to generic trend KPIs. Register at least one "
+                    "IndicatorDef with strategies=['%s'] in registry.py.",
+                    _skey, _skey,
+                )
+    except Exception:
+        pass  # validation is best-effort; never block the build
 
     out: dict = {
         "symbol": symbol,
@@ -148,6 +169,8 @@ def export_symbol_data(
         out["position_events"] = position_events
     if position_events_by_strategy:
         out["position_events_by_strategy"] = position_events_by_strategy
+    if c3_states_by_strategy:
+        out["c3_states_by_strategy"] = c3_states_by_strategy
     return out
 
 

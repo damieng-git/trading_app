@@ -3,12 +3,11 @@
  * v2 — Screener UX improvements for decision-making:
  *
  * #1  Table split into sections: Exit · New Signals · Active Positions · Watchlist
- * #3  Strategy badges (D/S/T) merged into Action column; priority Dip > Swing > Trend > v6
- *     When multiple strategies fire on the same TF, the highest-priority fires:
- *       Dip Buy (D) — oversold pullback on 1D, most tactical/time-sensitive
- *       Swing    (S) — 1W momentum entry, medium-term
- *       Trend    (T) — 1W trend continuation, longer-term
- *     If no polarity strategy is active, falls back to v6 combo logic.
+ * #3  Strategy badges merged into Action column; priority order from config.json badge_prio.
+ *     When multiple strategies fire on the same TF, the lowest badge_prio wins.
+ *     badge_prio and badge_label are defined in strategy_setups — no JS changes needed
+ *     when adding a new strategy.
+ *     If no strategy is active, falls back to v6 combo logic.
  * #4  Inline entry price / ATR-stop / risk% in Price cell (not just tooltip)
  * #5  Analysts + P/E vs Sector removed; replaced by L12M backtest performance
  *     (P&L% + win rate) for the highest-priority active strategy, falling back to v6.
@@ -23,17 +22,26 @@
   "use strict";
   if (!D) return;
 
-  /* ── Strategy priority: Dip > Swing > Trend ─────────────────────────────── */
-  var STRAT_PRIO = [
-    {key: "dip_buy", label: "D", color: "#facc15"},
-    {key: "swing",   label: "S", color: "#60a5fa"},
-    {key: "trend",   label: "T", color: "#c084fc"}
-  ];
+  /* ── Strategy badge priority: built from config.json badge_prio / badge_label ─
+   * Adding a new strategy = add badge_prio + badge_label to its strategy_setups
+   * entry in config.json. No JS changes required.                               */
+  var STRAT_PRIO = (function() {
+    var _setups = (typeof STRATEGY_SETUPS !== "undefined" && STRATEGY_SETUPS.setups) ? STRATEGY_SETUPS.setups : {};
+    return Object.keys(_setups)
+      .filter(function(k) { return _setups[k].badge_prio != null; })
+      .sort(function(a, b) { return (_setups[a].badge_prio || 99) - (_setups[b].badge_prio || 99); })
+      .map(function(k) { return {key: k, label: _setups[k].badge_label || k, color: _setups[k].color || "#888"}; });
+  })();
 
   /* Returns the highest-priority polarity strategy with an active signal,
    * or null if none. Checks ENTRY, SCALE, and HOLD states. */
+  // Returns the highest-priority strategy with an active signal (ENTRY/SCALE/HOLD)
+  // or, if none active, the most recently exited strategy (≤2 bars ago).
+  // This ensures all three views (screener badge, price cell, row section) share
+  // the same strategy as the source of truth for entry/exit display.
   function _bestStrat(stratStatuses) {
     var ss = stratStatuses || {};
+    var recentExit = null;
     for (var i = 0; i < STRAT_PRIO.length; i++) {
       var sp = STRAT_PRIO[i];
       var sInfo = ss[sp.key];
@@ -42,8 +50,14 @@
       if (sa.indexOf("ENTRY") === 0 || sa.indexOf("SCALE") === 0 || sa === "HOLD") {
         return {key: sp.key, label: sp.label, color: sp.color, info: sInfo, signal_action: sa};
       }
+      // Track the most recent exit across all strategies as fallback
+      if (sa === "FLAT" && sInfo.last_exit_bars_ago != null && sInfo.last_exit_bars_ago <= 2) {
+        if (!recentExit || sInfo.last_exit_bars_ago < recentExit.info.last_exit_bars_ago) {
+          recentExit = {key: sp.key, label: sp.label, color: sp.color, info: sInfo, signal_action: sa};
+        }
+      }
     }
-    return null;
+    return recentExit; // null if no active signal and no recent exit
   }
 
   /* Classifies a row into one of four sections based on signal state. */
@@ -51,9 +65,13 @@
     var v6act = r.signal_action || "";
     var ss = r.strat_statuses || {};
 
-    /* EXIT: active exit signal or very recent exit (≤2 bars ago) */
+    /* EXIT: active exit signal, very recent v6 exit, or very recent polarity/stoof exit (≤2 bars ago) */
     if (v6act.indexOf("EXIT") === 0 || (r.last_exit_bars_ago != null && r.last_exit_bars_ago <= 2)) {
       return "exit";
+    }
+    for (var ei = 0; ei < STRAT_PRIO.length; ei++) {
+      var eSI = ss[STRAT_PRIO[ei].key];
+      if (eSI && eSI.last_exit_bars_ago != null && eSI.last_exit_bars_ago <= 2) { return "exit"; }
     }
 
     /* NEW SIGNAL: combo just appeared, or polarity strategy just entered (≤1 bar) */
@@ -123,8 +141,9 @@
     else if (screenerFilter === "recent_combo") filtered = filtered.filter(function(r) { return typeof r.last_combo_bars === "number" && r.last_combo_bars <= 3; });
     else if (screenerFilter === "buy")        filtered = filtered.filter(function(r) { return (r.recommendation || "").toLowerCase() === "buy" || (r.recommendation || "").toLowerCase() === "strong_buy"; });
     else if (screenerFilter === "strat_active") filtered = filtered.filter(function(r) { var ss = r.strat_statuses || {}; for (var sk in ss) { var sa = ss[sk].signal_action || ""; if (sa.indexOf("ENTRY") === 0 || sa === "HOLD") return true; } return false; });
+    else if (screenerFilter === "strat_any")   filtered = filtered.filter(function(r) { var ss = r.strat_statuses || {}; return STRAT_PRIO.some(function(sp) { var s = ss[sp.key]; if (!s) return false; var a = s.signal_action || ""; return a.indexOf("ENTRY") === 0 || a === "HOLD"; }); });
     else if (screenerFilter === "strat_dip")  filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).dip_buy; return s && (s.signal_action || "").indexOf("ENTRY") === 0; });
-    else if (screenerFilter === "strat_swing") filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).swing; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
+    else if (screenerFilter === "strat_arch_a") filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).arch_a; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
     else if (screenerFilter === "strat_trend") filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).trend; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
     else if (screenerFilter === "strat_stoof") filtered = filtered.filter(function(r) { var s = (r.strat_statuses || {}).stoof; return s && ((s.signal_action || "").indexOf("ENTRY") === 0 || s.signal_action === "HOLD"); });
 
@@ -384,11 +403,13 @@
               }
 
               td.appendChild(pWrap);
-              /* Keep full tooltip */
+              /* Keep full tooltip — use best strategy entry/stop (same source as inline display) */
               var tipParts = ["Price: " + close.toFixed(2)];
-              if (r.entry_price != null) tipParts.push("Entry: " + r.entry_price.toFixed(2));
-              if (r.atr_stop != null) tipParts.push("ATR Stop: " + r.atr_stop.toFixed(2));
-              if (close > 0 && r.atr_stop != null) tipParts.push("% Risk: " + ((close - r.atr_stop) / close * 100).toFixed(1) + "%");
+              var tipEntry = riskEntry != null ? riskEntry : r.entry_price;
+              var tipStop = riskStop != null ? riskStop : r.atr_stop;
+              if (tipEntry != null) tipParts.push("Entry: " + tipEntry.toFixed(2));
+              if (tipStop != null) tipParts.push("ATR Stop: " + tipStop.toFixed(2));
+              if (close > 0 && tipStop != null) tipParts.push("% Risk: " + ((close - tipStop) / close * 100).toFixed(1) + "%");
               td.title = tipParts.join("\n");
             }
 
@@ -490,25 +511,35 @@
               var bs = rec ? _bestStrat(rec.strat_statuses) : null;
 
               if (bs) {
-                /* Polarity strategy badge */
+                /* Polarity/stoof strategy badge — single source of truth via _bestStrat() */
                 var bsAct = bs.signal_action;
                 var bsCol = bs.color;
                 var bsInfo = bs.info;
                 var bsHeld = bsInfo ? bsInfo.bars_held : null;
+                // combo_bars = bars since entry/scale-up (0 on signal bar); fall back to bars_held
+                var bsCb = bsInfo ? (bsInfo.combo_bars != null ? bsInfo.combo_bars : bsInfo.bars_held) : null;
                 var isScale = bsAct === "ENTRY 1.5x" || bsAct.indexOf("SCALE") === 0;
                 var isEntry = bsAct.indexOf("ENTRY") === 0;
+                var isExit = bsAct === "FLAT" && bsInfo && bsInfo.last_exit_bars_ago != null;
 
                 badge.style.background = _hexRgba(bsCol, 0.18);
                 badge.style.color = bsCol;
 
                 if (isScale) {
                   badge.textContent = bs.label + "·E+";
-                  badge.title = tfk + ": " + bs.key.replace("_", " ") + " Scale 1.5x" + (bsHeld != null ? " " + bsHeld + "b" : "");
+                  badge.title = tfk + ": " + bs.key.replace("_", " ") + " Scale 1.5x" + (bsCb != null ? " " + bsCb + "b" : "");
                 } else if (isEntry) {
                   badge.textContent = bs.label + "·E";
-                  badge.title = tfk + ": " + bs.key.replace("_", " ") + " Entry" + (bsHeld != null ? " " + bsHeld + "b" : "");
+                  badge.title = tfk + ": " + bs.key.replace("_", " ") + " Entry" + (bsCb != null ? " " + bsCb + "b" : "");
+                } else if (isExit) {
+                  /* Recently exited polarity/stoof strategy */
+                  badge.style.background = "var(--trade-loss-bg)"; badge.style.color = bsCol;
+                  badge.textContent = bs.label + "·X";
+                  var bsEb = bsInfo.last_exit_bars_ago;
+                  var bsEr = bsInfo.last_exit_reason ? " (" + bsInfo.last_exit_reason + ")" : "";
+                  badge.title = tfk + ": " + bs.key.replace("_", " ") + " Exit " + bsEb + "b ago" + bsEr;
                 } else {
-                  /* HOLD — #7: show bars inline */
+                  /* HOLD — show bars_held inline */
                   badge.style.background = _hexRgba(bsCol, 0.10);
                   badge.textContent = bs.label + "·H" + (bsHeld != null ? bsHeld : "");
                   badge.title = tfk + ": " + bs.key.replace("_", " ") + " Hold" + (bsHeld != null ? " " + bsHeld + "b" : "");

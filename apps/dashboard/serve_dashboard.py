@@ -255,6 +255,25 @@ class _ScanState:
         def _elapsed() -> float:
             return round(_time.perf_counter() - _t0, 1)
 
+        # Heartbeat: re-emit last known progress every 30 s so the UI progress
+        # bar stays alive during long enrichment phases that yield no events.
+        _hb_stop = threading.Event()
+        _last_pct: list[int] = [0]
+        _last_label: list[str] = ["Starting scan\u2026"]
+
+        def _heartbeat() -> None:
+            while not _hb_stop.wait(30.0):
+                self._emit("progress", {
+                    "phase": "scan",
+                    "pct": _last_pct[0],
+                    "label": _last_label[0],
+                    "elapsed_s": _elapsed(),
+                    "heartbeat": True,
+                })
+
+        _hb_thread = threading.Thread(target=_heartbeat, daemon=True, name="scan-heartbeat")
+        _hb_thread.start()
+
         _saved_cwd = os.getcwd()
         try:
             import sys
@@ -266,14 +285,17 @@ class _ScanState:
 
             if _timeframe == "all":
                 from apps.screener.scan_strategy import run_scan_all_tf as _scanner
-                _scan_iter = _scanner(yield_progress=True)
+                _scan_iter = _scanner(yield_progress=True, _skip_refresh=True, _skip_enrich=True)
             else:
                 from apps.screener.scan_strategy import run_scan_all_strategies as _scanner
-                _scan_iter = _scanner(_timeframe, yield_progress=True)
+                _scan_iter = _scanner(_timeframe, yield_progress=True, _skip_refresh=True, _skip_enrich=True)
 
+            _done_event: dict | None = None
             for event in _scan_iter:
                 etype = event.get("type")
                 if etype == "progress":
+                    _last_pct[0] = event.get("pct", 0)
+                    _last_label[0] = event.get("msg", "")
                     self._emit("progress", {
                         "phase": "scan",
                         "pct": event.get("pct", 0),
@@ -281,13 +303,7 @@ class _ScanState:
                         "elapsed_s": _elapsed(),
                     })
                 elif etype == "done":
-                    by_strat = event.get("by_strategy") or {}
-                    detail = " · ".join(f"{k}: {v}" for k, v in by_strat.items()) if by_strat else ""
-                    self._emit("complete", {
-                        "total": event.get("count", 0),
-                        "detail": detail,
-                        "elapsed_s": _elapsed(),
-                    })
+                    _done_event = event
                 elif etype == "error":
                     self._emit("failed", {
                         "message": event.get("msg", "Unknown error"),
@@ -297,6 +313,35 @@ class _ScanState:
                     })
                     return
 
+            # Scan loop finished — now rebuild screener in-process so that
+            # screener_summary.json is guaranteed fresh before we emit "complete".
+            self._emit("progress", {
+                "phase": "rebuild",
+                "pct": 97,
+                "label": "Rebuilding screener\u2026",
+                "elapsed_s": _elapsed(),
+            })
+            from apps.dashboard.build_dashboard import main as _build_main
+            _build_main(["--mode", "rebuild_ui"])
+
+            _de = _done_event or {}
+            by_strat = _de.get("by_strategy") or {}
+            detail = " · ".join(f"{k}: {v}" for k, v in by_strat.items()) if by_strat else ""
+            self._emit("complete", {
+                "total": _de.get("count", 0),
+                "detail": detail,
+                "universe_total": _de.get("universe_total", 0),
+                "downloaded_ok": _de.get("downloaded_ok", 0),
+                "downloaded_fail": _de.get("downloaded_fail", 0),
+                "raw_signals": _de.get("raw_signals", 0),
+                "filtered_open": _de.get("filtered_open", 0),
+                "by_tf": _de.get("by_tf") or {},
+                "enriched_ok": _de.get("enriched_ok", 0),
+                "enriched_fail": _de.get("enriched_fail", 0),
+                "enriched_total": _de.get("enriched_total", 0),
+                "elapsed_s": _elapsed(),
+            })
+
         except Exception as exc:
             logger.exception("Scan failed")
             self._emit("failed", {
@@ -305,6 +350,7 @@ class _ScanState:
                 "elapsed_s": _elapsed(),
             })
         finally:
+            _hb_stop.set()
             os.chdir(_saved_cwd)
             with self._lock:
                 self._running = False
@@ -1128,7 +1174,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self._check_auth():
             return
         client_ip = self.client_address[0]
-        if not _RATE_LIMITER.allow(client_ip):
+        # Exempt loopback addresses from rate limiting (local tools, tests, health checks)
+        if client_ip not in ("127.0.0.1", "::1") and not _RATE_LIMITER.allow(client_ip):
             self._send(HTTPStatus.TOO_MANY_REQUESTS, b'{"error":"Rate limit exceeded"}', content_type="application/json")
             return
         u = urlparse(self.path)
@@ -1263,6 +1310,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.INTERNAL_SERVER_ERROR, body, content_type="application/json")
             return
 
+        if path == "/api/scan-download-debug":
+            try:
+                debug_path = DASHBOARD_ARTIFACTS_DIR / "scan_download_debug.json"
+                data = json.loads(debug_path.read_text(encoding="utf-8")) if debug_path.exists() else {}
+                body = json.dumps(data).encode("utf-8")
+                self._send(HTTPStatus.OK, body, content_type="application/json; charset=utf-8")
+            except Exception as exc:
+                body = json.dumps({"error": str(exc)}).encode("utf-8")
+                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, body, content_type="application/json")
+            return
+
         if path == "/api/symbol-data":
             try:
                 sm = _get_sm()
@@ -1361,7 +1419,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self._check_auth():
             return
         client_ip = self.client_address[0]
-        if not _RATE_LIMITER.allow(client_ip):
+        # Exempt loopback addresses from rate limiting (local tools, tests, health checks)
+        if client_ip not in ("127.0.0.1", "::1") and not _RATE_LIMITER.allow(client_ip):
             self._send(HTTPStatus.TOO_MANY_REQUESTS, b'{"error":"Rate limit exceeded"}', content_type="application/json")
             return
         u = urlparse(self.path)
@@ -1666,7 +1725,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", os.environ.get("CORS_ORIGIN", "*"))
         self.end_headers()
 
         def _write_event(event: str, data: dict) -> bool:
@@ -1730,7 +1789,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", os.environ.get("CORS_ORIGIN", "*"))
         self.end_headers()
 
         def _write_event(event: str, data: dict) -> bool:
@@ -1793,7 +1852,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", os.environ.get("CORS_ORIGIN", "*"))
         self.end_headers()
 
         def _write_event(event: str, data: dict) -> bool:
@@ -1849,7 +1908,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", os.environ.get("CORS_ORIGIN", "*"))
         self.end_headers()
 
         def _write_event(event: str, data: dict) -> bool:

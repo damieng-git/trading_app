@@ -226,14 +226,9 @@ def translate_and_compute_indicators(
 
     # --- Nadaraya-Watson Envelopes (MAE + STD + Repainting) ---
     # Compute the NW kernel ONCE and derive all three envelope variants from it.
-    # Cap window at 250 for 4H — Gaussian weights beyond ~200 are negligible
-    # (weight at idx 200 with bw=8: exp(-200²/128) ≈ 0), and 4H has 1,500–2,100
-    # bars making window=500 disproportionately expensive for no signal benefit.
     p_mae = _p("NWE_Envelope_MAE") or _p("NWE_Envelope")
     nwe_bw = float(p_mae.get("bandwidth", NW_DEFAULT_BANDWIDTH))
     nwe_win = int(p_mae.get("window", NW_WINDOW))
-    if timeframe.upper() == "4H":
-        nwe_win = min(nwe_win, 250)
     nwe_mult = float(p_mae.get("mult", 3.0))
 
     from trading_dashboard.indicators.nadaraya_watson import _nw_kernel  # shared kernel
@@ -599,10 +594,9 @@ def translate_and_compute_indicators(
 # ---------------------------------------------------------------------------
 
 _MTF_PAIRS: Dict[str, str] = {
-    "1M": "4H",
-    "2W": "4H",
-    "1W": "4H",
-    "1D": "4H",
+    "1M": "1D",
+    "2W": "1D",
+    "1W": "1D",
 }
 
 
@@ -613,7 +607,10 @@ def apply_mtf_overlay(
 ) -> Dict[str, pd.DataFrame]:
     """
     Post-enrichment pass: re-compute WT_MTF_signal columns using
-    MACD from a faster timeframe.
+    MACD from the 1D timeframe as the fast reference.
+
+    1W/2W/1M use 1D Close prices for the cross-timeframe MACD component.
+    1D uses its own same-timeframe MACD (computed during enrichment).
 
     Modifies DataFrames in *tf_map* in-place and returns the same dict.
     """

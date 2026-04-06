@@ -36,6 +36,5 @@ python -m trading_dashboard symbols sync
 ## Notes
 
 - Data is downloaded via `yfinance`:
-  - hourly (`60m`) then resampled to 4H
   - daily (`1d`) then optionally resampled to 1W (`W-FRI`)
 - If a symbol is not found, the script tries common exchange suffixes (e.g. `.PA`).

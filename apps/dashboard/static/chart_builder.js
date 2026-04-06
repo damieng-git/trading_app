@@ -732,7 +732,16 @@
       if (c4d && c4d.kpis) { combo4kpis = c4d.kpis; combo4pols = c4d.pols || null; }
       else { combo4kpis = []; }
       _stratColor = _activeDef.color || null;
+    } else if (_activeDef && _activeDef.color) {
+      _stratColor = _activeDef.color;
     }
+
+    // Gate strategy KPI list: any non-polarity, non-stoof strategy that has its own
+    // strategy_kpis entry in the asset (e.g. arch_a). Used for heatmap, breakout, score bar.
+    const _gateKpiNames = (_activeDef && _activeDef.entry_type !== "polarity_combo" && _activeStrat !== "stoof"
+      && strategyKpis[_activeStrat] && strategyKpis[_activeStrat].length)
+      ? strategyKpis[_activeStrat] : null;
+    const _gateSlice = _gateKpiNames ? kpiSlice(_gateKpiNames) : null;
 
     let c3Active = null, c4Active = null;
     const allKpiZ = {};
@@ -771,7 +780,7 @@
       ? (strategyKpis[_activeStrat] || []) : null;
     const activeStratKpiNames = _polStratKpiNames
       ? _polStratKpiNames
-      : (_activeStrat === "stoof" ? stoofKpiNames : null);
+      : (_activeStrat === "stoof" ? stoofKpiNames : (_gateKpiNames || null));
     const _brkFilteredRaw = activeStratKpiNames
       ? kpisBreakout.filter(bk => {
           const base = bk.startsWith("BO_") ? bk.slice(3) : bk;
@@ -780,7 +789,7 @@
       : kpisBreakout.slice();
     const _heatmapOrder = _polStratKpiNames
       ? _polStratKpiNames
-      : (_activeStrat === "stoof" ? stoofKpiNames : kpisTrend);
+      : (_activeStrat === "stoof" ? stoofKpiNames : (_gateKpiNames || kpisTrend));
     const _heatmapIdx = {};
     _heatmapOrder.forEach((k, i) => { _heatmapIdx[k] = i; });
     _brkFilteredRaw.sort((a, b) => {
@@ -802,8 +811,8 @@
           if (rowZ[ci] === 1) { bullX.push(x[ci]); bullText.push(label + ": " + (rowC[ci] || "")); }
           else if (rowZ[ci] === -1) { bearX.push(x[ci]); bearText.push(label + ": " + (rowC[ci] || "")); }
         }
-        if (bullX.length) traces.push(mkTrace({ type: "scatter", x: bullX, y: constant(bullX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#22c55e" }, text: constant(bullX.length, label), hoverinfo: "text+x" }, 5, "KPI Breakout", true));
-        if (bearX.length) traces.push(mkTrace({ type: "scatter", x: bearX, y: constant(bearX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#ef4444" }, text: constant(bearX.length, label), hoverinfo: "text+x" }, 5, "KPI Breakout", true));
+        if (bullX.length) traces.push(mkTrace({ type: "scatter", x: bullX, y: constant(bullX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#22c55e" }, text: constant(bullX.length, label), hoverinfo: "text+x" }, 6, "KPI Breakout", true));
+        if (bearX.length) traces.push(mkTrace({ type: "scatter", x: bearX, y: constant(bearX.length, label), mode: "markers", marker: { symbol: "diamond", size: 6, color: "#ef4444" }, text: constant(bearX.length, label), hoverinfo: "text+x" }, 6, "KPI Breakout", true));
       });
     }
 
@@ -812,10 +821,20 @@
     const isStoof = _activeStrat === "stoof";
     const isPolStrat = !!_polStratKpiNames;
     const polStratSlice = isPolStrat ? kpiSlice(_polStratKpiNames) : null;
+
+    // Warn when a named strategy has no dedicated KPI list and falls back to
+    // generic trend KPIs — catches stale assets or missing registry.py registrations.
+    if (_activeStrat !== "all" && _activeStrat !== "trend" && !isPolStrat && !isStoof && !_gateKpiNames) {
+      console.warn(
+        `[chart] Strategy '${_activeStrat}' has no strategy_kpis in the asset — ` +
+        `heatmap and score bar are showing generic trend KPIs. ` +
+        `Register IndicatorDefs with strategies=['${_activeStrat}'] in registry.py and rebuild.`
+      );
+    }
     const scoreSlice = isPolStrat ? polStratSlice
-      : (isStoof ? stoofSlice : trend);
+      : (isStoof ? stoofSlice : (_gateSlice || trend));
     const scoreLabel = isPolStrat ? (_activeDef.label || _activeStrat) + " Score"
-      : (isStoof ? "StoofScore" : "TrendScore");
+      : (isStoof ? "StoofScore" : (_gateKpiNames ? (_activeDef && _activeDef.label ? _activeDef.label + " Score" : _activeStrat + " Score") : "TrendScore"));
 
     // Build polarity map for polarity strategies: KPI name → expected polarity
     // Bug-C fix: prefer TF-specific combos (combos_by_tf) over flat combos, mirroring entry logic.
@@ -833,10 +852,10 @@
       });
     }
 
-    if (scoreSlice.kk.length && scoreSlice.zz.length) {
+    if (_activeStrat !== "all" && scoreSlice.kk.length && scoreSlice.zz.length) {
       const tsValues = new Array(n).fill(0);
       scoreSlice.kk.forEach((k, i) => {
-        const w = (isStoof || isPolStrat) ? 1 : (kpiWeights[k] != null ? kpiWeights[k] : 1);
+        const w = kpiWeights[k] != null ? kpiWeights[k] : 1;
         const expectedPol = (isPolStrat && _polMap[k] != null) ? _polMap[k] : 1;
         const row = scoreSlice.zz[i];
         for (let ci = 0; ci < n; ci++) {
@@ -853,9 +872,10 @@
       }, 4, "TrendScore", true));
 
       if (isStoof) {
-        // Threshold line at 7 (the "7/10 rule")
+        // Threshold line at the configured threshold
+        const _stoofThreshLine = (_stratSetups["stoof"] || {}).threshold || 5;
         traces.push(mkTrace({
-          type: "scatter", x: [x[0], x[n-1]], y: [7, 7],
+          type: "scatter", x: [x[0], x[n-1]], y: [_stoofThreshLine, _stoofThreshLine],
           mode: "lines", line: { color: "rgba(59,130,246,0.6)", width: 1.5, dash: "dash" },
           hoverinfo: "skip",
         }, 4, "TrendScore", true));
@@ -864,16 +884,25 @@
       const tsMax = Math.max(...tsValues.map(Math.abs), 1);
       tsPad = (isStoof || isPolStrat) ? Math.max(scoreSlice.kk.length + 1, 5) : Math.max(tsMax * 1.1, 1);
 
-      if (!isStoof) {
-        c3Active = comboBool(combo3kpis, combo3pols);
-        c4Active = combo4kpis.length ? comboBool(combo4kpis, combo4pols) : null;
+      // C3/C4 active arrays: use server-computed states (single source of truth).
+      // strategy.py is the only place where entry logic lives — the chart just renders it.
+      const _serverC3 = (data.c3_states_by_strategy || {})[_activeStrat];
+      if (_serverC3) {
+        c3Active = _serverC3.c3 || null;
+        c4Active = _serverC3.c4 || null;
+      } else {
+        // Fallback for assets built before this feature (combo strategies only)
+        if (!isStoof) {
+          c3Active = comboBool(combo3kpis, combo3pols);
+          c4Active = combo4kpis.length ? comboBool(combo4kpis, combo4pols) : null;
+        }
       }
 
     }
 
     // KPI Trend Heatmap (row 6) — uses scoreSlice when strategy is active
     const heatmapSlice = isPolStrat ? polStratSlice
-      : (isStoof ? stoofSlice : trend);
+      : (isStoof ? stoofSlice : (_gateSlice || trend));
     const trLabels = [];
     if (heatmapSlice.kk.length) {
       const trZ = heatmapSlice.zz.slice();
@@ -889,22 +918,39 @@
         showscale: false, xgap: 0, ygap: 3,
         customdata: trCustom, text: trC,
         hovertemplate: "<b>%{customdata}</b><br>%{x}<br>%{text}<extra></extra>",
-      }, 6, "KPI Trend", true));
+      }, 5, "KPI Trend", true));
     }
 
     // Combo row (row 7) — C3/C4 isolated above TrendScore with small gap
     const comboLabels = [];
     const comboZ = [], comboC = [];
-    if (!isStoof && c3Active && combo3kpis.length) {
-      const c3Label = "C3: " + combo3kpis.map(k => shortLabel(k)).join(" · ");
-      comboLabels.push(c3Label);
-      comboZ.push(c3Active.map(v => v ? 1 : 0));
-      comboC.push(c3Active.map(v => v ? "active" : "—"));
-      if (c4Active && combo4kpis.length) {
-        const c4Label = "C4: " + combo4kpis.map(k => shortLabel(k)).join(" · ");
+    if (c3Active) {
+      let c3Label, c4Label;
+      if (isStoof) {
+        const _sd = _stratSetups["stoof"] || {};
+        const _rk = _sd.required_kpi || "MACD_BL";
+        const _c4k = _sd.c4_kpi || "WT_MTF";
+        const _thr = _sd.threshold != null ? _sd.threshold : 5;
+        const _tot = _sd.total != null ? _sd.total : 9;
+        c3Label = "Entry C3: " + shortLabel(_rk) + " + \u2265" + _thr + "/" + _tot + " score";
+        c4Label = c4Active ? "Entry C4: C3 + " + shortLabel(_c4k) : null;
+      } else if (_activeDef && _activeDef.ribbon_label) {
+        // Strategy defines its own ribbon label in config — no JS changes needed for new strategies.
+        c3Label = _activeDef.ribbon_label;
+        c4Label = null;
+      } else if (combo3kpis.length) {
+        c3Label = "Entry C3: " + combo3kpis.map(k => shortLabel(k)).join(" \u00b7 ");
+        c4Label = (c4Active && combo4kpis.length) ? "Entry C4: " + combo4kpis.map(k => shortLabel(k)).join(" \u00b7 ") : null;
+      }
+      if (c3Label) {
+        comboLabels.push(c3Label);
+        comboZ.push(c3Active.map(v => v ? 1 : 0));
+        comboC.push(c3Active.map(v => v ? "active" : "\u2014"));
+      }
+      if (c4Label) {
         comboLabels.push(c4Label);
         comboZ.push(c4Active.map(v => v ? 1 : 0));
-        comboC.push(c4Active.map(v => v ? "active" : "—"));
+        comboC.push(c4Active.map(v => v ? "active" : "\u2014"));
       }
     }
     if (comboLabels.length) {
@@ -948,7 +994,7 @@
     const allTrades = [];
 
     {
-      const _EP = (typeof EXIT_PARAMS_CFG !== "undefined") ? EXIT_PARAMS_CFG : {"4H":{T:4,M:48,K:4.0},"1D":{T:4,M:40,K:4.0},"1W":{T:2,M:20,K:4.0},"2W":{T:2,M:10,K:4.0},"1M":{T:1,M:6,K:4.0}};
+      const _EP = (typeof EXIT_PARAMS_CFG !== "undefined") ? EXIT_PARAMS_CFG : {"1D":{T:4,M:40,K:4.0},"1W":{T:2,M:20,K:4.0},"2W":{T:2,M:10,K:4.0},"1M":{T:1,M:6,K:4.0}};
       const params = _EP[tf.toUpperCase()] || _EP["1D"];
       const T = params.T, M = params.M, K = params.K;
 
@@ -964,7 +1010,7 @@
       // --- Build trade list from pre-computed events or fallback ---
       const _peByStrat = data.position_events_by_strategy || {};
       const _isAllStrats = _activeStrat === "all";
-      const _useStratEvents = (isPolStrat || isStoof) && _peByStrat[_activeStrat] && _peByStrat[_activeStrat].length;
+      const _useStratEvents = !_isAllStrats && Array.isArray(_peByStrat[_activeStrat]);
       const _useAllOverlay = _isAllStrats && Object.keys(_peByStrat).length > 0;
 
       function _pushEvents(evList, stratKey) {
@@ -993,209 +1039,22 @@
       if (_useStratEvents) {
         _pushEvents(_peByStrat[_activeStrat], _activeStrat);
       } else if (_useAllOverlay) {
-        if (data.position_events && data.position_events.length) {
-          _pushEvents(data.position_events, "trend");
-        }
         for (const sk in _peByStrat) {
           _pushEvents(_peByStrat[sk], sk);
         }
-      } else if (!isStoof && data.position_events && data.position_events.length) {
-        // BUG-ST1 fix: do not show Trend events when Stoof is selected.
-        _pushEvents(data.position_events, "trend");
-      } else if (c3Active && Object.keys(allKpiZ).length) {
-        // Fallback: compute from payload data (backward compat)
-        if (!c4Active) c4Active = new Array(n).fill(false);
-        const O_fig = c.Open || C;
-        const open_fig = O_fig.map(v => v != null ? v : NaN);
-        const SLIP_FIG = 0.005;
-        const prevC = [close[0], ...close.slice(0, -1)];
-        const tr = close.map((_, i) => Math.max(high[i] - low[i], Math.abs(high[i] - prevC[i]), Math.abs(low[i] - prevC[i])));
-        const atr = rollingMean(tr, 14);
-        const c3Onset = c3Active.map((v, i) => v && (i === 0 || !c3Active[i - 1]));
-
-        function bearishCount(kpis, j, pols) {
-          let nb = 0;
-          const pp = pols || kpis.map(() => 1);
-          for (let ki = 0; ki < kpis.length; ki++) { const k = kpis[ki]; if (k in allKpiZ && j < allKpiZ[k].length && allKpiZ[k][j] !== pp[ki]) nb++; }
-          return nb;
-        }
-
-        let smaGate = null;
-        if (tfU === "1D" || tfU === "1W") {
-          if (data.sma20_ok && data.sma20_ok.length === n) { smaGate = data.sma20_ok; }
-          else if (n >= 200) {
-            smaGate = new Array(n).fill(true);
-            const sma200 = new Array(n).fill(NaN), sma20 = new Array(n).fill(NaN);
-            let sum200 = 0, sum20 = 0;
-            for (let si = 0; si < n; si++) { const cv = close[si] || 0; sum200 += cv; sum20 += cv; if (si >= 200) sum200 -= close[si - 200] || 0; if (si >= 20) sum20 -= close[si - 20] || 0; if (si >= 199) sma200[si] = sum200 / 200; if (si >= 19) sma20[si] = sum20 / 20; }
-            for (let si = 0; si < n; si++) { smaGate[si] = isNaN(sma200[si]) || isNaN(sma20[si]) || sma20[si] >= sma200[si]; }
-          }
-        }
-        const _VS_MULT = 1.5, _VS_LB = 5;
-        let volSpikeOk = null;
-        if (c.Volume && c.Volume.length === n) {
-          const vol = c.Volume.map(v => v != null ? v : 0);
-          const volMa20 = rollingMean(vol, 20);
-          const spikeRaw = vol.map((v, j) => v >= _VS_MULT * (volMa20[j] || 1) ? 1 : 0);
-          volSpikeOk = new Array(n).fill(false);
-          for (let si = 0; si < n; si++) { for (let lb = 0; lb < _VS_LB && si - lb >= 0; lb++) { if (spikeRaw[si - lb]) { volSpikeOk[si] = true; break; } } }
-        }
-        let overextOk_fig = null;
-        if (tfU === "1W") { overextOk_fig = new Array(n).fill(true); for (let oi = 5; oi < n; oi++) { if (close[oi - 5] > 0 && close[oi] > close[oi - 5] * 1.15) overextOk_fig[oi] = false; } }
-
-        let i = 0;
-        while (i < n) {
-          if (!c3Onset[i]) { i++; continue; }
-          if (smaGate && !smaGate[i]) { i++; continue; }
-          if (volSpikeOk && !volSpikeOk[i]) { i++; continue; }
-          if (overextOk_fig && !overextOk_fig[i]) { i++; continue; }
-          const fillBar = i + 1; if (fillBar >= n) break;
-          const ep = open_fig[fillBar]; if (ep <= 0 || isNaN(ep)) { i++; continue; }
-          const entryIdx = fillBar;
-          let scaled = c4Active[i], scaleIdx = scaled ? i : null;
-          let activeKpis = scaled ? combo4kpis : combo3kpis, nk = activeKpis.length;
-          let activePols = scaled ? combo4pols : combo3pols;
-          let stopPrice = ep, stop = atr[i] > 0 ? stopPrice - K * atr[i] : stopPrice * 0.95;
-          let barsSinceReset = 0; const stopTrail = [stop];
-          let exitIdx = null, exitReason = null;
-          for (let j = entryIdx + 1; j < n; j++) {
-            barsSinceReset++; const cj = close[j];
-            if (isNaN(cj)) { stopTrail.push(stopTrail[stopTrail.length - 1]); continue; }
-            if (cj < stop) { exitIdx = j; exitReason = "ATR stop"; break; }
-            if (!scaled && c4Active[j]) { scaled = true; scaleIdx = j; activeKpis = combo4kpis; activePols = combo4pols; nk = activeKpis.length; }
-            const nb = bearishCount(activeKpis, j, activePols), barsHeld = j - entryIdx;
-            if (barsHeld <= T) { if (nb >= nk) { exitIdx = j; exitReason = "Full invalidation"; break; } }
-            else { if (nb >= 2) { exitIdx = j; exitReason = nb + "/" + nk + " KPIs bearish"; break; } }
-            if (barsSinceReset >= M) { if (nb === 0) { stopPrice = cj; stop = atr[j] > 0 ? stopPrice - K * atr[j] : stopPrice * 0.95; barsSinceReset = 0; } else { exitIdx = j; exitReason = "Checkpoint exit"; break; } }
-            stopTrail.push(stop);
-          }
-          if (exitIdx == null) { exitIdx = n - 1; exitReason = "Open"; }
-          while (stopTrail.length < (exitIdx - entryIdx + 1)) stopTrail.push(stopTrail[stopTrail.length - 1] || stop);
-          const exitFill = (exitIdx < n - 1 && exitReason !== "Open") ? exitIdx + 1 : exitIdx;
-          const xp = exitFill !== exitIdx ? open_fig[exitFill] : close[exitIdx];
-          const cost = 0.001 + SLIP_FIG; const ret = ep > 0 ? ((xp - ep) / ep - cost) * 100 : 0;
-          allTrades.push({ entryIdx: entryIdx, exitIdx: exitIdx, ret: ret, hold: exitIdx - entryIdx, label: scaled ? "C4" : "C3", reason: exitReason, scaled: scaled, scaleIdx: scaleIdx, stopTrail: stopTrail, ep: ep, entryDate: x[entryIdx], exitDate: x[exitIdx] });
-          i = exitReason !== "Open" ? exitIdx + 1 : n;
-        }
-      }
-
-      // --- "All strategies" mode: compute trades for every polarity_combo strategy ---
-      // BUG-CC2 fix: only run client-side simulation when no pre-computed events exist.
-      // When position_events_by_strategy is populated (after a build), allTrades was
-      // already filled by _useAllOverlay above and client-side re-computation is skipped.
-      if (_activeStrat === "all" && Object.keys(allKpiZ).length && Object.keys(_peByStrat).length === 0) {
-        allTrades.length = 0;
-        const _aSlip = 0.005;
-        const _aEP2 = (typeof EXIT_PARAMS_CFG !== "undefined") ? EXIT_PARAMS_CFG : {"4H":{T:4,M:48,K:4.0},"1D":{T:4,M:40,K:4.0},"1W":{T:2,M:20,K:4.0},"2W":{T:2,M:10,K:4.0},"1M":{T:1,M:6,K:4.0}};
-        const _aPrms = _aEP2[tf.toUpperCase()] || _aEP2["1D"];
-        const _aT = _aPrms.T, _aM = _aPrms.M, _aK = _aPrms.K;
-        const _aClose = C.map(v => v != null ? v : NaN);
-        const _aOpen2 = (c.Open || C).map(v => v != null ? v : NaN);
-        const _aHigh = H.map(v => v != null ? v : NaN);
-        const _aLow = L.map(v => v != null ? v : NaN);
-        const _aTfU = tf.toUpperCase();
-        let _aSmaGate = null;
-        if (_aTfU === "1D" || _aTfU === "1W") {
-          if (data.sma20_ok && data.sma20_ok.length === n) { _aSmaGate = data.sma20_ok; }
-          else if (n >= 200) {
-            _aSmaGate = new Array(n).fill(true);
-            let _as200 = 0, _as20 = 0;
-            for (let _si2 = 0; _si2 < n; _si2++) {
-              const _cv2 = _aClose[_si2] || 0; _as200 += _cv2; _as20 += _cv2;
-              if (_si2 >= 200) _as200 -= _aClose[_si2 - 200] || 0;
-              if (_si2 >= 20) _as20 -= _aClose[_si2 - 20] || 0;
-              const _v200 = _si2 >= 199 ? _as200 / 200 : NaN;
-              const _v20 = _si2 >= 19 ? _as20 / 20 : NaN;
-              _aSmaGate[_si2] = isNaN(_v200) || isNaN(_v20) || _v20 >= _v200;
-            }
-          }
-        }
-        let _aVolOk = null;
-        if (c.Volume && c.Volume.length === n) {
-          const _avol = c.Volume.map(v => v != null ? v : 0);
-          const _avolMa = rollingMean(_avol, 20);
-          const _aSpike = _avol.map((v, j) => v >= 1.5 * (_avolMa[j] || 1) ? 1 : 0);
-          _aVolOk = new Array(n).fill(false);
-          for (let _si2 = 0; _si2 < n; _si2++) { for (let _lb = 0; _lb < 5 && _si2 - _lb >= 0; _lb++) { if (_aSpike[_si2 - _lb]) { _aVolOk[_si2] = true; break; } } }
-        }
-        let _aOverext = null;
-        if (_aTfU === "1W") { _aOverext = new Array(n).fill(true); for (let _oi2 = 5; _oi2 < n; _oi2++) { if (_aClose[_oi2 - 5] > 0 && _aClose[_oi2] > _aClose[_oi2 - 5] * 1.15) _aOverext[_oi2] = false; } }
-        const _aPrevC = [_aClose[0], ..._aClose.slice(0, -1)];
-        const _aTrR = _aClose.map((_, i) => Math.max(_aHigh[i] - _aLow[i], Math.abs(_aHigh[i] - _aPrevC[i]), Math.abs(_aLow[i] - _aPrevC[i])));
-        const _aAtr = rollingMean(_aTrR, 14);
-        function _aBearCount(kpis, j, pols) {
-          let nb = 0; const pp = pols || kpis.map(() => 1);
-          for (let ki = 0; ki < kpis.length; ki++) { const k = kpis[ki]; if (k in allKpiZ && j < allKpiZ[k].length && allKpiZ[k][j] !== pp[ki]) nb++; }
-          return nb;
-        }
-        for (const [, sdef] of Object.entries(_stratSetups)) {
-          if (sdef.entry_type !== "polarity_combo") continue;
-          const _sColor = sdef.color || "#888888";
-          const _cByTf = sdef.combos_by_tf || {};
-          const _tfC2 = _cByTf[_aTfU] || {};
-          const _sCombos = Object.keys(_tfC2).length ? _tfC2 : (sdef.combos || {});
-          const _sc3d = _sCombos.c3 || {};
-          const _sc4d = _sCombos.c4;
-          const _sc3kpis = _sc3d.kpis || [];
-          const _sc3pols = _sc3d.pols || _sc3kpis.map(() => 1);
-          const _sc4kpis = _sc4d ? (_sc4d.kpis || []) : [];
-          const _sc4pols = _sc4d ? (_sc4d.pols || _sc4kpis.map(() => 1)) : [];
-          // BUG-D3 fix: use exit_combos for exit checking if defined on this strategy
-          const _sExitDef = sdef.exit_combos;
-          const _sExKpis = _sExitDef ? (_sExitDef.kpis || null) : null;
-          const _sExPols = _sExitDef ? (_sExitDef.pols || null) : null;
-          if (!_sc3kpis.length || _sc3kpis.some(k => !allKpiZ[k])) continue;
-          const _sc3Act = comboBool(_sc3kpis, _sc3pols);
-          const _sc4Act = _sc4kpis.length ? comboBool(_sc4kpis, _sc4pols) : null;
-          if (!_sc3Act) continue;
-          const _sc3Onset = _sc3Act.map((v, i) => v && (i === 0 || !_sc3Act[i - 1]));
-          let _sIdx = 0;
-          while (_sIdx < n) {
-            if (!_sc3Onset[_sIdx]) { _sIdx++; continue; }
-            if (_aSmaGate && !_aSmaGate[_sIdx]) { _sIdx++; continue; }
-            if (_aVolOk && !_aVolOk[_sIdx]) { _sIdx++; continue; }
-            if (_aOverext && !_aOverext[_sIdx]) { _sIdx++; continue; }
-            const _sfb = _sIdx + 1; if (_sfb >= n) break;
-            const _sep = _aOpen2[_sfb]; if (_sep <= 0 || isNaN(_sep)) { _sIdx++; continue; }
-            const _sEnt = _sfb;
-            let _sSc = _sc4Act ? _sc4Act[_sIdx] : false, _sScIdx = _sSc ? _sIdx : null;
-            let _sAk = _sSc ? _sc4kpis : _sc3kpis, _sAp = _sSc ? _sc4pols : _sc3pols;
-            // BUG-D3: resolve exit KPIs (use exit_combos if defined, else active entry combo)
-            let _sCurExKpis = _sExKpis || _sAk, _sCurExPols = _sExPols || _sAp;
-            let _sSp = _sep, _sStop = _aAtr[_sIdx] > 0 ? _sSp - _aK * _aAtr[_sIdx] : _sSp * 0.95;
-            let _sBsr = 0; const _sSt = [_sStop]; let _sXi = null, _sXr = null;
-            for (let _sj = _sEnt + 1; _sj < n; _sj++) {
-              _sBsr++; const _scj = _aClose[_sj]; if (isNaN(_scj)) { _sSt.push(_sSt[_sSt.length - 1]); continue; }
-              if (_scj < _sStop) { _sXi = _sj; _sXr = "ATR stop"; break; }
-              if (!_sSc && _sc4Act && _sc4Act[_sj]) {
-                _sSc = true; _sScIdx = _sj; _sAk = _sc4kpis; _sAp = _sc4pols;
-                if (!_sExKpis) { _sCurExKpis = _sAk; _sCurExPols = _sAp; }
-              }
-              const _snb = _aBearCount(_sCurExKpis, _sj, _sCurExPols), _sbh = _sj - _sEnt;
-              if (_sbh <= _aT) { if (_snb >= _sCurExKpis.length) { _sXi = _sj; _sXr = "Full invalidation"; break; } }
-              else { if (_snb >= 2) { _sXi = _sj; _sXr = _snb + "/" + _sCurExKpis.length + " KPIs bearish"; break; } }
-              if (_sBsr >= _aM) { if (_snb === 0) { _sSp = _scj; _sStop = _aAtr[_sj] > 0 ? _sSp - _aK * _aAtr[_sj] : _sStop; _sBsr = 0; } else { _sXi = _sj; _sXr = "Checkpoint exit"; break; } }
-              _sSt.push(_sStop);
-            }
-            if (_sXi == null) { _sXi = n - 1; _sXr = "Open"; }
-            while (_sSt.length < (_sXi - _sEnt + 1)) _sSt.push(_sSt[_sSt.length - 1] || _sStop);
-            const _sXf = (_sXi < n - 1 && _sXr !== "Open") ? _sXi + 1 : _sXi;
-            const _sXp = _sXf !== _sXi ? _aOpen2[_sXf] : _aClose[_sXi];
-            const _sRet = _sep > 0 ? ((_sXp - _sep) / _sep - (0.001 + _aSlip)) * 100 : 0;
-            allTrades.push({ entryIdx: _sEnt, exitIdx: _sXi, ret: _sRet, hold: _sXi - _sEnt, label: _sSc ? "C4" : "C3", reason: _sXr, scaled: _sSc, scaleIdx: _sScIdx, stopTrail: _sSt, ep: _sep, entryDate: x[_sEnt], exitDate: x[_sXi], _stratColor: _sColor });
-            _sIdx = _sXr !== "Open" ? _sXi + 1 : n;
-          }
-        }
+      } else {
+        // Asset is stale — pre-computed events are missing. Never reconstruct client-side.
+        if (typeof window._showStaleToast === "function") window._showStaleToast(_activeStrat);
       }
 
       // --- Position shading ---
-      const _loseColor = "rgba(244,63,94,0.20)";
+      const _loseColor = "rgba(244,63,94,0.28)";
 
       for (const t of allTrades) {
         const ei = t.entryIdx, xi = t.exitIdx;
         const _tc = t._stratColor || null;
-        const _tWinC3 = _tc ? _hexToRgba(_tc, 0.13) : "rgba(250,204,21,0.13)";
-        const _tWinC4 = _tc ? _hexToRgba(_tc, 0.20) : "rgba(74,222,128,0.14)";
+        const _tWinC3 = _tc ? _hexToRgba(_tc, 0.22) : "rgba(250,204,21,0.22)";
+        const _tWinC4 = _tc ? _hexToRgba(_tc, 0.32) : "rgba(74,222,128,0.28)";
         if (t.scaled && t.scaleIdx != null && t.scaleIdx > ei) {
           shapes.push({
             type: "rect",
@@ -1401,7 +1260,7 @@
       if (trades.length) {
         // Adaptive duration: converts bar-count × timeframe to a human label.
         // Days < 14 → "Nd", days 14-60 → "N.Nw", days > 60 → "N.Nmo".
-        const _tfDays = { "4H": 1 / 6, "1D": 1, "1W": 7, "2W": 14, "1M": 30 };
+        const _tfDays = { "1D": 1, "1W": 7, "2W": 14, "1M": 30 };
         const _daysPerBar = _tfDays[(tf || "").toUpperCase()] || 1;
         function _adaptiveLen(bars) {
           const d = bars * _daysPerBar;
@@ -1494,8 +1353,8 @@
     const gap = 0.015;
     const comboGap = 0.008; // tighter gap between combo row and TrendScore
 
-    const r6Bot = 0, r6Top = r6Bot + trShare;
-    const r5Bot = r6Top + gap, r5Top = r5Bot + brShare;
+    const r6Bot = 0, r6Top = r6Bot + brShare;
+    const r5Bot = r6Top + gap, r5Top = r5Bot + trShare;
     const r4Bot = r5Top + gap, r4Top = r4Bot + tsShare;
     const rCBot = r4Top + (comboLabels.length ? comboGap : gap), rCTop = rCBot + comboShare;
     const r3Bot = rCTop + (comboLabels.length ? gap : 0), r3Top = r3Bot + oscShare;
@@ -1503,13 +1362,28 @@
     const r1Bot = r2Top + gap, r1Top = 1.0;
 
     // X range with padding
-    let xRange;
+    let xRange, yPriceRange;
     if (n >= 2) {
       const tfU = tf.toUpperCase();
-      const padMs = tfU === "1D" ? 86400000 : (tfU === "1W" ? 345600000 : 900000);
-      const xMin = new Date(new Date(x[0]).getTime() - padMs).toISOString();
+      const padMs = { "1D": 86400000, "1W": 345600000, "2W": 604800000, "1M": 1296000000 }[tfU] || 86400000;
+      // Default display window: show recent bars only; full history available via zoom-out
+      const _displayBars = { "1D": 180, "1W": 52, "2W": 26, "1M": 18 };
+      const showBars = _displayBars[tfU] || n;
+      const dispStart = Math.max(0, n - showBars);
+      const xMin = new Date(new Date(x[dispStart]).getTime() - padMs).toISOString();
       const xMax = new Date(new Date(x[n - 1]).getTime() + padMs).toISOString();
       xRange = [xMin, xMax];
+      // Compute y range for the price panel from the visible bars so low-priced
+      // stocks are never dwarfed by out-of-window historical highs/lows.
+      const visH = H.slice(dispStart).filter(v => isFinite(v) && v > 0);
+      const visL = L.slice(dispStart).filter(v => isFinite(v) && v > 0);
+      if (visH.length && visL.length) {
+        const yMax = Math.max(...visH), yMin = Math.min(...visL);
+        if (yMax > yMin) {
+          const pad = (yMax - yMin) * 0.05;
+          yPriceRange = [yMin - pad, yMax + pad];
+        }
+      }
     }
 
     const _gridAlpha = _gcss("--plotly-grid-alpha") || "rgba(110,115,108,0.25)";
@@ -1543,7 +1417,7 @@
       meta: { combo_zones: comboZones, pnl_trades: data._pnlTrades || [], pnl_stats_fn: data._pnlStatsText || null, combo_3_kpis: combo3kpis, combo_4_kpis: combo4kpis },
       xaxis: xax1, xaxis2: makeXAxis(), xaxis3: makeXAxis(),
       xaxis4: makeXAxis(), xaxis5: makeXAxis(), xaxis6: makeXAxis(), xaxis7: makeXAxis(),
-      yaxis: makeYAxis([r1Bot, r1Top]),
+      yaxis: makeYAxis([r1Bot, r1Top], yPriceRange ? { range: yPriceRange } : {}),
       yaxis2: makeYAxis([r2Bot, r2Top], {
         ticksuffix: "%", zeroline: true, zerolinecolor: _zeroLine,
         tickfont: { size: 9 },
@@ -1554,18 +1428,18 @@
         zeroline: true, zerolinecolor: _zeroLine,
         range: [-tsPad, tsPad], autorange: false, fixedrange: true,
       }),
-      yaxis5: (brLabels.length ? {
+      yaxis5: (trLabels.length ? {
         domain: [r5Bot, r5Top], tickmode: "array",
-        tickvals: brLabels, ticktext: brLabels, tickfont: { size: 8 },
-        ticklabelstandoff: 8, automargin: true,
-        categoryorder: "array", categoryarray: brLabels.slice().reverse(),
-        showgrid: true, gridcolor: _gridAlpha,
-      } : makeYAxis([r5Bot, r5Top])),
-      yaxis6: (trLabels.length ? {
-        domain: [r6Bot, r6Top], tickmode: "array",
         tickvals: trLabels, ticktext: trLabels, tickfont: { size: 8 },
         ticklabelstandoff: 8, automargin: true,
         categoryorder: "array", categoryarray: trLabels.slice().reverse(),
+        showgrid: true, gridcolor: _gridAlpha,
+      } : makeYAxis([r5Bot, r5Top])),
+      yaxis6: (brLabels.length ? {
+        domain: [r6Bot, r6Top], tickmode: "array",
+        tickvals: brLabels, ticktext: brLabels, tickfont: { size: 8 },
+        ticklabelstandoff: 8, automargin: true,
+        categoryorder: "array", categoryarray: brLabels.slice().reverse(),
         showgrid: true, gridcolor: _gridAlpha,
       } : makeYAxis([r6Bot, r6Top])),
       yaxis7: (comboLabels.length ? {
@@ -1582,8 +1456,8 @@
       { text: "Price (" + tf + ")", xref: "paper", yref: "paper", x: 0.5, y: r1Top, showarrow: false, font: { size: 14 }, xanchor: "center", yanchor: "bottom" },
       { text: "Oscillators", xref: "paper", yref: "paper", x: 0.5, y: r3Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
       { text: scoreLabel, xref: "paper", yref: "paper", x: 0.5, y: r4Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
-      { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
-      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
+      { text: "KPI \u2014 " + (isStoof ? "Stoof" : isPolStrat ? (_activeDef.label || _activeStrat) : "Trend") + " (regime)", xref: "paper", yref: "paper", x: 0.5, y: r5Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
+      { text: "KPI \u2014 Breakout (signals)", xref: "paper", yref: "paper", x: 0.5, y: r6Top, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" },
     ];
     if (comboLabels.length) {
       subplotTitles.push({ text: "Combos", xref: "paper", yref: "paper", x: 0.5, y: rCTop, showarrow: false, font: { size: 12 }, xanchor: "center", yanchor: "bottom" });
@@ -1630,13 +1504,12 @@
     const _cStrat2a = (typeof window !== "undefined" && window.currentStrategy) ? window.currentStrategy : "trend";
     const _stSetups2a = (typeof STRATEGY_SETUPS !== "undefined") ? (STRATEGY_SETUPS.setups || {}) : {};
     const _sDef2a = _stSetups2a[_cStrat2a];
-    const _isPolStrat2 = _sDef2a && _sDef2a.entry_type === "polarity_combo";
-    const _isStoof2 = _cStrat2a === "stoof";
-    // prefer strategy-specific events; for Stoof use its own events; never fall back to Trend events for Stoof
-    const _stratEvents2 = (_isPolStrat2 || _isStoof2) ? (_peByStrat2[_cStrat2a] || null) : null;
-    // BUG-ST1 fix: suppress Trend event fallback when Stoof is selected
-    const _useEvents2 = (_stratEvents2 && _stratEvents2.length) ? _stratEvents2
-      : (!_isStoof2 && payload.position_events && payload.position_events.length ? payload.position_events : null);
+    // data-driven: any named strategy uses its own events from position_events_by_strategy;
+    // only "trend" falls back to legacy position_events; "all" is handled by _useAllOverlay above.
+    const _cStrat2IsAll = _cStrat2a === "all";
+    const _stratEvents2 = !_cStrat2IsAll ? (_peByStrat2[_cStrat2a] ?? null) : null;
+    const _useEvents2 = Array.isArray(_stratEvents2) ? _stratEvents2
+      : (_cStrat2a === "trend" && payload.position_events && payload.position_events.length ? payload.position_events : null);
 
     if (_useEvents2) {
       for (const ev of _useEvents2) {
@@ -1688,7 +1561,7 @@
       if (!c3Active) return { trades: [], eqCurve: [], dates: x };
       if (!c4Active) c4Active = new Array(n).fill(false);
 
-      const _EP = (typeof EXIT_PARAMS_CFG !== "undefined") ? EXIT_PARAMS_CFG : {"4H":{T:4,M:48,K:4.0},"1D":{T:4,M:40,K:4.0},"1W":{T:2,M:20,K:4.0},"2W":{T:2,M:10,K:4.0},"1M":{T:1,M:6,K:4.0}};
+      const _EP = (typeof EXIT_PARAMS_CFG !== "undefined") ? EXIT_PARAMS_CFG : {"1D":{T:4,M:40,K:4.0},"1W":{T:2,M:20,K:4.0},"2W":{T:2,M:10,K:4.0},"1M":{T:1,M:6,K:4.0}};
       const params = _EP[(tf || "1D").toUpperCase()] || _EP["1D"];
       const T = params.T, M = params.M, K = params.K;
       const O = c.Open || C; const open = O.map(v => v != null ? v : NaN); const SLIPPAGE = 0.005;

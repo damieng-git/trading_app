@@ -65,7 +65,7 @@ yfinance → downloader.py → OHLCV parquet cache
 ### Package structure
 
 - **`trading_dashboard/`** — core library
-  - `indicators/` — Pine Script → Python indicator implementations. Each file is a self-contained indicator. `_base.py` provides shared primitives (sma, ema, rma, rsi, atr, etc.). `registry.py` defines KPI display order.
+  - `indicators/` — Pine Script → Python indicator implementations. Each file is a self-contained indicator. `_base.py` provides shared primitives (sma, ema, rma, rsi, atr, etc.). `registry.py` is the central indicator registry — the `strategies` field on each `IndicatorDef` is **the sole mechanism that populates `strategy_kpis[key]`** in the JSON asset. Without at least one `IndicatorDef` registered with `strategies=["<key>"]`, the dashboard heatmap, breakout panel, and score bar for that strategy will silently fall back to generic trend KPIs.
   - `kpis/` — KPI state computation (`catalog.py`) and bull/bear rules (`rules.py`). Converts indicator output to binary 1/0/-1 states.
   - `data/` — OHLCV downloading (`downloader.py`), incremental updates (`incremental.py`), feature store (`store.py`), enrichment pipeline (`enrichment.py`).
   - `symbols/` — Symbol group management (`manager.py`); reads from `apps/dashboard/configs/lists/*.csv`.
@@ -99,7 +99,7 @@ Indicators output numeric columns into enriched DataFrames. `kpis/catalog.py` ma
 
 ### Timeframes
 
-5 timeframes: `4H`, `1D`, `1W`, `2W`, `1M`. 4H is resampled from 1H yfinance data; 2W/1M are resampled from 1D. Weekly resampling anchors to Friday (`W-FRI`).
+4 timeframes: `1D`, `1W`, `2W`, `1M`. 2W/1M are resampled from 1D. Weekly resampling anchors to Friday (`W-FRI`).
 
 ### Dashboard output
 
@@ -108,6 +108,17 @@ Indicators output numeric columns into enriched DataFrames. `kpis/catalog.py` ma
 ### Configuration
 
 `apps/dashboard/configs/config.json` is the primary runtime config. Symbol lists are CSV files in `apps/dashboard/configs/lists/`. `indicator_config.json` controls which indicators are active and their parameters.
+
+### Adding a new strategy — required steps
+
+Skipping any of these steps causes a silent rendering failure (heatmap and score bar fall back to generic trend KPIs with no error message).
+
+1. **`config.json`** — add a block under `strategy_setups` with `entry_type`, `color`, `badge_label`, `badge_prio`, and any entry/exit params.
+2. **`strategy.py`** — add a `compute_<type>_position_events()` function if the `entry_type` is new; otherwise reuse an existing engine.
+3. **`build_dashboard.py`** — add a dispatch line in the strategy loop to call the engine and write `position_events_by_strategy[key]`.
+4. **`registry.py`** — register **all KPIs relevant to the strategy** (regime gates, entry trigger, exit indicators) with `strategies=["<key>"]` and a valid `kpi_type`. This is what populates `strategy_kpis[key]` in the asset and drives the heatmap, breakout panel, and score bar. Register the full set — the heatmap is meant to show the complete strategy picture, not just the entry combo. The Regime Ribbon shows entry-only conditions and is driven separately by `c3_states_by_strategy`.
+5. **Rebuild** — `python -m trading_dashboard dashboard build`. Check the build log for `strategy_kpis['<key>'] is empty` warnings.
+6. **Verify** — open the Chart tab with the new strategy selected and confirm: score bar uses strategy KPIs (not generic trend), heatmap rows match the registered indicators, regime ribbon is active.
 
 ## Deployment & Server Management
 

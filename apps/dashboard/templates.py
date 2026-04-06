@@ -652,7 +652,13 @@ def write_lazy_dashboard_shell_html(
 
     def _build_sidebar() -> str:
         """Build the sidebar HTML fragment."""
-        return """        <div id="symbolListTools">
+        return """        <div id="sidebarGroupSelector">
+          <div class="tab-group-dropdown" data-scope="chart">
+            <div class="tab-group-trigger">All &#9662;</div>
+            <div class="tab-group-menu group-menu"></div>
+          </div>
+        </div>
+        <div id="symbolListTools">
           <label for="symbolListSearch" class="visually-hidden">Filter symbols by ticker or exchange suffix</label>
           <input id="symbolListSearch" type="search" placeholder="Filter symbols (e.g. .DE, AAPL)" aria-label="Filter symbols by ticker or exchange suffix" />
         </div>
@@ -711,12 +717,12 @@ def write_lazy_dashboard_shell_html(
         return f"""  <div class="topbar">
     <div class="topbarRow">
       <div class="nav-tabs" role="tablist" aria-label="Dashboard tabs">
-        <div id="tabScreener" class="nav-tab" role="tab" tabindex="0" aria-selected="false">Screener</div>
-        <div id="tabScan" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">&#128269; Scan</div>
-        <div id="tabStrategy" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">Strategy</div>
-        <div id="tabChart" class="nav-tab active" role="tab" tabindex="-1" aria-selected="true">Charts</div>
-        <div id="tabPnl" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">P&amp;L</div>
-        <div id="tabInfo" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">Info</div>
+        <div id="tabScreener" class="nav-tab" role="tab" tabindex="0" aria-selected="false">🔍 Screener</div>
+        <div id="tabChart" class="nav-tab active" role="tab" tabindex="-1" aria-selected="true">⚡ Charts</div>
+        <div id="tabStrategy" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">♟️ Strategy</div>
+        <div id="tabPnl" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">💰 P&amp;L</div>
+        <div id="tabScan" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">📡 Scan</div>
+        <div id="tabInfo" class="nav-tab" role="tab" tabindex="-1" aria-selected="false">💡 Info</div>
       </div>
       <div class="topbar-sep"></div>
       <div class="refresh-split" id="refreshSplit">
@@ -753,14 +759,6 @@ def write_lazy_dashboard_shell_html(
         </div>
         <div class="filter-sep-v"></div>
         <div class="filter-group">
-          <div class="filter-label">Stock List</div>
-          <div class="tab-group-dropdown" data-scope="chart">
-            <div class="tab-group-trigger">All &#9662;</div>
-            <div class="tab-group-menu group-menu"></div>
-          </div>
-        </div>
-        <div class="filter-sep-v"></div>
-        <div class="filter-group">
           <div class="filter-label">Timeframe</div>
           <div class="tab-tf-selector" data-scope="chart">
             {tf_buttons}
@@ -772,10 +770,8 @@ def write_lazy_dashboard_shell_html(
       <div id="status"></div>
       <div id="dataWarn" class="warn"></div>
       <div id="fileWarn" class="warn"></div>
-      <div id="indicatorWrap">
-        <div id="indicatorToggle" class="btn" title="Show/hide indicator panel">Indicators &#9660;</div>
-        <div id="indicatorStrip" aria-label="Indicators"></div>
-      </div>
+      <div id="strategyDef"></div>
+      <div id="indicatorDropdowns" aria-label="Indicator selector"></div>
     </div>
     <div id="appBody">
       <main id="main">
@@ -789,13 +785,15 @@ def write_lazy_dashboard_shell_html(
         <!-- Strategy tab panels -->
         <div id="chartPnl"></div>
         <div id="strategySpacing" style="height:24px;"></div>
-        <div id="chartTs"></div>
         <!-- Charts tab panels -->
         <div id="oscWrap" style="display:none;">
-          <div id="oscToggle" class="panel-toggle">Oscillators &#9654;</div>
-          <div id="chartOsc" class="osc-collapsed"></div>
+          <div id="oscToggle" class="panel-toggle">Oscillators &#9660;</div>
+          <div id="chartOsc"></div>
         </div>
+        <!-- Strategy/condition description: below osc, above aggregator -->
+        <div id="strategyDefBar"></div>
         <div id="chartLower" style="display:none;"></div>
+        <div id="chartTs"></div>
       </main>
       <div id="sidebarResizer"></div>
       <aside id="sidebar">
@@ -824,8 +822,9 @@ def write_lazy_dashboard_shell_html(
         <div class="btn" data-filter="combo" title="At least one combo (C3/C4) active on the latest bar">Combo</div>
         <span class="filter-sep"></span>
         <span class="filter-label">Strategy:</span>
+        <div class="btn" data-filter="strat_any" title="Any strategy with an active ENTRY or HOLD signal">All</div>
         <div class="btn" data-filter="strat_dip" title="Dip Buy entry signal active (D badge)">Dip Buy</div>
-        <div class="btn" data-filter="strat_swing" title="Swing Trading entry or hold (S badge)">Swing</div>
+        <div class="btn" data-filter="strat_arch_a" title="Pullback -A entry or hold (A badge)">Pullback -A</div>
         <div class="btn" data-filter="strat_trend" title="Trend Position entry or hold (T badge)">Trend</div>
         <div class="btn" data-filter="strat_stoof" title="Stoof entry or hold active on 2W or 1M">Stoof</div>
       </div>
@@ -848,7 +847,6 @@ def write_lazy_dashboard_shell_html(
         <div class="scan-controls-left">
           <span class="scan-controls-label">Timeframe</span>
           <div id="scanTfSelector" class="scan-tf-pills">
-            <button class="scan-tf-pill scan-tf-confirm" data-tf="4H" title="4H is not scanned — used only to confirm 1D entry timing">4H &#10003;</button>
             <button class="scan-tf-pill active" data-tf="1D">1D</button>
             <button class="scan-tf-pill" data-tf="1W">1W</button>
             <button class="scan-tf-pill" data-tf="2W">2W</button>
@@ -862,12 +860,17 @@ def write_lazy_dashboard_shell_html(
         </div>
       </div>
 
+      <!-- ── Scan Stats Bar ────────────────────────────────────────────── -->
+      <div id="scanStatsBar" style="display:none;"></div>
+
       <!-- ── New Signals ───────────────────────────────────────────────── -->
       <section class="scan-section" id="scanSectionNew">
         <div class="scan-section-header">
           <h2 class="scan-section-title">&#128994; New Signals <span id="scanNewCount" class="scan-badge"></span></h2>
           <span class="scan-section-sub" id="scanNewMeta"></span>
         </div>
+        <div id="scanPassStats" class="scan-pass-stats"></div>
+        <div id="scanDownloadHealth"></div>
         <div id="scanNewSignals"></div>
       </section>
 
@@ -1740,7 +1743,6 @@ python -m trading_dashboard symbols sync
 ## Notes
 
 - Data is downloaded via `yfinance`:
-  - hourly (`60m`) then resampled to 4H
   - daily (`1d`) then optionally resampled to 1W (`W-FRI`)
 - If a symbol is not found, the script tries common exchange suffixes (e.g. `.PA`).
 """

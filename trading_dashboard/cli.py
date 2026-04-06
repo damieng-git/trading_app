@@ -23,9 +23,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-_DEFAULT_CONFIGS_DIR = Path("apps/dashboard/configs")
-_DEFAULT_CONFIG = _DEFAULT_CONFIGS_DIR / "config.json"
-_DEFAULT_LISTS_DIR = _DEFAULT_CONFIGS_DIR / "lists"
+from apps.dashboard.config_loader import CONFIG_JSON as _DEFAULT_CONFIG
+from apps.dashboard.config_loader import LISTS_DIR as _DEFAULT_LISTS_DIR
 
 
 def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path]:

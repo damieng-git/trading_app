@@ -35,6 +35,8 @@ KPI_SCAN_MIN_BARS: dict[str, int] = {
     "ADX & DI": 30,
     "WT_LB": 55,
     "SQZMOM_LB": 25,
+    # Stoof (Band Light) KPIs
+    "MACD_BL": 50,     # EMA(23) slow → ~50 bars for stability
 }
 
 
@@ -183,6 +185,21 @@ def compute_scan_indicators(
         )
         out["SQZ_val"] = sqz["SQZ_val"]
 
+    # ── MACD_BL (Band Light — required KPI for stoof) ────────────────────────
+    if "MACD_BL" in kpi_set:
+        from trading_dashboard.indicators import macd as _macd
+        p = _load_params("MACD_BL")
+        macd_line, signal_line, hist = _macd(
+            out["Close"],
+            fast=int(p.get("fast", 15)),
+            slow=int(p.get("slow", 23)),
+            signal=int(p.get("signal", 5)),
+            signal_ma="EMA",
+        )
+        out["MACD_BL"] = macd_line
+        out["MACD_BL_signal"] = signal_line
+        out["MACD_BL_hist"] = hist
+
     # ── Quality gate helpers ─────────────────────────────────────────────────
     out["SMA20"] = out["Close"].rolling(window=20, min_periods=20).mean()
     out["SMA200"] = out["Close"].rolling(window=200, min_periods=200).mean()
@@ -216,35 +233,91 @@ def compute_scan_kpi_states(
     return result
 
 
+def check_quality_gates_raw(
+    df: pd.DataFrame,
+    entry_gates: dict,
+) -> bool:
+    """Check entry gates on raw OHLCV without pre-computed indicator columns.
+
+    Computes SMA20/SMA200 and Vol_MA20 inline so this can be called BEFORE
+    lean enrichment, allowing cheap pre-filtering of the universe.
+
+    Gates (same keys as entry_gates in config.json strategy_setups):
+      sma20_gt_sma200 — SMA20 > SMA200 on latest bar
+      volume_spike    — latest volume > 1.5× Vol_MA20 (last bar only)
+      sr_break        — close > highest high of prior 20 bars
+      overextension   — close <= close[5 bars ago] × 1.15 (blocks entries >15% extended)
+    """
+    if not entry_gates:
+        return True
+
+    close = df["Close"]
+    last = df.iloc[-1]
+
+    if entry_gates.get("sma20_gt_sma200"):
+        sma20 = close.rolling(20, min_periods=20).mean().iloc[-1]
+        sma200 = close.rolling(200, min_periods=200).mean().iloc[-1]
+        if not (pd.notna(sma20) and pd.notna(sma200) and sma20 > sma200):
+            return False
+
+    if entry_gates.get("volume_spike") and "Volume" in df.columns:
+        vol = last.get("Volume", np.nan)
+        vol_ma = df["Volume"].rolling(20, min_periods=20).mean().iloc[-1]
+        if not (pd.notna(vol) and pd.notna(vol_ma) and vol_ma > 0 and vol > 1.5 * vol_ma):
+            return False
+
+    if entry_gates.get("sr_break"):
+        if len(df) >= 21 and "High" in df.columns and "Close" in df.columns:
+            prior_high = df["High"].iloc[-21:-1].max()
+            close_last = last.get("Close", np.nan)
+            if not (pd.notna(close_last) and pd.notna(prior_high) and close_last > prior_high):
+                return False
+        else:
+            return False
+
+    if entry_gates.get("overextension") and len(df) > 5:
+        close_now = close.iloc[-1]
+        close_5ago = close.iloc[-6]
+        if pd.notna(close_now) and pd.notna(close_5ago) and close_5ago > 0:
+            if (close_now - close_5ago) / close_5ago * 100 > 15.0:
+                return False
+
+    return True
+
+
 def check_quality_gates(
     df: pd.DataFrame,
-    scan_filters: dict,
+    entry_gates: dict,
 ) -> bool:
-    """Return True if the latest bar passes all enabled quality gates.
+    """Return True if the latest bar passes all enabled entry gates.
+
+    Called after lean enrichment (has access to pre-computed SMA/Vol columns).
+    Gate keys match config.json strategy_setups[*].entry_gates exactly.
 
     Gates:
       sma20_gt_sma200 — SMA20 > SMA200 on latest bar
       volume_spike    — latest volume > 1.5× Vol_MA20
-      sr_break        — close > highest high of prior 20 bars (simplified proxy)
+      sr_break        — close > highest high of prior 20 bars
+      overextension   — close <= close[5 bars ago] × 1.15 (blocks entries >15% extended)
     """
-    if not scan_filters:
+    if not entry_gates:
         return True
 
     last = df.iloc[-1]
 
-    if scan_filters.get("sma20_gt_sma200"):
+    if entry_gates.get("sma20_gt_sma200"):
         sma20 = last.get("SMA20", np.nan)
         sma200 = last.get("SMA200", np.nan)
         if not (pd.notna(sma20) and pd.notna(sma200) and sma20 > sma200):
             return False
 
-    if scan_filters.get("volume_spike"):
+    if entry_gates.get("volume_spike"):
         vol = last.get("Volume", np.nan)
         vol_ma = last.get("Vol_MA20", np.nan)
         if not (pd.notna(vol) and pd.notna(vol_ma) and vol_ma > 0 and vol > 1.5 * vol_ma):
             return False
 
-    if scan_filters.get("sr_break"):
+    if entry_gates.get("sr_break"):
         if len(df) >= 21 and "High" in df.columns and "Close" in df.columns:
             prior_high = df["High"].iloc[-21:-1].max()
             close = last.get("Close", np.nan)
@@ -252,6 +325,13 @@ def check_quality_gates(
                 return False
         else:
             return False
+
+    if entry_gates.get("overextension") and len(df) > 5:
+        close_now = df["Close"].iloc[-1]
+        close_5ago = df["Close"].iloc[-6]
+        if pd.notna(close_now) and pd.notna(close_5ago) and close_5ago > 0:
+            if (close_now - close_5ago) / close_5ago * 100 > 15.0:
+                return False
 
     return True
 

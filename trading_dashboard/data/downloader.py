@@ -2,8 +2,8 @@
 OHLCV data download, resampling, and ticker resolution.
 
 Extracted from build_dashboard.py — provides a clean API for:
-- Downloading daily/hourly candles from yfinance
-- Resampling to weekly (W-FRI) and 4H
+- Downloading daily candles from yfinance
+- Resampling to weekly (W-FRI), bi-weekly, and monthly
 - Loading TradingView CSV exports
 - Resolving display symbols to valid yfinance tickers
 """
@@ -73,7 +73,7 @@ def download_daily_ohlcv(
         start=start,
         end=end,
         interval="1d",
-        auto_adjust=False,
+        auto_adjust=True,
         progress=False,
         group_by="column",
         threads=True,
@@ -84,40 +84,7 @@ def download_daily_ohlcv(
     df = _flatten_multiindex(df, ticker)
     df = df.rename_axis("Date").reset_index().set_index("Date")
     df.index = pd.to_datetime(df.index, errors="coerce").tz_localize(None)
-    keep = [c for c in ["Open", "High", "Low", "Close", "Adj Close", "Volume"] if c in df.columns]
-    return df[keep].copy()
-
-
-def download_hourly_ohlcv(
-    ticker: str,
-    period: str = "729d",
-) -> pd.DataFrame:
-    """Download hourly data for building 4H candles."""
-    periods_to_try = [str(period or "").strip()] if str(period or "").strip() else []
-    for p in ["729d", "700d", "365d"]:
-        if p not in periods_to_try:
-            periods_to_try.append(p)
-
-    df = None
-    for p in periods_to_try:
-        df = _download_with_timeout(
-            tickers=ticker,
-            period=p,
-            interval="60m",
-            auto_adjust=False,
-            progress=False,
-            group_by="column",
-            threads=True,
-        )
-        if df is not None and not df.empty:
-            break
-    if df is None or df.empty:
-        return pd.DataFrame()
-
-    df = _flatten_multiindex(df, ticker)
-    df = df.rename_axis("Date").reset_index().set_index("Date")
-    df.index = pd.to_datetime(df.index, errors="coerce").tz_localize(None)
-    keep = [c for c in ["Open", "High", "Low", "Close", "Adj Close", "Volume"] if c in df.columns]
+    keep = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     return df[keep].copy()
 
 
@@ -133,7 +100,7 @@ def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize index and columns after download."""
     df = df.rename_axis("Date").reset_index().set_index("Date")
     df.index = pd.to_datetime(df.index, errors="coerce").tz_localize(None)
-    keep = [c for c in ["Open", "High", "Low", "Close", "Adj Close", "Volume"] if c in df.columns]
+    keep = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
     out = df[keep].copy()
     # Drop rows where Close is NaN (non-trading-day artifacts from multi-exchange batches)
     if "Close" in out.columns:
@@ -177,7 +144,7 @@ def download_daily_batch(
                     start=start,
                     end=end,
                     interval="1d",
-                    auto_adjust=False,
+                    auto_adjust=True,
                     progress=False,
                     group_by="column",
                     threads=True,
@@ -211,67 +178,6 @@ def download_daily_batch(
             on_chunk(min(i + chunk_size, total), total, chunk)
         if i + chunk_size < total:
             _time.sleep(1)
-    return results
-
-
-def download_hourly_batch(
-    tickers: List[str],
-    period: str = "729d",
-    chunk_size: int = _BATCH_CHUNK_SIZE,
-) -> Dict[str, pd.DataFrame]:
-    """Batch-download hourly OHLCV for many tickers. Returns {ticker: DataFrame}."""
-    periods_to_try = [str(period or "").strip()] if str(period or "").strip() else []
-    for p in ["729d", "700d", "365d"]:
-        if p not in periods_to_try:
-            periods_to_try.append(p)
-
-    results: Dict[str, pd.DataFrame] = {}
-    remaining = list(tickers)
-
-    for per in periods_to_try:
-        if not remaining:
-            break
-        for i in range(0, len(remaining), chunk_size):
-            chunk = remaining[i : i + chunk_size]
-            try:
-                from concurrent.futures import ThreadPoolExecutor
-                from concurrent.futures import TimeoutError as FuturesTimeout
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(
-                        _yf_download_with_retry,
-                        tickers=chunk,
-                        period=per,
-                        interval="60m",
-                        auto_adjust=False,
-                        progress=False,
-                        group_by="column",
-                        threads=True,
-                    )
-                    df = future.result(timeout=_BATCH_TIMEOUT_S)
-            except FuturesTimeout:
-                _log.warning("download_hourly_batch timed out after %ds for chunk of %d tickers",
-                             _BATCH_TIMEOUT_S, len(chunk))
-                df = pd.DataFrame()
-            if df is None or df.empty:
-                continue
-            if not isinstance(df.columns, pd.MultiIndex):
-                if len(chunk) == 1:
-                    results[chunk[0]] = _normalize_ohlcv(df)
-                continue
-            available = df.columns.get_level_values("Ticker").unique()
-            for t in available:
-                try:
-                    sym_df = df.xs(t, axis=1, level="Ticker", drop_level=True)
-                    sym_df = _normalize_ohlcv(sym_df)
-                    if not sym_df.empty and sym_df["Close"].dropna().shape[0] >= 2:
-                        results[t] = sym_df
-                except (KeyError, ValueError) as exc:
-                    _log.debug("Skipping ticker %s in hourly batch (KeyError/ValueError): %s", t, exc)
-                    continue
-            if i + chunk_size < len(remaining):
-                _time.sleep(1)
-        remaining = [t for t in remaining if t not in results]
-
     return results
 
 
@@ -315,20 +221,6 @@ def resample_to_monthly(daily: pd.DataFrame) -> pd.DataFrame:
     l = daily["Low"].resample("ME").min()
     c = daily["Close"].resample("ME").last()
     v = daily["Volume"].resample("ME").sum() if "Volume" in daily.columns else None
-    out = pd.DataFrame({"Open": o, "High": h, "Low": l, "Close": c})
-    if v is not None:
-        out["Volume"] = v
-    return out.dropna(subset=["Open", "High", "Low", "Close"], how="any")
-
-
-def resample_to_4h(hourly: pd.DataFrame) -> pd.DataFrame:
-    if hourly.empty:
-        return hourly
-    o = hourly["Open"].resample("4h").first()
-    h = hourly["High"].resample("4h").max()
-    l = hourly["Low"].resample("4h").min()
-    c = hourly["Close"].resample("4h").last()
-    v = hourly["Volume"].resample("4h").sum() if "Volume" in hourly.columns else None
     out = pd.DataFrame({"Open": o, "High": h, "Low": l, "Close": c})
     if v is not None:
         out["Volume"] = v
@@ -464,7 +356,7 @@ def _probe_ticker(ticker: str) -> Optional[pd.DataFrame]:
             tickers=ticker,
             period="5d",
             interval="1d",
-            auto_adjust=False,
+            auto_adjust=True,
             progress=False,
             group_by="column",
             threads=True,
