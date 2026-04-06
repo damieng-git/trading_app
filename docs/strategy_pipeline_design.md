@@ -313,6 +313,6 @@ Arch_a has bespoke gate logic — a weekly SMA cross (requiring a cross-TF dataf
 ## 7. Related Documents
 
 - `docs/chart_render_spec.md` — **chart tab render contract**: what each sub-tab renders, KPI dropdown filter rules, regime ribbon label format, and the per-strategy asset checklist
-- `docs/strategy_audit.md` — per-strategy bug list (T1–CC2), audited 2026-03-06
+- `docs/architecture_audit.md` — open backlog including remaining strategy bugs (#S1, #S2)
 - `docs/architecture_audit.md` — 30 architecture recommendations, audited 2026-03-11
 - `CLAUDE.md` — strategy engine overview, entry/exit logic summary, config schema

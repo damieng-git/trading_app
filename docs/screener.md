@@ -113,7 +113,7 @@ for each of the last 2 bars (current, -1):
 
 This captures stocks with **new** C3 or C4 entries — combo transitions from false to true within the last 2 trading days. Stocks already in long-running combos are excluded. Stocks can appear in both C3 and C4 lists simultaneously.
 
-> **Note**: The screener scans on 1D only. When screener stocks are processed through the full dashboard pipeline (including 1W), they are subject to the 1W overextension filter (block entry if Close > 15% above Close[5 bars ago]). See `DASHBOARD.md` §8.4 and `STRATEGY.md` §1 for details.
+> **Note**: The screener scans on 1D only. Entry gates (SMA20>SMA200, volume spike, SR break, overextension) are configured per-strategy in `config.json → entry_gates`. See `docs/strategy_pipeline_design.md` for details.
 
 ### 5. Ranking
 
@@ -131,8 +131,8 @@ This captures stocks with **new** C3 or C4 entries — combo transitions from fa
 
 ### 7. Dashboard Integration
 
-After writing to `entry_stocks.csv`, the pipeline triggers a full `build_dashboard --mode all`:
-- Downloads history (1D, 1W, 4H — 24 months)
+After writing to `entry_stocks.csv`, the pipeline triggers a full dashboard build:
+- Downloads history (1D, 1W, 2W, 1M — 24 months)
 - Enriches with all 25+ indicators
 - Generates charts, screener table data, strategy signals
 

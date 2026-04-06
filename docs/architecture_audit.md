@@ -89,6 +89,33 @@ attribute references fail at runtime, not import time.
 
 ---
 
+#### #S1 — JS fallback simulation ignores `exit_combos` for Buy Dip
+**File:** `apps/dashboard/static/chart_builder.js`
+**Status: ⚠️ STILL OPEN** _(carried over from strategy audit BUG-D3 / BUG-CC2)_
+
+The JS fallback simulation (triggered only when pre-computed asset events are missing)
+exits using entry combo KPIs instead of Buy Dip's dedicated `exit_combos` (NW Smoother,
+ADX & DI, Stoch_MTM). It also ignores per-strategy entry gates.
+
+**Fix:** Eliminate the JS fallback entirely for polarity strategies — always require
+pre-computed server-side events; show the stale-asset toast if missing.
+
+---
+
+#### #S2 — Screener `l12m_pnl` column is from an unnamed baseline strategy
+**File:** `apps/dashboard/screener_builder.py`
+**Status: ⚠️ STILL OPEN** _(carried over from strategy audit BUG-PL4)_
+
+`compute_position_status` and `compute_trailing_pnl` use `combo_kpis_by_tf` — a config
+section separate from the 4 named strategies. The screener CSV's primary `l12m_pnl`
+column doesn't correspond to `trend`, `dip_buy`, `arch_a`, or `stoof`.
+
+**Fix:** Either promote Trend's `strat_statuses["trend"].l12m_pnl` as the screener
+primary, or explicitly document `combo_kpis_by_tf` as a named baseline strategy in
+`config.json`.
+
+---
+
 #### #20 — SSE `_event_log` is unbounded — memory leak over time
 **Files:** `serve_dashboard.py` (one `_event_log` per state machine)
 **Status: ✅ FIXED (2026-04-06)**
@@ -316,6 +343,8 @@ Enables filtering via `journalctl -o json | jq`.
 | 🔴 1 | #5 | SymbolManager instantiated 8× | Small | Medium | ⚠️ OPEN |
 | 🔴 1 | #6 | Screener payload in HTML + API | Small | High | ⚠️ OPEN |
 | 🔴 1 | #7 | BuildPaths no type safety | Small | Medium | ⚠️ OPEN |
+| 🔴 1 | #S1 | JS fallback ignores exit_combos | Small | Low | ⚠️ OPEN |
+| 🔴 1 | #S2 | Screener l12m_pnl from unnamed strategy | Small | Medium | ⚠️ OPEN |
 | 🔴 1 | #20 | SSE event log memory leak | Small | High | ✅ FIXED |
 | 🟠 2 | #8 | Split `build_dashboard.py` | Large | High | ⚠️ OPEN |
 | 🟠 2 | #9 | Split `serve_dashboard.py` | Large | High | ⚠️ OPEN |
@@ -340,8 +369,8 @@ Enables filtering via `journalctl -o json | jq`.
 | 🟢 4 | #29 | Screener scan parallelism | Small | High | ✅ FIXED |
 | 🟢 4 | #30 | Structured timing logs | Small | Medium | ⚠️ OPEN |
 
-**Fixed:** 7 of 30 (#1, #20, #23, #27, #29 + two implicit via strategy audit fixes)
-**Open:** 23 of 30
+**Fixed:** 7 of 32 (#1, #20, #23, #27, #29 + two implicit via strategy audit fixes)
+**Open:** 25 of 32 (includes #S1 and #S2 carried over from strategy audit)
 
 ---
 _Last verified against code: 2026-04-06_

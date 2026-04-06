@@ -11,42 +11,7 @@ pip install -e ".[dev]"
 
 ## Project Layout
 
-```
-trading_dashboard/          # Core library: indicators, KPIs, data layer, CLI
-├── indicators/             # Pine→Python indicator implementations (25 files)
-├── kpis/                   # KPI state computation (bull/bear/neutral)
-├── data/                   # DataStore (parquet), downloader, enrichment
-├── symbols/                # Symbol list management
-└── cli.py                  # CLI entry point
-
-apps/dashboard/             # Dashboard application
-├── build_dashboard.py      # Orchestrator: download → enrich → export → render
-├── serve_dashboard.py      # Local HTTP server: /fig, /api/scan (SSE + _ScanState), /api/groups
-├── config_loader.py        # Loads config.json + CSVs from configs/lists/, resolves paths
-├── screener_builder.py     # Screener rows (TrendScore, combos, deltas)
-├── strategy.py             # Entry v6 + Exit Flow v4 engine (onset, SMA20>SMA200, vol spike, overextension, ATR stop)
-├── data_exporter.py        # DataFrame → JSON + gzip for client-side charts
-├── sector_map.py           # Symbol metadata + fundamentals
-├── templates.py            # HTML generation (injects EXIT_PARAMS_CFG, SYMBOLS, SCREENER into JS)
-├── figures.py              # Figure assembly (imports layout + indicators modules)
-├── figures_layout.py       # Layout helpers: JSON sanitization
-├── figures_indicators.py   # Indicator overlays: exit flow, combo, KPI timeline
-├── alert_runner.py         # Standalone alert pipeline (download → enrich → screener → alert)
-├── static/                 # Client-side JS + CSS
-│   ├── chart_builder.js    # Plotly figure construction + Web Worker for trade sim
-│   ├── dashboard.js        # UI controller (DOM caching, ARIA, responsive, SSE scan)
-│   └── dashboard.css       # Styling (CSS variables, design tokens, responsive breakpoints)
-└── configs/
-    ├── config.json         # Master config: combos, exit_params, KPI weights
-    ├── lists/*.csv         # Symbol groups (one CSV per group = source of truth)
-    ├── indicator_config.json
-    ├── sector_map.json
-    ├── symbol_display_overrides.json
-    └── alerts_config.json
-
-tests/                      # pytest suite
-research/                   # Backtest analysis + optimization notebooks
-```
+See `CLAUDE.md` for the authoritative package structure and data flow.
 
 ## Running Tests
 
@@ -118,10 +83,11 @@ Useful flags:
 
 ## Documentation
 
-| Document | Location | Content |
-|----------|----------|---------|
-| Architecture | `DASHBOARD.md` | Full system documentation: data flow, UI structure, server, scan, reproducibility |
-| Strategy | `research/kpi_optimization/STRATEGY.md` | Entry/exit rules, backtest results, research log |
-| Screener | `apps/screener/SCREENER.md` | Screener pipeline, scan architecture, detection logic |
-| This file | `CONTRIBUTING.md` | Developer guide |
-| Audit | `audit_dashboard.py` | Automated project health audit (11 areas) |
+| Document | Content |
+|----------|---------|
+| `CLAUDE.md` | Architecture, data flow, CLI reference, deployment |
+| `docs/strategy_pipeline_design.md` | Strategy engine design, adding new strategies |
+| `docs/chart_render_spec.md` | Chart tab render contract |
+| `docs/architecture_audit.md` | Open improvement backlog |
+| `docs/changelog.md` | Full change history |
+| `docs/screener.md` | Screener pipeline, scan architecture, detection logic |
