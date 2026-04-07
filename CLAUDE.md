@@ -126,20 +126,21 @@ Skipping any of these steps causes a silent rendering failure (heatmap and score
 
 | | Production | Staging |
 |---|---|---|
-| Repo | `trading_app` | `trading_app_test` (this repo) |
+| Repo | `trading_app` (branch: `main`) | `trading_app_test` (branch: `staging`) |
 | Port | 8050 | 8051 |
 | URL | `http://46.224.149.54/` | `http://46.224.149.54/test/` |
 | Systemd service | `trading-dashboard` | `trading-dashboard-test` |
 | Data root | `trading_app/data/` | `trading_app_test/data/` |
+| Python | `trading_app/.venv/bin/python` | `trading_app_test/.venv/bin/python` |
 
-Nginx config: `/etc/nginx/sites-enabled/trading-dashboard` (not in git — must be recreated manually if server is rebuilt).
+Nginx config: `infra/nginx.conf` (tracked in git, symlinked to `/etc/nginx/sites-enabled/trading-dashboard`).
 - `/test/*` → strips prefix → proxies to 8051 (staging)
 - `/api/*`, `/fig/*` → proxies to 8050 (prod)
 - `/*` → proxies to 8050 (prod)
 
-**Critical:** the `/test/` location block must include `proxy_buffering off`, `proxy_cache off`, `proxy_set_header Connection ''`, and `proxy_read_timeout 86400s` — otherwise SSE streams (scan, refresh, rebuild-ui) are buffered by nginx and appear to hang in the browser.
+Systemd service files: `infra/trading-dashboard.service` and `infra/trading-dashboard-test.service` (tracked in git, symlinked to `/etc/systemd/system/`). Edit them here and run `systemctl daemon-reload` to apply.
 
-Both services use `/root/damiverse_apps/trading_app/.venv/bin/python` (`trading_app_test` has no venv of its own).
+**Critical:** the `/test/` location block must include `proxy_buffering off`, `proxy_cache off`, `proxy_set_header Connection ''`, and `proxy_read_timeout 86400s` — otherwise SSE streams (scan, refresh, rebuild-ui) are buffered by nginx and appear to hang in the browser.
 
 ### Process management — systemd only
 
@@ -179,16 +180,22 @@ TRADING_APP_ROOT=/root/damiverse_apps/trading_app python3 -m trading_dashboard d
 
 The systemd services already set `TRADING_APP_ROOT` correctly — this only affects manual terminal runs.
 
+### Deploy scripts
+
+```bash
+# Deploy staging (git pull staging + restart staging server)
+bash /root/damiverse_apps/trading_app/infra/deploy-staging.sh
+
+# Deploy prod (git pull main + restart + rebuild-ui)
+bash /root/damiverse_apps/trading_app/infra/deploy-prod.sh
+```
+
 ### Promoting staging → production
 
 ```bash
-# 1. Pull changes into prod repo
-cd /root/damiverse_apps/trading_app && git pull
+# 1. Merge staging → main on GitHub (or locally)
+cd /root/damiverse_apps/trading_app && git merge staging && git push origin main
 
-# 2. Restart prod server if serve_dashboard.py changed
-systemctl restart trading-dashboard
-
-# 3. Rebuild prod shell (JS/CSS/templates changes)
-TRADING_APP_ROOT=/root/damiverse_apps/trading_app python3 -m trading_dashboard dashboard rebuild-ui
-# or click UI Refresh in the prod dashboard (once the endpoint is available in prod)
+# 2. Deploy prod
+bash /root/damiverse_apps/trading_app/infra/deploy-prod.sh
 ```
