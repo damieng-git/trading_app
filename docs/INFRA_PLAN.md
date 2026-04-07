@@ -1,8 +1,8 @@
 # Infrastructure & Repository Restructuring Plan
 
-**Status:** In progress  
+**Status:** COMPLETE ✓  
 **Decided:** 2026-04-05  
-**Resume at:** Phase 6, Step 6.1
+**Resume at:** COMPLETE ✓
 **Total steps:** 38 steps across 7 phases
 
 ---
@@ -888,17 +888,16 @@ cd /root/damiverse_apps/trading_app
 git for-each-ref --format='%(refname:short) %(committerdate:short) %(subject)' \
   refs/remotes/origin | sort -k2 -r
 ```
-**Checkpoint:** Each branch reviewed. Confirm which to delete. Default safe-to-delete list:
+**Checkpoint:** Each branch reviewed. Confirmed safe-to-delete list:
 - `claude/update` — superseded by `staging`
 - `claude/add-test-md-file-YIDV8` — Claude scratch branch
-- `claude/explain-codebase-mmcgqiglt5zpiprj-yZksh` — Claude scratch branch
+- `claude/explain-codebase-mmcgqiglt5zpiprj-yZksh` — Claude scratch branch (already gone from remote)
 - `claude/list-repositories-3qO0o` — Claude scratch branch
+- `feature/claude-1` — confirmed fully merged into main
 
-Review before deciding on `feature/claude-1`.
-
-**Branches confirmed for deletion:** —  
-**Status:** [ ] Not started  
-**Notes:** —
+**Branches confirmed for deletion:** all 5 above  
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Remote now has only main and staging. Stale local branches also cleaned in both trading_app and trading_app_test.
 
 ---
 
@@ -932,8 +931,8 @@ git push origin --delete "claude/list-repositories-3qO0o"
 
 **Checkpoint:** CLAUDE.md committed to both staging and main.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Updated server layout table (added venv row), nginx/systemd note now references infra/, added deploy scripts section, updated promote workflow to use deploy-prod.sh.
 
 ---
 
@@ -970,8 +969,8 @@ readlink /etc/systemd/system/trading-dashboard.service  # must point to infra/
 ```
 **Checkpoint:** All commands succeed. No errors. Architecture matches the target.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Both services active. 8050→127.0.0.1, 8051→127.0.0.1. Nginx and systemd symlinks verified. Remote: main + staging only. trading_app_test on staging, pulled up to date.
 
 ---
 
