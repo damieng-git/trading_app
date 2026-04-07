@@ -2,7 +2,7 @@
 
 **Status:** In progress  
 **Decided:** 2026-04-05  
-**Resume at:** Phase 5, Step 5.1  
+**Resume at:** Phase 5, Step 5.7 (merge infra/ to main)  
 **Total steps:** 38 steps across 7 phases
 
 ---
@@ -778,11 +778,27 @@ git push origin staging
 
 ---
 
-#### Step 5.7 — Symlink nginx.conf (highest-risk step)
+#### Step 5.7 — Merge infra/ to main via PR
+
+**What:** Promote infra/ from staging to main so prod repo has infra/ on disk. Must happen before symlinking — symlinks point into trading_app/infra/ which only exists on the branch that is checked out.  
+**Risk:** None — git operation only.  
+**Process:** Open PR on GitHub: staging → main. Review diff. Merge. Pull in trading_app:
+```bash
+cd /root/damiverse_apps/trading_app
+git pull origin main
+```
+**Checkpoint:** `ls /root/damiverse_apps/trading_app/infra/` shows all 6 files. `git log --oneline -3` shows the merge.
+
+**Status:** [ ] Not started  
+**Notes:** —
+
+---
+
+#### Step 5.8 — Symlink nginx.conf
 
 > ⚠️ **STOP — confirm with user before proceeding. A broken nginx config takes down both prod and staging simultaneously.**
 
-**What:** Replace live nginx config with a symlink to the repo version.  
+**What:** Replace live nginx config with a symlink to the repo version. Requires infra/ on disk (step 5.7 must be done first).  
 **Risk:** R7 — if the symlinked file has any issue, nginx reload fails.  
 **Mitigation:** Back up the current file first.  
 **Commands:**
@@ -807,18 +823,18 @@ systemctl reload nginx
 curl -s -o /dev/null -w "%{http_code}" http://46.224.149.54        # 200
 curl -s -o /dev/null -w "%{http_code}" http://46.224.149.54/test/  # 200
 ```
-**Rollback:** `cp /tmp/nginx.conf.bak /etc/nginx/sites-enabled/trading-dashboard && systemctl reload nginx`
+**Rollback:** `rm /etc/nginx/sites-enabled/trading-dashboard && cp /tmp/nginx.conf.bak /etc/nginx/sites-enabled/trading-dashboard && systemctl reload nginx`
 
 **Status:** [ ] Not started  
 **Notes:** —
 
 ---
 
-#### Step 5.8 — Symlink systemd service files
+#### Step 5.9 — Symlink systemd service files
 
 > ⚠️ **STOP — confirm with user before proceeding. Test on staging first; only symlink prod after staging restart succeeds.**
 
-**What:** Replace live service files with symlinks to the repo versions.  
+**What:** Replace live service files with symlinks to the repo versions. Requires infra/ on disk (step 5.7 must be done first).  
 **Risk:** R8 — broken symlink = service can't restart.  
 **Mitigation:** Back up first. Services keep running from existing process — symlink only affects next restart.  
 **Commands:**
@@ -854,22 +870,6 @@ systemctl status trading-dashboard
 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8050
 ```
 **Rollback:** `cp /tmp/*.bak /etc/systemd/system/ && systemctl daemon-reload`
-
-**Status:** [ ] Not started  
-**Notes:** —
-
----
-
-#### Step 5.9 — Merge infra/ to main via PR
-
-**What:** Promote infra/ from staging to main so prod repo has it.  
-**Risk:** None — git operation only.  
-**Process:** Open PR on GitHub: staging → main. Review diff (should be only infra/ additions). Merge. Pull in trading_app:
-```bash
-cd /root/damiverse_apps/trading_app
-git pull origin main
-```
-**Checkpoint:** `ls trading_app/infra/` shows all files. `git log --oneline -3` shows the merge.
 
 **Status:** [ ] Not started  
 **Notes:** —
