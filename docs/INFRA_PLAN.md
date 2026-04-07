@@ -2,7 +2,7 @@
 
 **Status:** In progress  
 **Decided:** 2026-04-05  
-**Resume at:** Phase 5, Step 5.7 (merge infra/ to main)  
+**Resume at:** Phase 5, Step 5.7 (merge infra/ to main)
 **Total steps:** 38 steps across 7 phases
 
 ---
@@ -658,10 +658,10 @@ cat /root/damiverse_apps/trading_app_test/deploy/trading-dashboard-test-scan.tim
 ```
 **Checkpoint:** Understand the scan service. Decide: fold into new `infra/` or keep in `deploy/` as-is.
 
-**Decision:** [ ] Fold into `infra/`  [ ] Keep in `deploy/` as-is  
-**Decision notes:** —  
-**Status:** [ ] Not started  
-**Notes:** —
+**Decision:** [x] Fold into `infra/`  [ ] Keep in `deploy/` as-is  
+**Decision notes:** Scan service + timer are server config, belong alongside other service files. Fixed venv path from trading_app to trading_app_test.  
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Folded both files into infra/, updated ExecStart/ExecStartPost to use trading_app_test/.venv/bin/python.
 
 ---
 
@@ -675,8 +675,8 @@ mkdir -p /root/damiverse_apps/trading_app/infra
 ```
 **Checkpoint:** Directory exists.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** mkdir -p succeeded.
 
 ---
 
@@ -698,8 +698,8 @@ diff /etc/nginx/sites-enabled/trading-dashboard \
 ```
 Visual review: confirm the cleaned file has exactly the intended locations.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Copied and removed duplicate standalone `location /fig {}` block (already covered by regex `^/(api|fig)/`). Resulting file has 4 location blocks: api/fig regex, /test/, /, and that's it.
 
 ---
 
@@ -716,8 +716,8 @@ cp /etc/systemd/system/trading-dashboard-test.service \
 ```
 **Checkpoint:** Both files present. Diff against live versions — should be identical (we already edited live files in Phases 3 and 4).
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Both service files copied. Diff confirmed identical to live. Also added trading-dashboard-test-scan.service and .timer (folded from deploy/).
 
 ---
 
@@ -754,8 +754,8 @@ chmod +x /root/damiverse_apps/trading_app/infra/deploy-prod.sh
 ```
 **Checkpoint:** Scripts exist, are executable, `set -euo pipefail` ensures they abort on any error.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Both scripts written and chmod +x. infra/ contains 6 files total.
 
 ---
 
@@ -773,8 +773,8 @@ git push origin staging
 ```
 **Checkpoint:** infra/ visible on staging branch on GitHub. Files look correct.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Committed as "Add infra/: nginx config, systemd services, deploy scripts". Merge conflict in pine_to_python_mapping.md resolved by keeping origin/staging (docs-cleanup) version. Pushed to origin/staging.
 
 ---
 

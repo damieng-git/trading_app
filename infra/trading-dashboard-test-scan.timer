@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily EOD scan for trading-dashboard-test (fires at 15:55 local time Mon-Fri)
+
+[Timer]
+# Fire at 15:55 on weekdays (server time — confirm timezone matches market close)
+OnCalendar=Mon..Fri 15:55
+# If the system was off at 15:55, fire within 5 min of next boot
+Persistent=true
+# Randomise start by up to 60 s to avoid thundering-herd if multiple services fire at once
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
