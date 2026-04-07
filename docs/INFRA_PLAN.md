@@ -2,7 +2,7 @@
 
 **Status:** In progress  
 **Decided:** 2026-04-05  
-**Resume at:** Phase 4, Step 4.1  
+**Resume at:** Phase 5, Step 5.1  
 **Total steps:** 38 steps across 7 phases
 
 ---
@@ -592,8 +592,8 @@ ss -tlnp | grep 8050
 ```
 **Checkpoint:** Shows `0.0.0.0:8050` (current state).
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Confirmed 0.0.0.0:8050 (PID 827) before change.
 
 ---
 
@@ -613,8 +613,8 @@ Environment=TD_HOST=127.0.0.1
 ```
 **Checkpoint:** File saved. Verify `TRADING_APP_ROOT=/root/damiverse_apps/trading_app` is still present and unchanged.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** TD_HOST=127.0.0.1 set. TRADING_APP_ROOT=/root/damiverse_apps/trading_app confirmed unchanged.
 
 ---
 
@@ -640,8 +640,8 @@ journalctl -u trading-dashboard -n 20 --no-pager   # no errors
 ```
 **Rollback:** If prod fails to start, revert `TD_HOST` to `0.0.0.0` and restart.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** New PID 575613. Binds 127.0.0.1:8050. HTTP 302 locally and via nginx (46.224.149.54). No errors in logs.
 
 ---
 
