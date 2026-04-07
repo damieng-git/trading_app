@@ -3,7 +3,7 @@
 **Status:** COMPLETE ✓  
 **Decided:** 2026-04-05  
 **Resume at:** COMPLETE ✓
-**Total steps:** 38 steps across 7 phases
+**Total steps:** 38 steps across 6 phases + Phase 7 addendum (worktree restructuring, 2026-04-07)
 
 ---
 
@@ -1024,13 +1024,12 @@ bash /root/damiverse_apps/trading_app/infra/deploy-prod.sh
 
 ### Research work (trading_lab)
 ```
-1. Work in /root/damiverse_apps/trading_lab/
-2. git commit + push → github/trading_lab
-3. Completely independent — trading_app git never sees it
-4. Python imports work via: pip install -e /root/damiverse_apps/trading_app
+1. Work in /root/damiverse_apps/trading_app/trading_lab/
+2. No git remote — local only, gitignored by trading_app
+3. Python imports work via: pip install -e /root/damiverse_apps/trading_app/main
 ```
 
-### Server management (unchanged from current)
+### Server management
 ```bash
 systemctl restart trading-dashboard        # restart prod
 systemctl restart trading-dashboard-test   # restart staging
@@ -1040,11 +1039,65 @@ journalctl -u trading-dashboard-test -f    # tail staging logs
 
 ### Infra changes (nginx / systemd)
 ```
-1. Edit the file in trading_app/infra/
-2. git commit to staging, test at :8051
-3. For nginx: nginx -t  (always before reload)
-             systemctl reload nginx
-4. For systemd: systemctl daemon-reload
-               systemctl restart <service>
-5. Merge to main via PR
+1. Edit the file in trading_app/main/infra/
+2. git commit to main
+3. For nginx: nginx -t && systemctl reload nginx
+4. For systemd: systemctl daemon-reload && systemctl restart <service>
 ```
+
+---
+
+## PHASE 7 — Worktree restructuring (2026-04-07)
+
+Post-completion addendum. Restructured from two separate clones to a single repo with two git worktrees under a common parent directory.
+
+### What changed
+
+**Before:**
+```
+/root/damiverse_apps/
+├── trading_app/      ← git repo, branch: main (prod)
+└── trading_app_test/ ← git clone, branch: staging
+```
+
+**After:**
+```
+/root/damiverse_apps/trading_app/
+├── main/          ← primary worktree, branch: main (prod, port 8050)
+├── stag/          ← linked worktree, branch: staging (staging, port 8051)
+└── trading_lab/   ← research (gitignored, no remote)
+```
+
+### Steps executed
+
+1. Stopped both servers
+2. `mv trading_app trading_app_main_temp && mkdir trading_app && mv trading_app_main_temp trading_app/main`
+3. `git worktree add /root/damiverse_apps/trading_app/stag staging`
+4. Moved `trading_lab/` from inside `main/` to `trading_app/trading_lab/`
+5. Moved `trading_app_test/data/` → `trading_app/stag/data/`
+6. Deleted old `main/.venv` (shebangs hardcoded), recreated fresh at `main/.venv`
+7. Created fresh `stag/.venv`, installed deps
+8. Updated `infra/` service files, deploy scripts, scan service — all paths updated
+9. Updated nginx + systemd symlinks to new `main/infra/` path
+10. Restarted both servers — both active, prod 302, staging 302
+11. Removed `trading_app_test/`
+12. Updated CLAUDE.md and committed
+
+### Rollback
+
+```bash
+# Stop servers
+systemctl stop trading-dashboard trading-dashboard-test
+
+# Restore trading_app_test from stag worktree
+cp -r /root/damiverse_apps/trading_app/stag /root/damiverse_apps/trading_app_test
+python3 -m venv /root/damiverse_apps/trading_app_test/.venv
+/root/damiverse_apps/trading_app_test/.venv/bin/pip install -e "/root/damiverse_apps/trading_app_test/.[dev]"
+
+# Move trading_app/main back to trading_app
+mv /root/damiverse_apps/trading_app/main /root/damiverse_apps/trading_app_main_temp
+mv /root/damiverse_apps/trading_app_main_temp /root/damiverse_apps/trading_app
+# (recreate venv, update symlinks, restart services)
+```
+
+**Status:** [x] Done — 2026-04-07
