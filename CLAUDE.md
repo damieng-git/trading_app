@@ -126,12 +126,20 @@ Skipping any of these steps causes a silent rendering failure (heatmap and score
 
 | | Production | Staging |
 |---|---|---|
-| Repo | `trading_app` (branch: `main`) | `trading_app_test` (branch: `staging`) |
+| Path | `trading_app/main/` (worktree, branch: `main`) | `trading_app/stag/` (worktree, branch: `staging`) |
 | Port | 8050 | 8051 |
 | URL | `http://46.224.149.54/` | `http://46.224.149.54/test/` |
 | Systemd service | `trading-dashboard` | `trading-dashboard-test` |
-| Data root | `trading_app/data/` | `trading_app_test/data/` |
-| Python | `trading_app/.venv/bin/python` | `trading_app_test/.venv/bin/python` |
+| Data root | `trading_app/main/data/` | `trading_app/stag/data/` |
+| Python | `trading_app/main/.venv/bin/python` | `trading_app/stag/.venv/bin/python` |
+
+Directory layout:
+```
+/root/damiverse_apps/trading_app/
+├── main/          ← git worktree, branch: main (prod)
+├── stag/          ← git worktree, branch: staging
+└── trading_lab/   ← research repo (gitignored)
+```
 
 Nginx config: `infra/nginx.conf` (tracked in git, symlinked to `/etc/nginx/sites-enabled/trading-dashboard`).
 - `/test/*` → strips prefix → proxies to 8051 (staging)
@@ -172,10 +180,10 @@ The **UI Refresh** button (in the dashboard toolbar) calls `/api/rebuild-ui` on 
 
 ```bash
 # Staging rebuild (correct)
-TRADING_APP_ROOT=/root/damiverse_apps/trading_app_test python3 -m trading_dashboard dashboard rebuild-ui
+TRADING_APP_ROOT=/root/damiverse_apps/trading_app/stag python3 -m trading_dashboard dashboard rebuild-ui
 
-# Production rebuild (correct — only after git pull in trading_app)
-TRADING_APP_ROOT=/root/damiverse_apps/trading_app python3 -m trading_dashboard dashboard rebuild-ui
+# Production rebuild (correct — only after git pull in trading_app/main)
+TRADING_APP_ROOT=/root/damiverse_apps/trading_app/main python3 -m trading_dashboard dashboard rebuild-ui
 ```
 
 The systemd services already set `TRADING_APP_ROOT` correctly — this only affects manual terminal runs.
@@ -184,17 +192,17 @@ The systemd services already set `TRADING_APP_ROOT` correctly — this only affe
 
 ```bash
 # Deploy staging (git pull staging + restart staging server)
-bash /root/damiverse_apps/trading_app/infra/deploy-staging.sh
+bash /root/damiverse_apps/trading_app/main/infra/deploy-staging.sh
 
 # Deploy prod (git pull main + restart + rebuild-ui)
-bash /root/damiverse_apps/trading_app/infra/deploy-prod.sh
+bash /root/damiverse_apps/trading_app/main/infra/deploy-prod.sh
 ```
 
 ### Promoting staging → production
 
 ```bash
 # 1. Merge staging → main on GitHub (or locally)
-cd /root/damiverse_apps/trading_app && git merge staging && git push origin main
+cd /root/damiverse_apps/trading_app/main && git merge staging && git push origin main
 
 # 2. Deploy prod
 bash /root/damiverse_apps/trading_app/infra/deploy-prod.sh
