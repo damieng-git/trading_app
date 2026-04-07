@@ -32,6 +32,7 @@ trading_lab/
 # Local production config overrides (not synced to git)
 apps/dashboard/configs/lists/entry_stocks.csv
 apps/dashboard/configs/lists/watchlist.csv
+apps/dashboard/configs/lists/scan_list.csv
 
 # Environment
 .env
