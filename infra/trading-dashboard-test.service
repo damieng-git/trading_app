@@ -5,14 +5,14 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/damiverse_apps/trading_app_test
-ExecStart=/root/damiverse_apps/trading_app_test/.venv/bin/python -m apps.dashboard.serve_dashboard
+WorkingDirectory=/root/damiverse_apps/trading_app/stag
+ExecStart=/root/damiverse_apps/trading_app/stag/.venv/bin/python -m apps.dashboard.serve_dashboard
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 Environment=TD_HOST=127.0.0.1
 Environment=TD_PORT=8051
-Environment=TRADING_APP_ROOT=/root/damiverse_apps/trading_app_test
+Environment=TRADING_APP_ROOT=/root/damiverse_apps/trading_app/stag
 
 [Install]
 WantedBy=multi-user.target
