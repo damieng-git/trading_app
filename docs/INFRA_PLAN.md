@@ -2,7 +2,7 @@
 
 **Status:** In progress  
 **Decided:** 2026-04-05  
-**Resume at:** Phase 5, Step 5.7 (merge infra/ to main)
+**Resume at:** Phase 6, Step 6.1
 **Total steps:** 38 steps across 7 phases
 
 ---
@@ -789,8 +789,8 @@ git pull origin main
 ```
 **Checkpoint:** `ls /root/damiverse_apps/trading_app/infra/` shows all 6 files. `git log --oneline -3` shows the merge.
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Merged staging into main locally (gh not installed). One conflict in INFRA_PLAN.md resume pointer — resolved trivially. Pushed to origin/main. All 7 infra/ files confirmed on disk.
 
 ---
 
@@ -825,8 +825,8 @@ curl -s -o /dev/null -w "%{http_code}" http://46.224.149.54/test/  # 200
 ```
 **Rollback:** `rm /etc/nginx/sites-enabled/trading-dashboard && cp /tmp/nginx.conf.bak /etc/nginx/sites-enabled/trading-dashboard && systemctl reload nginx`
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Backup at /tmp/nginx.conf.bak. Symlinked. nginx -t passed. Reloaded. prod 302, staging 302 — both healthy.
 
 ---
 
@@ -871,8 +871,8 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8050
 ```
 **Rollback:** `cp /tmp/*.bak /etc/systemd/system/ && systemctl daemon-reload`
 
-**Status:** [ ] Not started  
-**Notes:** —
+**Status:** [x] Done — 2026-04-07  
+**Notes:** Both service files symlinked. daemon-reload clean. Staging restart: active 302. Prod restart: active 302. Both services now managed via infra/ in git.
 
 ---
 
