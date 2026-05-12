@@ -1,6 +1,8 @@
-# CLAUDE.md
+# trading_app/main — canonical trading dashboard
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+`main` is the **only** directory you should read or edit. `trading_app/stag/` is a git worktree
+on the `staging` branch — it is populated exclusively via `infra/deploy-staging.sh`. Never
+edit files in `stag/` directly.
 
 ## Commands
 
