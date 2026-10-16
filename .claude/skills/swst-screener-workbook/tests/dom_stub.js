@@ -56,6 +56,7 @@ const CH = ["chart-q", "chart-t"];
 const rings = () => CH.map(id => byId[id].children.filter(c => /ring/.test(c.className)).length);
 const before = rings();
 row.fire("click");
+const detailAfterClick = byId["detail"].textContent;
 const per = CH.map(id => {
   const ch = byId[id];
   const sel = ch.children.filter(c => /\bsel\b/.test(c.className));
@@ -73,6 +74,8 @@ const out = {
 // clicking the same row again clears the selection
 row2.fire("click");
 out.ringAfterSecondClick = rings();
+out.detailAfterClick = detailAfterClick;
+out.detailAfterClear = byId["detail"].textContent;
 // clicking the bubble on the Value vs Timing chart marks it on both charts and in the table
 byId["chart-t"].children.find(c => /\bdot\b/.test(c.className) && c.attrs["data-id"] === String(target.id)).fire("click");
 out.afterBubbleClick = { rings: rings(), rowHighlighted: /\bhl\b/.test(byId["row-" + target.id].className) };

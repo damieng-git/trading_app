@@ -158,7 +158,8 @@ def test_stale_warning(built):
 
 def test_region_colours_and_chart_markup(built):
     _, _, html = built
-    assert "--us:#c0392b" in html and "--eu:#1f5fa8" in html     # red / blue
+    assert "--us:#84A98C" in html and "--eu:#2F3E46" in html     # muted teal / charcoal (palette)
+    assert 'class="rail"' in html and 'id="detail"' in html         # C1-A: list rail + selected-stock panel
     assert "circle.US{fill:var(--us)" in html and "circle.EU{fill:var(--eu)" in html
     assert html.count('viewBox="0 0 720 480"') == 2                 # two charts side by side
     assert 'id="chart-q"' in html and 'id="chart-t"' in html
@@ -168,7 +169,7 @@ def test_region_colours_and_chart_markup(built):
     assert "Not plotted (missing scores)" in html
     assert 'id="xsel"' not in html                                   # fixed charts, no axis pickers
     assert "--sel:#b8860b" in html                                   # dark yellow selection
-    assert "tr.hl td{background:#fff8dc;box-shadow:" in html and "outline:2px" not in html
+    assert "tr.hl td{background:#FBF6E6;box-shadow:" in html and "outline:2px" not in html
 
 
 def test_hostile_industry_is_escaped(built):
@@ -234,3 +235,5 @@ def test_clicking_a_table_row_highlights_its_bubble(built, tmp_path):
     assert out["chartScrolledIntoView"]              # charts were off-screen, so we scroll up
     assert out["ringAfterSecondClick"] == [0, 0]     # second click clears it
     assert out["afterBubbleClick"] == {"rings": [1, 1], "rowHighlighted": True}  # bubble click: both charts + row
+    assert ticker in out["detailAfterClick"] and "Value" in out["detailAfterClick"]   # panel shows the stock
+    assert out["detailAfterClear"].startswith("Click a bubble")                       # and empties on clear

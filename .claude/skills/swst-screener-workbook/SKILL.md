@@ -2,8 +2,8 @@
 name: swst-screener-workbook
 description: >-
   Turn pasted Simply Wall St "Investing Ideas" screener pages into a US+EU filtered,
-  enriched and scored Excel workbook plus an interactive dashboard (one tab per list,
-  served at http://the-damiverse:3090/). Use this whenever the user pastes stock
+  enriched and scored Excel workbook plus an interactive dashboard (one entry per list in
+  its side rail, served at http://the-damiverse:3090/). Use this whenever the user pastes stock
   screener results, mentions "Simply Wall St", "SWS", "screener", an "investing idea"
   (e.g. "Undervalued based on future growth", "PEG < 0.8"), or says things like
   "export these stocks", "merge these stock lists", "add this list to the dashboard",
@@ -51,7 +51,7 @@ Short and quantitative, recommendations first:
 ## Serving
 
 `swst-reports.service` (systemd, Tailscale IP only, port 3090; unit source in `infra/`):
-`/` is the hub (All lists + a tab per list), `/files` the file listing, `/latest` the newest
+`/` is the hub (All lists + one entry per list in the left rail), `/files` the file listing, `/latest` the newest
 single-list page. After editing `scripts/serve_reports.py`: `sudo systemctl restart
 swst-reports`, then `curl -s http://100.115.107.24:3090/` (the hostname resolves to
 127.0.1.1 on the box itself). Rebuild the hub without network: `python scripts/build_hub.py

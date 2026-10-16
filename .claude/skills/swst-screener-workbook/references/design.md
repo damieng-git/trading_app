@@ -59,6 +59,17 @@ Latest run per list slug, read from `data/*.rows.json` (no network). Every tab s
 from the newest snapshot for a stock, so one stock has one score everywhere; ranks and the
 "median" in notes are recomputed per tab. `index.html` is the only file overwritten on purpose.
 
+Page layout (dashboard.py, palette Ash Grey / Muted Teal / Deep Teal / Dark Slate / Charcoal Blue,
+selection dark yellow #b8860b): a dark left rail holds the lists (count in brackets, following the
+active filters) and the filter drop-downs (Tier, Country, Flags, Hide not scored; filters persist
+across lists). The middle column has the list title with summary chips (in view, scored, not
+scored, on 2+ lists), two scatters side by side (Value vs Quality, Value vs Timing, Value on X),
+then the scored and not-scored tables. The right column is the selected-stock panel (price,
+V/Q/T/R bars, key figures, lists, note, take, consensus, headlines), sticky on wide screens.
+Clicking a bubble or a row selects it on both charts, frames the row (one outer frame) and fills
+the panel; clicking again or the panel's close button clears it. US dots are muted teal, EU
+charcoal (they differ in lightness, not only hue). No external fonts: the page stays self-contained.
+
 ## Peers (peers.py)
 Each stock's P/E (trailing and forward), P/S, EV/Sales and EV/FCF against the median of its
 peers: the other stocks in the same yfinance industry (needs 3 or more), else the same
