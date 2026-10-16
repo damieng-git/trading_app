@@ -1,0 +1,14 @@
+[Unit]
+Description=SWS screener reports (tailnet only, http://the-damiverse:3090)
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+User=damien
+ExecStart=/usr/bin/python3 /home/damien/damiverse_apps/trading_app/main/.claude/skills/swst-screener-workbook/scripts/serve_reports.py --dir /home/damien/swst_reports --host 100.115.107.24 --port 3090
+# The Tailscale IP may not exist yet at boot; keep retrying until it does.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

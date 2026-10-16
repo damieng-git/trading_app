@@ -1,0 +1,237 @@
+# Defaults for the swst-screener-workbook skill.
+# Everything here is meant to be edited without touching the scripts.
+
+# ---------------------------------------------------------------------------
+# Screen sheet column order (display names, left to right).
+# The parser produces a fixed set of internal fields; this list decides which
+# of them are written and in what order. Names must match keys in
+# COLUMN_SOURCES inside scripts/build_workbook.py.
+# ---------------------------------------------------------------------------
+screen_columns:
+  - Investing Idea
+  - Company
+  - Ticker
+  - Market Cap (EUR m, approx)
+  - Country
+  - Exchange
+  - Currency
+  - Market Cap (local, m)
+  - Price (local)
+  - 7D Return
+  - 1Y Return
+  - Analyst Target
+  - Upside to Target
+  - Valuation (SWS)
+  - Growth (SWS)
+  - Div Yield
+  - Industry
+  - Business
+  - Source
+  - New on screener
+  - Liquidity flag
+  - Downtrend flag
+  - Big 7D move flag
+  # --- Phase-1 yfinance enrichment (blue INPUT columns) ---
+  - P/E (trailing)
+  - P/E (forward)
+  - P/S
+  - EV/EBITDA
+  - P/FCF
+  - Px vs 50d MA
+  - Px vs 200d MA
+  - '% from 52wk high'
+  - '% from 52wk low'
+  - 6M momentum
+  - 12M momentum
+  - RSI (14)
+  - Beta
+  - Max drawdown (3y)
+  - Avg $ vol (EUR m)
+  - Net cash (EUR m)
+  - Cash runway (qtrs)
+  - Next earnings
+  - Ex-dividend
+  - Cap tier
+  # --- Phase-1 timing FLAGS (live Excel formulas over the inputs) ---
+  - Pullback flag
+  - Oversold flag
+  - Breakout flag
+
+# ---------------------------------------------------------------------------
+# Assumptions sheet input cells (yellow, blue font). Edited by the user in
+# Excel; the flag formulas reference these cells, so changing them re-flags
+# without re-running the skill.
+# ---------------------------------------------------------------------------
+thresholds:
+  liquidity_eur_m: 250        # EUR market cap below this -> "illiquid"
+  downtrend_1y: -0.30         # 1Y return at or below this -> "downtrend"
+  big_move_7d_abs: 0.08       # |7D return| at or above this -> "big move"
+  # --- Phase-1 timing-flag thresholds (Assumptions cells; formulas read them) ---
+  oversold_rsi: 30            # RSI(14) below this -> "oversold"
+  breakout_within_pct: 0.03   # |% from 52wk high| at/under this -> "breakout"
+  pullback_within_pct: 0.03   # in an uptrend and |Px vs 50d MA| at/under this -> "pullback"
+  # --- Cap-tier cutoffs (EUR m). Python-only: they drive the Cap tier column,
+  #     not an Excel formula, so they are not written to the Assumptions sheet. ---
+  cap_large_eur_m: 10000      # EUR cap at/above this -> "large"
+  cap_mid_eur_m: 2000         # EUR cap at/above this -> "mid" (else "small")
+
+# ---------------------------------------------------------------------------
+# Region sets, keyed by name. Values are ISO-3166 alpha-2 codes (lowercase),
+# matching what the SWS URLs use (gb, de, fr, us, ...).
+# Used for the "filter to US + Europe" style requests. Turkey (tr) is
+# deliberately NOT in "europe" -> it is a stated edge case (transcontinental).
+# ---------------------------------------------------------------------------
+region_sets:
+  us:
+    - us
+  europe:
+    - gb   # United Kingdom
+    - de   # Germany
+    - fr   # France
+    - dk   # Denmark
+    - se   # Sweden
+    - "no"   # Norway (quoted: bare `no` is YAML boolean False)
+    - fi   # Finland
+    - pl   # Poland
+    - it   # Italy
+    - nl
+    - es
+    - ch
+    - be
+    - at
+    - ie
+    - pt
+    - lu
+  # Convenience union used by the regression scenario (US + the 9 core EU
+  # markets the user named). Kept explicit so the test is stable.
+  us_plus_core_europe:
+    - us
+    - gb
+    - de
+    - fr
+    - dk
+    - se
+    - "no"
+    - fi
+    - pl
+    - it
+
+# US + every Europe code + the "eu" pseudo-country (EUR-quoted rows in the US
+# table view carry no exchange). Defined here as an explicit list so the set is
+# stable; keep in sync with `europe` above.
+  us_eu:
+    - us
+    - gb
+    - de
+    - fr
+    - dk
+    - se
+    - "no"
+    - fi
+    - pl
+    - it
+    - nl
+    - es
+    - ch
+    - be
+    - at
+    - ie
+    - pt
+    - lu
+    - eu
+
+# Countries that need a stated judgment call when region filtering.
+# The report must name how each was handled.
+edge_case_countries:
+  transcontinental:
+    - tr   # Turkey: Europe or Asia depending on definition
+    - ru
+  # Classification rule: by listing venue, not domicile. Borderline rows are
+  # kept if the venue is in-region but flagged in the report.
+
+# ---------------------------------------------------------------------------
+# FX table: LOCAL currency units per 1 EUR.
+# These are PLACEHOLDERS unless refreshed with live rates. When live rates are
+# fetched, overwrite these and set fx_is_live: true with a source + date.
+# The EUR market cap column and the liquidity flag depend on these, so near the
+# €250m cutoff the flag is only indicative while placeholders are in use.
+# ---------------------------------------------------------------------------
+# Live rates below are ECB reference rates via frankfurter.dev (as of fx_asof).
+# TWD, VND and AED are NOT published by the ECB, so they remain placeholders even
+# when fx_is_live is true — they are marked below and in the report.
+fx_is_live: true
+fx_source: "ECB reference rates via frankfurter.dev"
+fx_asof: "2026-09-18"
+fx_per_eur:
+  EUR: 1.0
+  USD: 1.146
+  GBP: 0.8588
+  CHF: 0.9462
+  SEK: 11.2915
+  NOK: 10.8095
+  DKK: 7.4754
+  PLN: 4.3635
+  CZK: 24.339
+  HUF: 364.28
+  TRY: 55.9077
+  CAD: 1.6056
+  AUD: 1.6095
+  SGD: 1.4651
+  HKD: 8.9903
+  CNY: 7.6755
+  JPY: 180.94
+  KRW: 1590.76
+  INR: 109.8755
+  IDR: 20424.81
+  PHP: 71.972
+  THB: 38.225
+  MYR: 4.6763
+  ZAR: 18.6482
+  BRL: 5.8857
+  ILS: 3.4812
+  MXN: 19.6855
+  # --- not published by ECB; still placeholders ---
+  TWD: 34.8
+  VND: 27500.0
+  AED: 3.97
+
+# One row per idea vs one row per ticker. If false (default), a ticker that
+# shows up under several ideas is kept as ONE row with ideas joined by "; ".
+# The workflow asks the user once; this is the fallback.
+one_row_per_idea: false
+
+# ---------------------------------------------------------------------------
+# Symbol overrides, keyed "TICKER|CCY" -> yfinance symbol. Overrides still go
+# through the enrichment cross-check. Example:
+#   ALV|EUR: ALV.DE
+# ---------------------------------------------------------------------------
+symbol_overrides: {}
+
+# ---------------------------------------------------------------------------
+# Dashboard scoring (hand-set anchors, not fitted or backtested).
+# ---------------------------------------------------------------------------
+scoring:
+  weights:            # value, quality, timing, risk
+    large: [0.35, 0.35, 0.10, 0.20]
+    mid:   [0.30, 0.30, 0.25, 0.15]
+    small: [0.25, 0.30, 0.30, 0.15]
+  financial_industries_sws: [Banks, Insurance, Diversified Financials]
+  financial_sector_yf: [Financial Services]
+  value_anchors:      # lower better: s = clip((hi - x)/(hi - lo))
+    pe: [10, 30]
+    ev_ebitda: [6, 20]
+    p_fcf: [10, 40]
+    ps: [1, 8]
+    pb: [0.8, 2.5]
+  quality_anchors:    # higher better: s = clip((x - lo)/(hi - lo))
+    net_cash_to_cap: [-0.5, 0.1]
+    growth_sws: [0.0, 0.15]
+    roe: [0.0, 0.20]
+  runway_full_qtrs: 12
+  timing: {rsi_zero: 45, breakout_zero_pct: 0.10, pullback_zero_pct: 0.08}
+  risk_anchors:
+    beta: [0.5, 2.0]          # lower better
+    max_dd: [-0.70, -0.15]    # higher better
+    adv_eur_m: [0.5, 20]      # log10 scale
+  min_metrics: {value: 2, quality: 2, risk: 2}
+  stale_days: 3

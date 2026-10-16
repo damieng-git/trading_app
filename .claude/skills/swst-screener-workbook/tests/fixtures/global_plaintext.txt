@@ -1,0 +1,58 @@
+Undervalued based on future growth
+Results 8
+8 companies
+Acme Global Holdings
+Market Cap:US$1.2b
+Designs and manufactures industrial widgets across North America and Europe.
+New
+NasdaqGS:ACME
+US$12.34
+7D
++1.2%
+1Y
+-15.3%
+Beta Industries Ltd
+Market Cap:UK£450.0m
+Provides maintenance services to the offshore energy sector.
+LSE:BETA
+UK£3.40
+7D
+-2.1%
+1Y
+n/a
+Gamma Corp SE
+Market Cap:€2.5b
+Develops automation software for manufacturing lines.
+ETR:GAMA
+€45.10
+7D
++9.5%
+1Y
+-35.0%
+Delta Foods Inc
+Market Cap:JP¥300.0b
+Produces packaged foods and beverages for the domestic market.
+TSE:DLTA
+JP¥1500
+7D
+-0.5%
+1Y
++12.0%
+Epsilon Mining SA
+Market Cap:R$800.0m
+Explores and extracts base metals in South America.
+BOVESPA:EPSL
+R$5.60
+7D
++3.0%
+1Y
+-8.0%
+Zeta Tech Ltd
+Market Cap:US$95.0m
+Early-stage developer of diagnostic devices.
+NasdaqGS:ZETA
+US$0.85
+7D
++8.2%
+1Y
+-42.0%
