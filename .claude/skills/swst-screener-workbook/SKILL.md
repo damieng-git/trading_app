@@ -7,6 +7,7 @@ description: >-
   screener results, mentions "Simply Wall St", "SWS", "screener", an "investing idea"
   (e.g. "Undervalued based on future growth", "PEG < 0.8"), or says things like
   "export these stocks", "merge these stock lists", "add this list to the dashboard",
+  "update the X list", "refresh this list", "what changed in X",
   "filter these to US and European stocks", or pastes lists of companies with market
   caps and 7D/1Y returns, even if they don't say "Excel" or "dashboard".
 ---
@@ -38,6 +39,31 @@ Paste formats and gotchas: `references/formats.md`.
 4. Refresh every list on fresh data: `bash scripts/run_all.sh` (one list at a time,
    about 2 min each; log in `~/swst_reports/data/run_all.log`). Data older than 3 days
    shows a stale banner.
+
+## Updating a list
+
+When the user pastes a list that is already in the hub ("update buy-the-dip", "here's the
+new semiconductor list", or a paste whose title matches an existing list):
+
+1. Run the step 2 parse check from "Adding a list" and confirm the slug
+   (`scripts/update_list.py` prints it as "List: <slug>"). If it does not match an existing
+   list slug in `~/swst_reports/data/`, the SWS title changed: tell the user before running,
+   because the run would create a second entry in the hub.
+2. Save the paste to `~/swst_reports/inputs/<short-name>_<YYYYMMDD>.txt`, reusing the
+   short name of the list's existing paste in `inputs/`.
+3. Run:
+   ```
+   python scripts/update_list.py ~/swst_reports/inputs/<file>.txt
+   ```
+   It moves older pastes of the same list to `inputs/archive/` (so `run_all.sh` runs each
+   list once), runs the pipeline (takes only if the token file exists, hub rebuilt), then
+   diffs against the previous run: new names, dropped names, score moves of 10+ points
+   (`--move-threshold N`), gate changes. `--diff-only` re-prints the diff of the two newest
+   runs without running anything.
+4. Report the change first (counts, then the notable new/dropped/moved names with one
+   line each), then the usual run report below, then the hub link
+   http://the-damiverse:3090/. Score moves can come from fresh market data rather than from
+   SWS changing the list; say so when the paste is unchanged and only scores moved.
 
 ## Reporting a run
 
