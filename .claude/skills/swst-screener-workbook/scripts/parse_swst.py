@@ -302,7 +302,7 @@ def extract_title(text: str) -> Optional[str]:
         m = _MD_LINK.fullmatch(line)
         if m:
             line = m.group(1).strip()
-        if _is_breadcrumb(line):
+        if _is_breadcrumb(line) or _is_description(line):
             continue
         if _title_ok(line):
             return line
@@ -315,6 +315,13 @@ def _is_breadcrumb(line: str) -> bool:
         return True
     # a bare separator glyph (›, >, /, |, •)
     return bool(re.fullmatch(r"[›>/|•\-\s]+", line.strip()))
+
+
+def _is_description(line: str) -> bool:
+    # The idea's blurb ("High-performing small cap companies that ... returns.") sits
+    # between the title and "N companies" in the 2026-10 layout: a sentence, not a name.
+    s = line.strip()
+    return s.endswith(".") and len(s.split()) >= 8
 
 
 def _title_ok(line: str) -> bool:

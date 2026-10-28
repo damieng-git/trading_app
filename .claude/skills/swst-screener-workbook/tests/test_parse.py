@@ -100,6 +100,14 @@ def test_explicit_idea_overrides_grabbed_title():
     assert all(r["investing_idea"] == "My label" for r in g.rows)  # override wins
 
 
+def test_title_skips_description_line_in_2026_10_layout():
+    txt = ("Investing Ideas\nBrowse All Stocks\nMarkets\n\n"
+           "Undiscovered Gems With Strong Fundamentals\n"
+           "High-performing small cap companies that haven't yet garnered significant "
+           "analyst attention, and could lead to superior returns.\n260 companies\n")
+    assert P.extract_title(txt) == "Undiscovered Gems With Strong Fundamentals"
+
+
 def test_title_none_when_page_starts_with_results():
     txt = "Results 2\n2 companies\nFoo Ltd\nMarket Cap:US$1.0b\nDesc\nNYSE:FOO\nUS$1.00\n7D\n+0.1%\n1Y\n+0.2%\n"
     src = P.parse_paste(txt)
