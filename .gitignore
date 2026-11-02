@@ -51,6 +51,7 @@ test-results/
 
 # Logs
 *.log
+nohup.out
 
 # PineScript source docs (binary/large)
 docs/pinescripts/
